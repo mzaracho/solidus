@@ -23,7 +23,7 @@ services:
     environment:
       DATABASE_URL: postgresql://myuser:<POSTGRES_PASSWORD>@db:5432/solidus_db?schema=public
       PORT: 8080
-      CORS_ORIGIN: '["http://localhost:3000"]'
+      CORS_ORIGIN: '["http://localhost:3000", "http://localhost:3001", "http://192.168.68.123:3001"]'
       APP_NAME: "Solidus API"
       NODE_ENV: "production"
     depends_on:
@@ -34,10 +34,10 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_BASE_URL: http://localhost:8080/api
+        NEXT_PUBLIC_API_BASE_URL: http://192.168.68.123:8080/api
     restart: unless-stopped
     ports:
-      - '3000:3000'
+      - '3001:3000'
     environment:
       INTERNAL_API_URL: http://backend:8080/api
     depends_on:
