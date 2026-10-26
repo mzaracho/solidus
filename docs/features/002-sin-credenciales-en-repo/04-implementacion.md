@@ -300,3 +300,29 @@ git fetch origin && git branch -u origin/main && git status   # recién después
    incluyeron como valores.
 5. Los backups (`_backup_git`) contienen todos los secretos viejos y los `solidus-backend.git` /
    `solidus-frontend.git` previos también (D-2 sigue abierta).
+
+---
+
+# Cierre: noreply, C3 y push
+
+- **Correo:** `user.email` a nivel repo (no global) con el correo `noreply` de GitHub
+  (`<id>+mzaracho@users.noreply.github.com`, id obtenido de la API pública). `user.name` sin cambios.
+- **Revisión previa:** `settings.json` quedó con `allow` vacío (los permisos nuevos del harness se
+  movieron a `settings.local.json`, ignorado). `COMANDOS.md` ya no fija el número de tests.
+- **C3:** `2fd0876` antes del mailmap, `305de5c` después. Barrido del stage: 0 coincidencias con
+  `valores.txt`; los patrones genéricos solo coinciden con texto que describe el patrón.
+- **Reescritura de autor/committer** con `git filter-repo --mailmap` (archivo fuera del repo):
+
+  | Commit | Antes | Después |
+  |---|---|---|
+  | C1 (001) | `252f459` | `cc8246f` |
+  | C2 (002) | `0639505` | `312dfb8` |
+  | C3 | `2fd0876` | `305de5c` |
+
+  Verificado: ningún commit conserva el correo anterior, el árbol de HEAD es idéntico
+  (`6171c85`), los archivos locales siguen en disco y `valores.txt` da 0 en `git rev-list --all`
+  y en los mensajes. El worktree `bold-meninsky-a75726` pasó por `reset --mixed`. `origin` se
+  restauró porque filter-repo lo quita. Bundle previo en `C:\Repositorios\_backup_git\pre-mailmap.bundle`.
+- **Push:** `git push -u origin main` sin force, solo `main`, sin fetch previo: exitoso (rama nueva en
+  un remoto vacío). `git ls-remote origin` muestra `main` en `305de5c`, igual al HEAD local, y la
+  rama trackea `origin/main`.
