@@ -39,3 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# --- Seeds y datos de prueba (locales, no se versionan) ---
+# Seeds SQL y archivos de datos de origen/exportaciones (no afecta migrations/*.sql ni prisma/seed.ts)
+seed*.sql
+*.xlsx
+*.xls
+*.csv
+*.dump
+*.backup
+
+# Carpetas de seeds/datos (por si se crean)
+seed-data/
+seeds/

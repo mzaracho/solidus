@@ -1,1 +1,21 @@
 docs/auditoria/RIESGOS.md
+
+# --- Seeds y datos de prueba (locales, no se versionan) ---
+# Seeds SQL, scripts generadores y script de borrado de datos de prueba
+seed*.sql
+truncate.sql
+generate_seed*.py
+
+# Archivos de datos de origen y exportaciones (planillas, volcados)
+*.xlsx
+*.xls
+*.csv
+*.dump
+*.backup
+
+# Carpetas de seeds/datos (por si se crean)
+seed-data/
+seeds/
+
+# Worktrees temporales de Claude (contienen copias de los seeds)
+.claude/worktrees/

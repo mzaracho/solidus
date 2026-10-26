@@ -38,6 +38,12 @@ Get-Content seed_test_users.sql | docker exec -i healthops-gem-db-1 psql -U myus
 `truncate.sql` y `seed_psicolsa.sql` hacen `TRUNCATE ... CASCADE` de todas las tablas.
 `prisma/seed.ts` está deprecado (solo imprime un aviso).
 
+> **Nota — archivos locales, no versionados:** los seeds (`seed*.sql`, `truncate.sql`) y los
+> scripts generadores (`generate_seed*.py`) son locales y no se versionan (están en `.gitignore`).
+> En un clon nuevo **no van a estar**: hay que obtenerlos por otro canal o regenerarlos.
+> Las planillas de origen (`*.xlsx`, `*.xls`) y las exportaciones (`*.csv`, `*.dump`, `*.backup`)
+> también están ignoradas. `backend/prisma/seed.ts` y las migraciones sí se versionan.
+
 ## 3. Backend (`backend/`)
 ```bash
 npm install
@@ -105,7 +111,9 @@ docker compose up --build -d
 
 ## 6. Usuarios de prueba
 Definidos en `seed_test_users.sql` (`admin@solid.com`, `member@solid.com`, `camila@solid.com`)
-con la contraseña documentada en ese archivo. Ver `RIESGOS.md` (S5).
+con la contraseña documentada en ese archivo. `seed_test_users.sql` es un archivo local no
+versionado (ignorado por `seed*.sql`): en un clon nuevo hay que obtenerlo por otro canal.
+Ver `RIESGOS.md` (S5).
 
 ## 7. Debug desde Claude Code
 `.claude/launch.json` define "Frontend (Next.js)" (`npm run dev`, puerto 3000) y
