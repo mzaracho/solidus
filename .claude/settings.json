@@ -1,9 +1,6 @@
 {
   "permissions": {
-    "allow": [
-      "Bash(node \"C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Repositorios-healthops-gem/e225f84e-2c11-432a-b275-0f52209b8022/scratchpad/cands.js\")",
-      "Bash(node \"C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Repositorios-healthops-gem/e225f84e-2c11-432a-b275-0f52209b8022/scratchpad/build.js\")"
-    ],
+    "allow": [],
     "additionalDirectories": [
       "c:\\Repositorios\\healthops-gem\\.claude"
     ]

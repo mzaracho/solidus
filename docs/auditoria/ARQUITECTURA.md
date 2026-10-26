@@ -1,7 +1,7 @@
 # Arquitectura — HealthOps / Solidus
 
 > Auditoría técnica del 2026-10-26. Solo lectura: no se modificó código fuente.
-> Alcance: repo raíz `c:\Repositorios\healthops-gem` + repos anidados `backend/` y `frontend/`.
+> Alcance: repo `c:\Repositorios\healthops-gem` (un único repo git) con las carpetas `backend/` y `frontend/`.
 
 ## 1. Qué es
 
@@ -15,30 +15,24 @@ pagadores (obras sociales / particular), reglas de honorarios y calcula la distr
 ## 2. Estructura del repositorio
 
 ```
-healthops-gem/                       repo git "paraguas" (rama master, SIN remoto configurado)
-├── backend/                         gitlink -> github.com/mzaracho/solidus-backend (master)
-├── frontend/                        gitlink -> github.com/mzaracho/solidus-frontend (master)
+healthops-gem/                       único repo git (remoto github.com/mzaracho/solidus, rama main)
+├── backend/                         carpeta común (NestJS), versionada en este repo
+├── frontend/                        carpeta común (Next.js), versionada en este repo
 ├── docker-compose.yml               db (postgres 16) + backend + frontend
-├── seed.sql, seed_test_users.sql,   seeds SQL manuales (se aplican con psql vía docker exec)
-│   seed_psicolsa.sql, seed_activities.sql, truncate.sql
-├── generate_seed.py,                generadores de seeds (Python, openpyxl; lee un .xlsx local)
-│   generate_seed_from_xlsx.py
+├── .env.example                     plantilla de variables (el .env real es local e ignorado)
+├── seed*.sql, truncate.sql          seeds SQL manuales, LOCALES (ignorados; se aplican con psql vía docker exec)
+├── generate_seed*.py                generadores de seeds, LOCALES (ignorados; leen un .xlsx local)
 ├── healthops_functional_spec.md     spec funcional
-├── docs/superpowers/{plans,specs}   planes/specs de features previas (abr–jun 2026)
-└── .claude/                         agentes, skills, settings, worktrees
+├── docs/                            auditoría, features y specs (docs/superpowers/ es local e ignorada)
+└── .claude/                         agentes, CLAUDE.md, settings (settings.local.json es local e ignorado)
 ```
 
-**Importante:** `backend` y `frontend` (y `.claude/worktrees/bold-meninsky-a75726`) están
-registrados como gitlinks (modo 160000) pero **no existe `.gitmodules`**. `git submodule status`
-falla con `fatal: no submodule mapping found in .gitmodules`. En la práctica son repos
-independientes anidados; clonar el repo raíz no trae su contenido.
+**Nota histórica:** hasta el feature 002 se documentaba que `backend` y `frontend` eran
+gitlinks sin `.gitmodules` (repos anidados). Ya no es así: son carpetas comunes del repo único
+(`backend/.env` queda ignorado por `backend/.gitignore`).
 
-Estado de punteros al momento de la auditoría:
-
-| Repo | HEAD real | Commit fijado en raíz | Comentario |
-|---|---|---|---|
-| backend | `43115ec` | `1420357` | raíz desactualizada (1 commit: `pro-controller.ts`) → `M backend` |
-| frontend | `bd3932d` | `bd3932d` | sincronizado |
+`docs/superpowers/` (planes y specs de features previas, abr–jun 2026) se conserva en disco pero
+no se versiona. Los skills de Superpowers de `.claude/skills/` se desinstalaron.
 
 ## 3. Backend (`backend/`)
 
@@ -174,7 +168,9 @@ src/
   `192.168.68.123`).
 - **Local:** `backend/docker-compose.yml` levanta solo Postgres; backend con `npm run start:dev`
   y frontend con `npm run dev` (ver `COMANDOS.md`). `.claude/launch.json` define ambos.
-- Seeds: SQL aplicados manualmente (`Get-Content seed.sql | docker exec -i healthops-gem-db-1 psql -U myuser -d solidus_db`).
+- Variables y credenciales: `.env` (raíz) y `backend/.env`, locales e ignorados; plantillas en
+  `.env.example` y `backend/.env.example`. `JWT_SECRET` es obligatorio (32+ caracteres).
+- Seeds: SQL locales (no versionados) aplicados manualmente (`Get-Content seed.sql | docker exec -i healthops-gem-db-1 psql -U myuser -d solidus_db`).
 
 ## 6. Dependencias entre piezas
 

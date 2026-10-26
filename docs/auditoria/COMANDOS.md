@@ -9,12 +9,24 @@
 - Python 3 + `openpyxl` solo si se regeneran seeds desde Excel.
 
 ## 1. Obtener el código
-El repo raíz **no** tiene `.gitmodules`; `backend` y `frontend` son repos independientes:
+Hay un único repo git; `backend/` y `frontend/` son carpetas comunes (no submódulos):
 ```bash
-git clone https://github.com/mzaracho/solidus-backend.git  backend
-git clone https://github.com/mzaracho/solidus-frontend.git frontend
+git clone https://github.com/mzaracho/solidus.git
+cd solidus
 ```
-(`git submodule update --init` no funciona en el estado actual.)
+
+### Variables de entorno (obligatorio antes de levantar nada)
+Las credenciales no se versionan. Copiar las plantillas y completar los valores:
+```bash
+cp .env.example .env                    # raíz: lo lee docker compose
+cp backend/.env.example backend/.env    # backend: Nest, Prisma y backend/docker-compose.yml
+```
+En PowerShell: `Copy-Item .env.example .env` y `Copy-Item backend/.env.example backend/.env`.
+- Reemplazar todos los `change-me` por valores propios. `POSTGRES_*` deben coincidir con
+  `DATABASE_URL` en `backend/.env`.
+- `JWT_SECRET` es obligatorio y debe tener 32 caracteres o más; el backend no arranca sin él.
+  Generarlo con: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+- Los compose fallan con un mensaje claro si falta una variable (`${VAR:?mensaje}`).
 
 ## 2. Base de datos (desarrollo local)
 ```bash
@@ -71,7 +83,7 @@ npm run format                                # prettier --write sobre src/ y te
 
 ### Tests
 ```bash
-npm test              # jest (hoy: "No tests found", exit 1)
+npm test              # jest (hoy: solo jwt-config.spec.ts)
 npm run test:cov      # cobertura en backend/coverage
 npm run test:e2e      # requiere DB; el único e2e es boilerplate roto
 ```
@@ -102,6 +114,7 @@ No hay comando de tests en el frontend.
 
 ## 5. Stack completo con Docker (raíz)
 ```bash
+# requiere el .env de la raíz (ver sección 1); sin POSTGRES_* o JWT_SECRET falla con un mensaje claro
 docker compose up --build -d
 # db:       localhost:5433
 # backend:  localhost:8080 (corre prisma migrate deploy al iniciar)

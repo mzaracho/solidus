@@ -30,7 +30,7 @@
 | 15 | Eliminar `/test-suite` del build de producción | S |
 | 16 | Transacciones Prisma (`$transaction`) en `createActivity`, `MergePatientCommand` y borrado de staff; revisar que borrar staff no afecte membresías de otras orgs | M |
 | 17 | Dinero con `Prisma.Decimal` de punta a punta en splits, KPIs y liquidaciones | M |
-| 18 | Arreglar estructura del repo raíz: agregar `.gitmodules` con las URLs de GitHub (o documentar que son repos independientes y quitar los gitlinks), actualizar el puntero de `backend`, quitar el gitlink de `.claude/worktrees/*`, definir remoto | S |
+| 18 | ~~Arreglar estructura del repo raíz (`.gitmodules`, gitlinks, remoto)~~ **RESUELTO (features 001/002):** hay un único repo (remoto `github.com/mzaracho/solidus`, rama `main`) con `backend/` y `frontend/` como carpetas; sin gitlinks. Pendiente fuera de este ítem: confirmar el remoto antes del push (ver `docs/features/002-sin-credenciales-en-repo/06-seguridad.md`, M-1) | S |
 | 19 | Docker: secretos por `.env`/secrets, Postgres no publicado o ligado a `127.0.0.1`, usuario no-root, `NEXT_PUBLIC_API_BASE_URL` parametrizable | S |
 
 ## P2 — Calidad y tests

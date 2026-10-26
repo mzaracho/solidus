@@ -1,3 +1,6 @@
+> **OBSOLETO:** este borrador quedó desactualizado (describe `backend` y `frontend` como repos
+> propios, lo cual es incorrecto). La guía vigente es `.claude/CLAUDE.md`. No usar este archivo.
+
 # HealthOps (Solidus) — Guía del proyecto
 
 Plataforma de gestión operativa y financiera para clínicas de salud y profesionales

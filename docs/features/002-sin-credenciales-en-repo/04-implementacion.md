@@ -158,3 +158,145 @@ Todos los diffs se ven con `git diff HEAD` (partiendo de C1). Los archivos nuevo
   (el HEAD del worktree sigue en `8a226bd`).
 - Los permisos "siempre" del harness con credenciales deberían ir a `settings.local.json`. El
   documentador tiene que dejarlo en `CLAUDE.md`.
+
+---
+
+# FASE B — reescritura del historial (criterios 11 a 16)
+
+> Sin valores secretos. **No se hizo push.** Este archivo se modificó después de C2 y queda sin
+> commitear (para el commit C3 posterior a la reescritura).
+
+## B.1 Correcciones previas (05-revision.md)
+- **M-1:** `.claude/settings.json` quedó con `"agent": "po"`, `additionalDirectories` y
+  `permissions.allow` vacío. Las 18 entradas que tenía (incluidas `Read(//c/Repositorios//**)`,
+  `Bash(git filter-repo *)` y las que mencionaban `_backup_git` y `valores.txt`) se movieron a
+  `.claude/settings.local.json` (ignorado), sin duplicar ni borrar nada.
+  - El harness volvió a agregar permisos a `settings.json` varias veces durante la fase B (cada
+    comando aprobado). Cada vez se movieron a `settings.local.json` y se restauró el archivo con
+    `git checkout -- .claude/settings.json`, antes de C2 y antes de `filter-repo`. Sigue pasando
+    mientras se aprueben comandos: **volver a verificar `git status` antes de C3 y del push**.
+- **M-3:** frase de `docs/auditoria/ESTADO.md` corregida como sugería la revisión.
+- **M-4:** `git add` explícito de los archivos de la fase A y de `docs/features/002-.../` (01, 03, 04
+  y 05). Quedaron en C2.
+- Barrido con `valores.txt` sobre todo lo que fue a C2 (`git diff --cached` en líneas agregadas,
+  `git grep --cached`, archivos del feature y `settings.json`): **0 coincidencias**. Regex de JWT
+  (`eyJ...eyJ`) sobre `git ls-files`: 0.
+
+## B.2 Decisiones aplicadas
+- **D-1 = W1:** el HEAD del worktree ya fue re-apuntado por `filter-repo` a la rama reescrita
+  (`0590c8c`). Solo hizo falta `git -C <worktree> reset --mixed` para reescribir su índice. La
+  carpeta del worktree no se tocó: las sumas SHA-256 de sus 63 archivos son idénticas antes y
+  después. Los seeds se ven como no trackeados dentro del worktree.
+- **D-3:** C1 ya existía (`edb234d`, hoy `252f459`).
+- **D-4 = sí:** se reemplazaron en el historial el nombre del mensaje de `8a226bd`
+  (`--replace-message`) y los 3 UUID de `settings.json` (organización, usuario y paciente).
+  - Los UUID **no aparecen** en ningún archivo del árbol de HEAD (`git grep` con `valores.txt` sobre
+    HEAD: código 1), así que se podían reemplazar.
+  - El nombre solo aparecía en rutas purgadas y en ese mensaje.
+- `8a226bd` quedó vacío y `filter-repo` lo descartó (de 10 commits a 9). Las tres ramas `claude/*`
+  apuntan ahora a `0590c8c` (la reescritura de `88327f2`).
+
+## B.3 Archivos de expresiones y backup (fuera del repo)
+Carpeta `C:\Repositorios\_backup_git\`. **Contiene secretos: no subir ni compartir; borrar cuando el
+usuario cierre el push y la limpieza en GitHub.**
+- Bundle: `C:\Repositorios\_backup_git\healthops-gem-2026-10-26-pre-002.bundle`
+  (`git bundle verify` OK: "records a complete history"; 7 heads listadas).
+- Copia completa de `.git` previa: `C:\Repositorios\_backup_git\healthops-gem-2026-10-26-pre-002.git-dir`.
+- Archivos locales: `C:\Repositorios\_backup_git\healthops-gem-2026-10-26-pre-002-local\`
+  (`.env` raíz y de backend, `settings.local.json`, `docs/superpowers`, seeds, `truncate.sql`,
+  generadores).
+- Expresiones: `C:\Repositorios\_backup_git\002-redact\{replace-text,replace-message,valores}.txt`.
+  UTF-8 sin BOM, LF, sin comentarios ni líneas vacías (verificado). `replace-text.txt` tiene 9 reglas
+  (JWT por regex, contraseña de Postgres, secreto de fallback, 2 contraseñas de usuarios de prueba,
+  correo de aspecto real, UUID de org, usuario y paciente). `valores.txt` pasó de 9 a 13 valores:
+  la fase A no había incluido las contraseñas de prueba, el correo ni el nombre, y se completaron
+  relevándolos del historial con un script (sin imprimirlos).
+- Control de colaterales previo: cada literal aparece solo en rutas de credenciales (compose,
+  `ESTADO.md`, `COMANDOS.md`, `auth-module.ts`, `settings*.json`) o en rutas purgadas. Ninguno en
+  código o `package-lock.json`. Control positivo: `git grep -F -f valores.txt` encontraba valores
+  en 85 pares revisión/ruta antes de reescribir.
+
+## B.4 Hashes antes y después
+| | Antes | Después |
+|---|---|---|
+| HEAD de `main` | `6b8548031b2b1f588d392aa95728f311fef135ff` | `063950508343d337459708ad707b73f98ed14754` |
+| Árbol de HEAD | `71df27f62c66c375a7bc90ee750282902d1c53a7` | `71df27f62c66c375a7bc90ee750282902d1c53a7` (**igual**) |
+| Commits (`rev-list --all`) | 10 | 9 |
+| Ramas `claude/*` | `8a226bd` | `0590c8c` |
+| `origin/main` (ref local) | `b689c80` | eliminada (sin fetch) |
+
+El mapeo viejo→nuevo (`.git/filter-repo/commit-map`) se borró al terminar; los SHA viejos se pueden listar desde el bundle del backup. Los hashes de
+`main` de arriba cambiarán si se hace un commit C3 encima.
+
+## B.5 Precondiciones y corrida
+- Ruta purgada trackeada en HEAD: 0. Valores o JWT en HEAD: 0 (código 1).
+- Archivos locales presentes antes y después: `.env`, `backend/.env`, `settings.local.json`, 5 seeds,
+  `truncate.sql`, 2 generadores y los 8 archivos de `docs/superpowers/` (17 sumas SHA-256 idénticas;
+  `settings.local.json` difiere solo porque recibió los permisos de M-1, y es superconjunto del
+  backup).
+- Dry run: sin errores. En `fast-export.filtered` el único valor que seguía apareciendo era el
+  nombre, y solo dentro de blobs de archivos purgados (que el export incluye aunque no los
+  referencie ningún commit). Se comprobó en el historial que el nombre no estaba en ninguna ruta no
+  purgada. Se borró `.git/filter-repo/` antes de la corrida real.
+- Una sola corrida real con `--invert-paths`, `--replace-text` y `--replace-message`
+  (argumentos del diseño 4.6). Aviso esperado: "Removing 'origin' remote".
+
+## B.6 Verificación (solo conteos)
+| # | Verificación | Resultado |
+|---|---|---|
+| V1 | árbol de HEAD | igual al previo |
+| V2 | `rev-list --all --objects` con rutas purgadas | 0 |
+| V3 | `log --all --name-only` con rutas purgadas | 0 |
+| V4 | `git grep -F -f valores.txt` sobre todas las revisiones | código 1 (sin coincidencias) |
+| V5 | regex JWT sobre todas las revisiones | código 1 |
+| V6 | `git log --all -p` con valores / con regex JWT | 0 / 0 |
+| V7 | mensajes de commit con valores | 0 |
+| V8 | objetos `b689c80`, `8a226bd`, blob del seed viejo y blob del settings viejo | los 4 no existen |
+| V9 | inalcanzables (`fsck --unreachable --no-reflogs`) y `garbage` | 0 y 0 (569 objetos en pack) |
+| V10 | worktree | HEAD `0590c8c`; 2 modificados y 5 no trackeados (los seeds); archivos intactos |
+| V11 | ramas y remotos | `main` y 3 `claude/*` con hashes nuevos; sin `refs/remotes/*`; `origin` configurado |
+| V12 | `git status` | sin cambios trackeados; ignorados: `.env`, `backend/.env`, `settings.local.json`, `docs/superpowers/`, seeds, generadores |
+| V13 | archivos locales | presentes, sumas iguales (salvo `settings.local.json`, ver B.5) |
+| V14 | `tsc --noEmit` backend y frontend; `jest` backend | 0 errores; 7 de 7 tests pasan |
+| V15 | `git ls-remote origin` (solo lectura) | **inconcluyente**: sale con código 0 pero sin listar ninguna ref (ver B.9) |
+| — | reflog, stash, `FETCH_HEAD`, `ORIG_HEAD` | 0 líneas de reflog, 0 stash, ninguno de los dos archivos |
+| — | `.git` contiene `8a226bd` o `b689c80` | nada (se borró `.git/filter-repo/`) |
+
+## B.7 Estado de `origin` y del worktree
+- `origin` restaurado a `https://github.com/mzaracho/solidus.git` (fetch y push) con
+  `git remote add`, y `branch.main.remote` y `branch.main.merge` reconfigurados. **No se ejecutó
+  fetch, pull ni `remote update`.** `git branch -vv` muestra `[origin/main: gone]`, esperado.
+- Worktree `.claude/worktrees/bold-meninsky-a75726`: registrado, HEAD detached en `0590c8c`, carpeta
+  intacta. No se borró ni se movió.
+
+## B.8 Force push pendiente (NO ejecutado, requiere confirmación del usuario)
+```bash
+git ls-remote origin refs/heads/main          # confirmar que sigue en b689c802168d51c14e0e14e2e33f353c63a61e64
+git push --force-with-lease=refs/heads/main:b689c802168d51c14e0e14e2e33f353c63a61e64 origin main
+git fetch origin && git branch -u origin/main && git status   # recién después del push
+```
+- Solo se empuja `main`; las `claude/*` no existen en el remoto y no deben subirse.
+- Cambian todos los hashes: otros clones o forks quedan divergentes y hay que volver a clonar.
+- GitHub puede seguir sirviendo los commits viejos (caché, PR, forks) hasta su GC; para una purga
+  completa hay que pedirlo al soporte de GitHub con los SHA viejos (listables desde el bundle).
+- El historial viejo ya estuvo publicado: los valores deben considerarse expuestos. Se recomienda
+  rotar la contraseña de Postgres y las de los usuarios de prueba (fuera de alcance).
+- **Antes del push:** `git status` limpio, re-barrer `settings.json` y barrer con `valores.txt` los
+  archivos de C3.
+
+## B.9 Dudas y desvíos de la fase B
+1. **`git ls-remote origin` no devolvió refs** (código 0, salida vacía), ni con el patrón de `main`
+   ni sin él. Puede ser que el repo sea privado y no haya credenciales cargadas, o que el remoto
+   esté vacío o no exista. Con `--force-with-lease` con hash explícito el push se rechazaría si
+   `main` en GitHub no está en `b689c80`. Antes de pushear, que el PO o el usuario verifique el
+   remoto (por ejemplo `git ls-remote` con sus credenciales, o la web de GitHub).
+2. `valores.txt` no incluía todos los valores que enumera el diseño (4.4); se completó. Conviene que
+   seguridad revise si hay otras contraseñas de prueba fuera de los patrones que usé
+   (`"password":`, `PGPASSWORD=`, `password = '...'`, URL con clave y correos).
+3. Se reemplazaron como contraseñas de prueba solo 2 literales y como correo uno. Los demás
+   correos de los seeds (usuarios de prueba) no se reemplazaron: no son secretos y solo existían en
+   rutas purgadas. Los 3 que aparecen en `COMANDOS.md` siguen en HEAD y el árbol no cambió.
+4. Los hashes bcrypt de `PASSWORD_HASH` de los seeds se purgaron junto con los seeds; no se
+   incluyeron como valores.
+5. Los backups (`_backup_git`) contienen todos los secretos viejos y los `solidus-backend.git` /
+   `solidus-frontend.git` previos también (D-2 sigue abierta).

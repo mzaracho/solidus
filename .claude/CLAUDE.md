@@ -12,15 +12,23 @@ Los traspasos se guardan en docs/features/<NNN-nombre>/. Nadie hace commit ni pu
 salvo que el usuario lo pida.
 
 ## Estructura
-- `backend/` — repo propio (github.com/mzaracho/solidus-backend). NestJS 10 + Prisma 5 + PostgreSQL 16.
-- `frontend/` — repo propio (github.com/mzaracho/solidus-frontend). Next.js 16 (App Router) + React 19.
-- Raíz — docker-compose, seeds SQL, scripts Python de seeds, specs y planes en `docs/`.
-- El repo raíz NO tiene `.gitmodules`: `backend` y `frontend` son repos git independientes.
-  Los cambios de código se hacen y versionan dentro de cada uno.
+- Hay un ÚNICO repo git (remoto `github.com/mzaracho/solidus`, rama `main`). `backend/` y
+  `frontend/` son carpetas comunes, no repos ni submódulos: todos los cambios se versionan en el repo raíz.
+- `backend/` — NestJS 10 + Prisma 5 + PostgreSQL 16.
+- `frontend/` — Next.js 16 (App Router) + React 19.
+- Raíz — docker-compose, specs en `docs/`. Los seeds SQL y los scripts Python de seeds son
+  locales: están en `.gitignore` y no se versionan. `docs/superpowers/` también es local e ignorada.
+
+## Credenciales
+- Viven solo en archivos locales ignorados por git: `.env` (raíz, para docker compose),
+  `backend/.env` y `.claude/settings.local.json`.
+- Plantillas versionadas: `.env.example` (raíz) y `backend/.env.example`, solo con placeholders.
+- `JWT_SECRET` es obligatorio, de 32 caracteres o más: el backend no arranca sin él.
+  Los compose también fallan si falta una variable (`${VAR:?mensaje}`).
 
 ## Stack
 - Backend: TypeScript 5.9, NestJS 10, Prisma 5.22, PostgreSQL 16, JWT (`@nestjs/jwt`), bcrypt,
-  class-validator, Swagger, Jest 29 (configurado, sin tests todavía), ESLint 9 + Prettier.
+  class-validator, Swagger, Jest 29 (solo tests de `jwt-config`), ESLint 9 + Prettier.
 - Frontend: Next.js 16.1 (Turbopack), React 19.2, TypeScript strict, Tailwind 4, shadcn/ui (Radix),
   Zustand, Recharts, date-fns, sonner. Sin framework de tests.
 - Infra: Docker Compose (db 5433, backend 8080, frontend 3001→3000).
@@ -53,14 +61,17 @@ salvo que el usuario lo pida.
 - Alias `@/*` → `src/*`.
 
 ## Comandos
+Primera vez: copiar `.env.example` a `.env` (raíz) y `backend/.env.example` a `backend/.env`, y
+completar los valores (`JWT_SECRET` con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`).
+
 Backend (`cd backend`):
-- `docker compose up -d` — Postgres local en 5433
+- `docker compose up -d` — Postgres local en 5433 (lee `backend/.env`)
 - `npm install` · `npx prisma migrate deploy` · `npx prisma generate`
 - `npm run start:dev` — API en http://localhost:8080/api, Swagger en http://localhost:8080/
 - `npx tsc --noEmit` — type-check
 - `npx eslint "{src,apps,libs,test}/**/*.ts"` — lint sin modificar archivos
 - `npm run lint` — ATENCIÓN: aplica `--fix` y reescribe archivos
-- `npm test` — Jest (hoy no hay tests; falla con "No tests found")
+- `npm test` — Jest (hoy solo `jwt-config.spec.ts`)
 - `npm run build` — reescribe `dist/`
 
 Frontend (`cd frontend`):
@@ -69,8 +80,8 @@ Frontend (`cd frontend`):
 - `npm run build` — si falla la descarga de Google Fonts por TLS:
   `NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS=1 npm run build`
 
-Stack completo (raíz): `docker compose up --build -d`.
-Seeds: `Get-Content seed.sql | docker exec -i healthops-gem-db-1 psql -U myuser -d solidus_db`
+Stack completo (raíz, requiere el `.env` de la raíz): `docker compose up --build -d`.
+Seeds (archivos locales, no versionados): `Get-Content seed.sql | docker exec -i healthops-gem-db-1 psql -U myuser -d solidus_db`
 (ver `docs/auditoria/COMANDOS.md`; `truncate.sql` y algunos seeds borran TODAS las tablas).
 
 ## Reglas del proyecto
@@ -78,6 +89,7 @@ Seeds: `Get-Content seed.sql | docker exec -i healthops-gem-db-1 psql -U myuser 
 2. No modificar `.env`, credenciales ni configuración de `.claude/` sin pedido explícito.
 3. Nunca agregar secretos, tokens, contraseñas ni datos reales de pacientes/profesionales
    a archivos versionados (incluye seeds, specs, docs y settings de Claude). Usar datos ficticios.
+   Ninguna credencial, ni siquiera de prueba o de desarrollo, puede subirse a GitHub.
 4. Seguridad (estado actual, ver `docs/auditoria/RIESGOS.md`): los JWT no se verifican y el
    tenant se toma de headers del cliente. Todo endpoint nuevo o modificado debe:
    - estar protegido por autenticación,
@@ -93,3 +105,6 @@ Seeds: `Get-Content seed.sql | docker exec -i healthops-gem-db-1 psql -U myuser 
 10. No hacer `TRUNCATE`/seeds contra una base que no sea la local de desarrollo.
 11. Documentación y mensajes al usuario en español; código e identificadores en inglés
     (convención existente).
+12. Los permisos "permitir siempre" que incluyan tokens, contraseñas, headers `Authorization`,
+    ids o URLs con credenciales van solo en `.claude/settings.local.json` (ignorado), nunca en
+    `.claude/settings.json`. Antes de cada commit se revisa `git diff .claude/settings.json`.
