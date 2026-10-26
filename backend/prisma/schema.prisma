@@ -1,0 +1,366 @@
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrgType {
+  SOLO_PRACTICE
+  CLINIC
+}
+
+enum BeneficiaryType {
+  ORG
+  PROFESSIONAL
+}
+
+enum SplitType {
+  PERCENTAGE
+  FIXED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT_WITH_NOTICE
+  ABSENT_NO_NOTICE
+  CANCELED_BY_PROFESSIONAL
+}
+
+enum OrgRole {
+  ADMIN
+  MEMBER
+}
+
+enum ProfessionalStatus {
+  ACTIVE
+  PENDING
+}
+
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  cuit      String?
+  address   String?
+  type      OrgType
+  settings  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  professionals Professional[]
+  payers        Payer[]
+  feeRules      FeeRule[]
+  workItems     WorkItem[]
+  categories    ProfessionalCategory[]
+  patients      Patient[]
+  feePresets    FeePreset[]
+  settlements   Settlement[]
+  members       OrganizationMember[]
+  activityTypes ActivityType[]
+}
+
+model OrganizationMember {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  userId         String   @db.Uuid
+  role           OrgRole  @default(MEMBER)
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, userId])
+}
+
+model ProfessionalCategory {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  name           String // "SENIOR", "JUNIOR", "STAFF"
+  percentage     Float? @default(100.0)
+
+  organization  Organization   @relation(fields: [organizationId], references: [id])
+  professionals Professional[]
+
+  @@unique([organizationId, name])
+}
+
+model Professional {
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String  @db.Uuid
+  userId         String? @db.Uuid
+  displayName    String
+
+  cuit  String?
+  phone String?
+  email String?
+
+  categoryId String?               @db.Uuid
+  category   ProfessionalCategory? @relation(fields: [categoryId], references: [id])
+
+  user         User?        @relation(fields: [userId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+  splits       WorkItemSplit[]
+  workItems    WorkItem[]
+  payers       Payer[]
+  participants WorkItemParticipant[]
+
+  @@unique([organizationId, userId])
+
+  deletedAt         DateTime?
+  canLoadActivities Boolean @default(false)
+  status            ProfessionalStatus @default(ACTIVE)
+  // V2-INVITE: cuando status = PENDING, el vínculo fue creado por la org pero
+  // no aceptado aún por el profesional. Implementar flujo de invitación en V2:
+  // org crea → PENDING → profesional recibe notificación → acepta → ACTIVE.
+}
+
+model Payer {
+  id                  String  @id @default(uuid()) @db.Uuid
+  organizationId      String  @db.Uuid
+  name                String
+  isManagedBySystem   Boolean @default(false)
+  retentionPercentage Float?
+  cuit                String?
+
+  professionalId String?       @db.Uuid
+  professional   Professional? @relation(fields: [professionalId], references: [id])
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  feeRules     FeeRule[]
+  workItems    WorkItem[]
+}
+
+model Patient {
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String  @db.Uuid
+  firstName      String
+  lastName       String
+  email          String?
+  phone          String?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  workItems    WorkItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FeeRule {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  name           String
+
+  // Conditions
+  payerId              String? @db.Uuid
+  professionalCategory String?
+  serviceType          String?
+  conditionProfessionalRole String?
+
+  // Result (JSONB)
+  splits Json
+
+  // Versioning
+  validFrom DateTime  @default(now())
+  validTo   DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  payer        Payer?       @relation(fields: [payerId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, payerId, professionalCategory, serviceType, conditionProfessionalRole])
+}
+
+model WorkItem {
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String  @db.Uuid
+  payerId        String  @db.Uuid
+  professionalId String  @db.Uuid
+  patientId      String? @db.Uuid
+  serviceType    String
+
+  // Activity Type reference (new)
+  activityTypeId String? @db.Uuid
+  activityType   ActivityType? @relation(fields: [activityTypeId], references: [id])
+
+  occurredAt DateTime
+  lockedAt   DateTime?
+
+  // Financial amounts
+  grossAmount Decimal  @db.Decimal(10, 2) // The amount actually charged/recorded
+  amountBase  Decimal  @db.Decimal(10, 2) // Base value (used for professional fee calculations)
+  amountCard  Decimal? @db.Decimal(10, 2) // Card surcharge value (optional)
+
+  attendance    AttendanceStatus @default(PRESENT)
+  paymentStatus PaymentStatus    @default(UNPAID)
+
+  paymentMethod String?
+  paymentDate   DateTime?
+
+  createdByUserId String? @db.Uuid
+
+  presetId String?    @db.Uuid
+  preset   FeePreset? @relation(fields: [presetId], references: [id])
+
+  settlementId String?     @db.Uuid
+  settlement   Settlement? @relation(fields: [settlementId], references: [id])
+
+  organization Organization         @relation(fields: [organizationId], references: [id])
+  payer        Payer                @relation(fields: [payerId], references: [id])
+  professional Professional         @relation(fields: [professionalId], references: [id])
+  patient      Patient?             @relation(fields: [patientId], references: [id])
+  splits       WorkItemSplit[]
+  participants WorkItemParticipant[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WorkItemParticipant {
+  id             String @id @default(uuid()) @db.Uuid
+  workItemId     String @db.Uuid
+  professionalId String @db.Uuid
+
+  roleLabel  String          // "Profesional", "Admisor", "Coadmisor", "Intérprete"
+  feeAmount  Decimal         @db.Decimal(10, 2) // Fee amount for this professional
+  isRequired Boolean         @default(true)
+
+  workItem     WorkItem     @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  professional Professional @relation(fields: [professionalId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+model WorkItemSplit {
+  id         String @id @default(uuid()) @db.Uuid
+  workItemId String @db.Uuid
+
+  beneficiaryType BeneficiaryType
+  beneficiaryId   String?         @db.Uuid
+
+  amount    Decimal @db.Decimal(10, 2)
+  roleLabel String?
+
+  workItem     WorkItem      @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  professional Professional? @relation(fields: [beneficiaryId], references: [id])
+}
+
+model FeePreset {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  name           String
+  value          Decimal  @db.Decimal(10, 2)
+  cardValue      Decimal? @db.Decimal(10, 2)
+  linkedType     String?
+  serviceType    String
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  workItems    WorkItem[]
+}
+
+// ActivityType: Configures the types of activities/services an org can record.
+// roles is a JSON array: [{ roleLabel, isRequired, feeStrategy, fixedPercentage? }]
+// feeStrategy: 'CATEGORY' = use professional's category %, 'FIXED' = use fixedPercentage
+model ActivityType {
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String? @db.Uuid // Null for system defaults
+  code           String
+  name           String
+
+  baseValue Decimal?  @db.Decimal(10, 2) // Default base value for this activity
+  cardValue Decimal?  @db.Decimal(10, 2) // Default card surcharge value (optional)
+
+  // JSON array of role configs:
+  // [{ roleLabel: string, isRequired: boolean, feeStrategy: 'CATEGORY'|'FIXED', fixedPercentage?: number }]
+  roles Json?
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  workItems    WorkItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, code])
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Settlement {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+
+  entityId   String @db.Uuid
+  entityType String // "PROFESSIONAL", "PAYER"
+
+  period    String   // "2026-01"
+  startDate DateTime
+  endDate   DateTime
+
+  totalAmount Decimal @db.Decimal(10, 2)
+
+  status String // "DRAFT", "CONFIRMED", "PAID"
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  workItems    WorkItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String
+  name         String
+  cuit         String?  @unique // For future CUIT-based professional linking (V2)
+
+  userRoles     UserRole[]
+  memberships   OrganizationMember[]
+  professionals Professional[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+}
+
+model Role {
+  id        String     @id @default(uuid()) @db.Uuid
+  code      String     @unique // 'ORGANIZATION', 'PROFESSIONAL'
+  name      String     // 'Organización', 'Profesional'
+  userRoles UserRole[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserRole {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  roleId    String   @db.Uuid
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, roleId])
+}

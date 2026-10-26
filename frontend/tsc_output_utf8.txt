@@ -1,0 +1,5 @@
+﻿src/components/domain/dashboard/IncomeChart.tsx(43,29): error TS2322: Type '(val: number) => string' is not assignable to type 'Formatter<number, NameType>'.
+  Types of parameters 'val' and 'value' are incompatible.
+    Type 'number | undefined' is not assignable to type 'number'.
+      Type 'undefined' is not assignable to type 'number'.
+src/components/domain/fees/FeeRulesList.tsx(6,38): error TS2307: Cannot find module './FeeRuleCard' or its corresponding type declarations.
