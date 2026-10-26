@@ -142,7 +142,8 @@ renombra la organización). No es un test automatizado.
 - Autenticación/autorización incompleta (detalle en `RIESGOS.md`).
 - `CORS_ORIGIN`/`CORS_METHODS` se leen pero se ignoran (`origin: true` "Temporary Debug").
 - Dos `JwtModule` con secretos y expiraciones distintas (global `JWT_SECRET`/1d vs
-  `AuthModule` con fallback `'<REDACTED_JWT_SECRET>'`/8h); `JWT_SECRET` no está en `.env`.
+  `AuthModule` con un secreto de fallback hardcodeado, eliminado en el feature 002; expiración 8h);
+  ahora `JWT_SECRET` es obligatorio.
 - `VerifyTokenService`, `ApiKeyGuard`, `LogoutCommandHandler`, `UpdateProfileCommandHandler` son stubs.
 - `ConfigController` duplica CRUD de categorías y activity types de `OrgController` sin guards.
 - Lógica de negocio en controladores (`ProController`, `OrgController.lookupStaffByCuit` usan Prisma directo).

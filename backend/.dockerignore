@@ -3,3 +3,6 @@ dist
 .git
 .vscode
 npm-debug.log
+.env
+.env.*
+!.env.example

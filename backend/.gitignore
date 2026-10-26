@@ -69,3 +69,6 @@ seed*.sql
 # Carpetas de seeds/datos (por si se crean)
 seed-data/
 seeds/
+
+# Ejemplo de variables (sin valores reales): sí se versiona
+!.env.example

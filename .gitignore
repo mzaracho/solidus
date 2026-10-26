@@ -19,3 +19,12 @@ seeds/
 
 # Worktrees temporales de Claude (contienen copias de los seeds)
 .claude/worktrees/
+
+# --- Credenciales locales (nunca se versionan) ---
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# --- Planes/specs de Superpowers (locales, no se versionan) ---
+docs/superpowers/

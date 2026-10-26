@@ -8,7 +8,7 @@ import { SettlementsModule } from './features/settlements/settlements-module';
 import { AuthModule } from './features/auth/auth-module';
 import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
+import { jwtModuleAsyncOptions } from '../config/app/jwt-config';
 import {
   AxiosFilterProvider,
   GlobalFilterProvider,
@@ -34,13 +34,7 @@ import { ConfigModule as FeatureConfigModule } from '../config/config-module';
     ConfigModule.forRoot({ isGlobal: true }),
     JwtModule.registerAsync({
       global: true,
-      useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET'),
-        signOptions: {
-          expiresIn: '1d',
-        },
-      }),
-      inject: [ConfigService],
+      ...jwtModuleAsyncOptions('1d'),
     }),
   ],
   providers: [GlobalFilterProvider, AxiosFilterProvider, HttpFilterProvider],

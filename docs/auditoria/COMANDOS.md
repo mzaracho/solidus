@@ -19,7 +19,7 @@ git clone https://github.com/mzaracho/solidus-frontend.git frontend
 ## 2. Base de datos (desarrollo local)
 ```bash
 cd backend
-docker compose up -d          # postgres:16 en localhost:5433 (myuser/<POSTGRES_PASSWORD>, solidus_db)
+docker compose up -d          # postgres:16 en localhost:5433 (credenciales en `backend/.env`; ver `backend/.env.example`)
 npx prisma migrate deploy     # aplica migraciones (el README dice "db push": no usar)
 npx prisma generate           # regenera el cliente si cambió el schema
 ```
@@ -50,8 +50,9 @@ npm install
 # .env necesario (no versionado). Variables usadas:
 #   NODE_ENV, APP_NAME (obligatorias: el Logger lanza error si faltan)
 #   PORT=8080
-#   DATABASE_URL="postgresql://myuser:<POSTGRES_PASSWORD>@localhost:5433/solidus_db?schema=public"
-#   JWT_SECRET=<definirlo: hoy falta y se usa un fallback hardcodeado>
+#   DATABASE_URL="postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5433/solidus_db?schema=public"
+#   JWT_SECRET=<obligatorio, mínimo 32 caracteres; el backend no arranca sin él>
+#   POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB (los usa backend/docker-compose.yml)
 #   BODY_SIZE_LIMIT (opcional, default 50mb)
 #   CORS_ORIGIN / CORS_METHODS (hoy ignoradas por el código)
 

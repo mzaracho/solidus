@@ -1,21 +1,12 @@
 {
-  "agent": "po",
   "permissions": {
     "allow": [
-      "Bash(curl -s 'http://localhost:8080/api/dashboard/chart?organizationId=<ORG_ID>&startDate=2026-01-01&endDate=2026-04-30' -H 'Authorization: Bearer <REDACTED_JWT>' -H 'x-org-id: <ORG_ID>')",
-      "Bash(curl -s 'http://localhost:8080/api/v1/patients?organizationId=<ORG_ID>' -H 'Authorization: Bearer <REDACTED_JWT>' -H 'x-org-id: <ORG_ID>')",
-      "Bash(curl -s 'http://localhost:8080/api/dashboard/chart?organizationId=<ORG_ID>&startDate=2026-01-01&endDate=2026-04-30&groupBy=month' -H 'Authorization: Bearer <REDACTED_JWT>' -H 'x-org-id: <ORG_ID>')",
-      "Bash(curl -s 'http://localhost:8080/api/dashboard/payers?organizationId=<ORG_ID>&startDate=2026-01-01&endDate=2026-04-30' -H 'Authorization: Bearer <REDACTED_JWT>' -H 'x-org-id: <ORG_ID>')",
-      "Bash(curl -s 'http://localhost:8080/api/settlements?organizationId=<ORG_ID>' -H 'Authorization: Bearer <REDACTED_JWT>' -H 'x-org-id: <ORG_ID>')",
-      "Bash(curl -s 'http://localhost:8080/api/settlements/calculate?organizationId=<ORG_ID>&startDate=2026-01-01&endDate=2026-04-30' -H 'Authorization: Bearer <REDACTED_JWT>' -H 'x-org-id: <ORG_ID>')",
-      "Bash(curl -s http://localhost:8080/api/v1/patients/<PATIENT_ID>/debt -H 'Authorization: Bearer <REDACTED_JWT>' -H 'x-org-id: <ORG_ID>')",
-      "Bash(curl -s http://localhost:8080/api/v1/patients/<PATIENT_ID>/summary -H 'Authorization: Bearer <REDACTED_JWT>' -H 'x-org-id: <ORG_ID>')",
-      "Bash(curl -s 'http://localhost:8080/api/settlements/calculate?organizationId=<ORG_ID>&month=2026-04' -H 'Authorization: Bearer <REDACTED_JWT>' -H 'x-org-id: <ORG_ID>')",
-      "Bash(curl -s http://localhost:8080/api/config/dictionaries -H 'Authorization: Bearer <REDACTED_JWT>' -H 'x-org-id: <ORG_ID>')",
-      "Bash(curl -s 'http://localhost:8080/api/config/org-rules?organizationId=<ORG_ID>' -H 'Authorization: Bearer <REDACTED_JWT>' -H 'x-org-id: <ORG_ID>')",
-      "Bash(curl -s 'http://localhost:8080/api/config/activity-types?organizationId=<ORG_ID>' -H 'Authorization: Bearer <REDACTED_JWT>' -H 'x-org-id: <ORG_ID>')",
-      "Bash(curl -s http://localhost:8080/api/profile -H 'Authorization: Bearer <REDACTED_JWT>' -H 'x-org-id: <ORG_ID>')",
-      "Bash(curl -s http://localhost:8080/api/config/org-rules -H 'Authorization: Bearer <REDACTED_JWT>' -H 'x-org-id: <ORG_ID>' -H 'x-user-id: <USER_ID>')"
+      "Bash(node \"C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Repositorios-healthops-gem/e225f84e-2c11-432a-b275-0f52209b8022/scratchpad/cands.js\")",
+      "Bash(node \"C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Repositorios-healthops-gem/e225f84e-2c11-432a-b275-0f52209b8022/scratchpad/build.js\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Repositorios\\healthops-gem\\.claude"
     ]
-  }
+  },
+  "agent": "po"
 }
