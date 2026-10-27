@@ -67,7 +67,8 @@ trabajar en minutos.
 7. **Prerrequisitos:**
    - verifica que Docker esté corriendo y que Node y npm estén instalados, con un mensaje claro si falta
      algo;
-   - avisa si los puertos 5433, 8080 o 3000 están ocupados por otro proceso.
+   - avisa si los puertos 5433, 8080 o 3000 están ocupados por otro proceso (3000 = el puerto del
+     frontend en desarrollo; ver criterio 18).
 8. **Base de datos:**
    - levanta Postgres y espera a que acepte conexiones;
    - ejecuta `npx prisma migrate deploy` y `npx prisma generate`;
@@ -118,6 +119,20 @@ trabajar en minutos.
     (`.\dev.ps1`, `-Docker`, `-Stop`, `-Seed`, `-Smoke`), qué archivo local editar y cómo resolver los
     errores comunes. Si el diseño elimina `backend/docker-compose.yml`, se actualizan las referencias.
 
+### Ajuste de alcance (pedido por el usuario durante la implementación)
+18. **Puerto del frontend configurable en modo desarrollo (`FRONTEND_PORT`):**
+    - en esta máquina el puerto 3000 lo usa otro proyecto (pm2), que no se toca;
+    - `FRONTEND_PORT` en el `.env` de la raíz define el puerto de `npm run dev` del frontend; si falta
+      o está vacío, se usa 3000;
+    - debe ser un entero entre 1024 y 65535, distinto de 5433 y 8080; si no, error claro sin imprimir
+      el valor;
+    - el chequeo de puertos (criterio 7), la espera del frontend y las URLs (criterio 10) y la prueba
+      de humo (criterio 14) usan ese puerto en modo desarrollo;
+    - el modo Docker no cambia: el frontend sigue en 3001;
+    - `.env.example` la documenta comentada; en un `.env` existente se agrega solo si falta, sin
+      modificar valores;
+    - la documentación (criterio 17) la explica.
+
 ## Fuera de alcance
 - Scripts para macOS y Linux (bash). Se puede proponer después.
 - Cambiar la política CORS del backend (`origin: true`), que es un riesgo de seguridad conocido y va
@@ -139,12 +154,15 @@ trabajar en minutos.
   usuario: el script detecta `backend/.env` existente y conserva sus valores.
 - **`settings.json`:** al aprobar comandos durante la implementación se vuelve a ensuciar. Hay que
   revisarlo antes de commitear (regla 12).
+- **Puerto 3000 de otro proyecto:** el script nunca detiene procesos ajenos; se mitiga con el
+  criterio 18.
 
 ## Pasos del flujo
 - Requiere UX/UI: **no**. No hay interfaz gráfica; los mensajes de consola los define el diseño técnico.
 - Requiere seguridad: **sí** (generación y manejo de credenciales, `.env` y scripts que operan sobre la
   base).
-- Arquitecto: **sí**.
+- Arquitecto: **sí**. El criterio 18 es un ajuste acotado del diseño aprobado (parámetro de puerto);
+  no se relanzó al arquitecto, lo cubren revisor y seguridad.
 - Documentador: **sí**.
 - Cambios de schema: ninguno.
-- Commit y push: **no** se hacen sin pedido explícito del usuario.
+- Commit y push: autorizados por el usuario cuando revisor, seguridad y tester aprueben (sin force).

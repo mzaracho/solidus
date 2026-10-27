@@ -28,3 +28,6 @@ seeds/
 
 # --- Planes/specs de Superpowers (locales, no se versionan) ---
 docs/superpowers/
+
+# --- Estado local de dev.ps1 (PIDs) ---
+.dev/

@@ -1,7 +1,9 @@
 import { format } from 'date-fns'
 
+// En el servidor (SSR) el default es localhost (npm run dev fuera de Docker). En Docker lo define
+// docker-compose.yml con INTERNAL_API_URL=http://backend:8080/api.
 const API_BASE_URL = typeof window === 'undefined'
-    ? (process.env.INTERNAL_API_URL || 'http://backend:8080/api')
+    ? (process.env.INTERNAL_API_URL || 'http://localhost:8080/api')
     : (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080/api');
 
 // --- MOCK DATA CONSTANTS (Kept for fallback or types if needed, but not used) ---

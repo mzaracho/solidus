@@ -154,7 +154,8 @@ src/
 
 ### Comunicación con el backend
 - En navegador: `NEXT_PUBLIC_API_BASE_URL` (default `http://localhost:8080/api`).
-- En servidor: `INTERNAL_API_URL` (default `http://backend:8080/api`).
+- En servidor: `INTERNAL_API_URL` (default `http://localhost:8080/api`; en Docker lo define
+  `docker-compose.yml` como `http://backend:8080/api`).
 - `next.config.ts` además define un rewrite `/api/:path*` → backend.
 - `getHeaders()` decodifica el JWT en el cliente y envía `x-org-id = payload.organizationId`
   (la primera membresía del usuario; el `orgSlug` de la URL queda como fallback) y
@@ -164,13 +165,19 @@ src/
 
 - **Docker Compose (raíz):** `db` (postgres:16-alpine, puerto host 5433), `backend` (8080;
   espera DB con `nc`, corre `prisma migrate deploy` y `node dist/src/api/main.js`),
-  `frontend` (host 3001 → 3000; `NEXT_PUBLIC_API_BASE_URL` horneado en build con IP LAN
-  `192.168.68.123`).
-- **Local:** `backend/docker-compose.yml` levanta solo Postgres; backend con `npm run start:dev`
-  y frontend con `npm run dev` (ver `COMANDOS.md`). `.claude/launch.json` define ambos.
-- Variables y credenciales: `.env` (raíz) y `backend/.env`, locales e ignorados; plantillas en
-  `.env.example` y `backend/.env.example`. `JWT_SECRET` es obligatorio (32+ caracteres).
-- Seeds: SQL locales (no versionados) aplicados manualmente (`Get-Content seed.sql | docker exec -i healthops-gem-db-1 psql -U myuser -d solidus_db`).
+  `frontend` (host 3001 → 3000; `NEXT_PUBLIC_API_BASE_URL` horneado en build, tomado del `.env` raíz,
+  default `http://localhost:8080/api`). Los puertos se publican en `127.0.0.1` por defecto
+  (`BIND_ADDRESS` en `.env` lo cambia para API y frontend; Postgres siempre en `127.0.0.1`).
+- **Local:** `.\dev.ps1` levanta solo Postgres con el compose de la raíz (la misma base que el modo Docker;
+  ya no existe `backend/docker-compose.yml`) y abre backend (`npm run start:dev`) y frontend (`npm run dev`,
+  puerto `FRONTEND_PORT`, 3000 por defecto) en dos ventanas. `.claude/launch.json` define ambos.
+  Ver `COMANDOS.md` sección 0.
+- Variables y credenciales: única fuente editable = `.env` (raíz). `backend/.env` lo genera `dev.ps1` a
+  partir de aquel (no se edita). Ambos son locales e ignorados; plantillas en `.env.example`,
+  `backend/.env.example` (referencia) y `frontend/.env.example` (opcional). `JWT_SECRET` es obligatorio
+  (32+ caracteres).
+- Seeds: SQL locales (no versionados), `.\dev.ps1 -Seed` o manualmente con `docker compose exec -T db psql`
+  (ver `COMANDOS.md`).
 
 ## 6. Dependencias entre piezas
 

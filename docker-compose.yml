@@ -1,15 +1,14 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:16-alpine
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: "${POSTGRES_USER:?Definir POSTGRES_USER en .env (ver .env.example)}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Definir POSTGRES_PASSWORD en .env (ver .env.example)}"
       POSTGRES_DB: "${POSTGRES_DB:?Definir POSTGRES_DB en .env (ver .env.example)}"
     ports:
-      - '5433:5432'
+      # Postgres solo en loopback, siempre (no depende de BIND_ADDRESS).
+      - '127.0.0.1:5433:5432'
     volumes:
       - solidus_postgres_data:/var/lib/postgresql/data
 
@@ -19,12 +18,11 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - '8080:8080'
+      - '${BIND_ADDRESS:-127.0.0.1}:8080:8080'
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:?Definir POSTGRES_USER en .env}:${POSTGRES_PASSWORD:?Definir POSTGRES_PASSWORD en .env}@db:5432/${POSTGRES_DB:?Definir POSTGRES_DB en .env}?schema=public"
       JWT_SECRET: "${JWT_SECRET:?Definir JWT_SECRET en .env (ver .env.example)}"
       PORT: 8080
-      CORS_ORIGIN: '["http://localhost:3000", "http://localhost:3001", "http://192.168.68.123:3001"]'
       APP_NAME: "Solidus API"
       NODE_ENV: "production"
     depends_on:
@@ -35,10 +33,10 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_BASE_URL: http://192.168.68.123:8080/api
+        NEXT_PUBLIC_API_BASE_URL: "${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8080/api}"
     restart: unless-stopped
     ports:
-      - '3001:3000'
+      - '${BIND_ADDRESS:-127.0.0.1}:3001:3000'
     environment:
       INTERNAL_API_URL: http://backend:8080/api
     depends_on:

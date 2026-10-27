@@ -16,22 +16,27 @@ salvo que el usuario lo pida.
   `frontend/` son carpetas comunes, no repos ni submódulos: todos los cambios se versionan en el repo raíz.
 - `backend/` — NestJS 10 + Prisma 5 + PostgreSQL 16.
 - `frontend/` — Next.js 16 (App Router) + React 19.
-- Raíz — docker-compose, specs en `docs/`. Los seeds SQL y los scripts Python de seeds son
+- Raíz — `docker-compose.yml` (único compose: ya no existe `backend/docker-compose.yml`), `dev.ps1` y
+  `scripts/` (arranque local), specs en `docs/`. Los seeds SQL y los scripts Python de seeds son
   locales: están en `.gitignore` y no se versionan. `docs/superpowers/` también es local e ignorada.
 
 ## Credenciales
-- Viven solo en archivos locales ignorados por git: `.env` (raíz, para docker compose),
-  `backend/.env` y `.claude/settings.local.json`.
-- Plantillas versionadas: `.env.example` (raíz) y `backend/.env.example`, solo con placeholders.
+- Viven solo en archivos locales ignorados por git: `.env` (raíz), `backend/.env` y
+  `.claude/settings.local.json`.
+- Única fuente: el `.env` de la raíz (lo leen docker compose y `dev.ps1`). `backend/.env` lo GENERA
+  `dev.ps1` a partir de ese archivo: no se edita a mano. Tras cambiar `.env`, correr `.\dev.ps1 -Init`.
+- Plantillas versionadas, solo con placeholders: `.env.example` (raíz), `backend/.env.example`
+  (referencia para quien no usa `dev.ps1`) y `frontend/.env.example` (opcional).
 - `JWT_SECRET` es obligatorio, de 32 caracteres o más: el backend no arranca sin él.
-  Los compose también fallan si falta una variable (`${VAR:?mensaje}`).
+  El compose también falla si falta una variable (`${VAR:?mensaje}`).
 
 ## Stack
 - Backend: TypeScript 5.9, NestJS 10, Prisma 5.22, PostgreSQL 16, JWT (`@nestjs/jwt`), bcrypt,
   class-validator, Swagger, Jest 29 (solo tests de `jwt-config`), ESLint 9 + Prettier.
 - Frontend: Next.js 16.1 (Turbopack), React 19.2, TypeScript strict, Tailwind 4, shadcn/ui (Radix),
   Zustand, Recharts, date-fns, sonner. Sin framework de tests.
-- Infra: Docker Compose (db 5433, backend 8080, frontend 3001→3000).
+- Infra: Docker Compose (db 5433, backend 8080, frontend Docker 3001→3000). En desarrollo el frontend
+  corre en el host en `FRONTEND_PORT` (3000 por defecto).
 
 ## Convenciones — backend
 - Capas: `api/controllers/v1/<feature>` (controladores finos) → `application/features/<feature>`
@@ -61,11 +66,27 @@ salvo que el usuario lo pida.
 - Alias `@/*` → `src/*`.
 
 ## Comandos
-Primera vez: copiar `.env.example` a `.env` (raíz) y `backend/.env.example` a `backend/.env`, y
-completar los valores (`JWT_SECRET` con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`).
+Arranque rápido (raíz, Windows PowerShell 5.1 o 7): `.\dev.ps1`. Primera vez crea el `.env` de la raíz
+desde `.env.example` con secretos aleatorios (no se muestran) y genera `backend/.env`; no se copia nada a
+mano. Detalle, códigos de salida y errores comunes: `docs/auditoria/COMANDOS.md` sección 0.
+- `.\dev.ps1` — modo desarrollo: Postgres en Docker + backend y frontend con hot reload en dos ventanas
+- `.\dev.ps1 -Docker` — stack completo en Docker (frontend en http://localhost:3001)
+- `.\dev.ps1 -Stop` — detiene procesos y contenedores (no borra volúmenes)
+- `.\dev.ps1 -Seed` (con o sin `-Docker`) — seeds locales; pide confirmación si la base tiene datos
+- `.\dev.ps1 -Smoke` — prueba de humo (backend, frontend, login si hay `SMOKE_USER`/`SMOKE_PASSWORD`)
+- `.\dev.ps1 -Init` — solo crea/sincroniza los `.env` y valida (correrlo tras editar `.env`)
+- Si la ExecutionPolicy bloquea el script: `powershell -ExecutionPolicy Bypass -File .\dev.ps1` o
+  `Unblock-File .\dev.ps1, .\scripts\*.ps1`.
+- Variables opcionales del `.env` raíz: `FRONTEND_PORT` (puerto del frontend en desarrollo, default 3000;
+  entero 1024-65535, distinto de 5433 y 8080) y `BIND_ADDRESS` (interfaz de API y frontend en modo Docker,
+  default 127.0.0.1; Postgres siempre en 127.0.0.1).
+- Tests de `dev.ps1`: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dev-lib.tests.ps1`.
+
+Manual, sin `dev.ps1`:
 
 Backend (`cd backend`):
-- `docker compose up -d` — Postgres local en 5433 (lee `backend/.env`)
+- `docker compose up -d db` (desde la raíz) — Postgres local en 5433; requiere `backend/.env` ya generado
+  (`.\dev.ps1 -Init`)
 - `npm install` · `npx prisma migrate deploy` · `npx prisma generate`
 - `npm run start:dev` — API en http://localhost:8080/api, Swagger en http://localhost:8080/
 - `npx tsc --noEmit` — type-check
@@ -75,13 +96,15 @@ Backend (`cd backend`):
 - `npm run build` — reescribe `dist/`
 
 Frontend (`cd frontend`):
-- `npm install` · `npm run dev` (http://localhost:3000)
+- `npm install` · `npm run dev` (http://localhost:3000; con `dev.ps1`, el puerto de `FRONTEND_PORT`)
 - `npx tsc --noEmit` · `npm run lint`
 - `npm run build` — si falla la descarga de Google Fonts por TLS:
   `NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS=1 npm run build`
+- El build Docker (`apk add`) también puede fallar por TLS en redes con inspección TLS: es del entorno,
+  no del proyecto (visto en el testing del 003).
 
-Stack completo (raíz, requiere el `.env` de la raíz): `docker compose up --build -d`.
-Seeds (archivos locales, no versionados): `Get-Content seed.sql | docker exec -i healthops-gem-db-1 psql -U myuser -d solidus_db`
+Stack completo manual (raíz, requiere el `.env` de la raíz): `docker compose up --build -d`.
+Seeds (archivos locales, no versionados): `.\dev.ps1 -Seed`; manual con `docker compose exec -T db psql`
 (ver `docs/auditoria/COMANDOS.md`; `truncate.sql` y algunos seeds borran TODAS las tablas).
 
 ## Reglas del proyecto

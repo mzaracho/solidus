@@ -1,5 +1,7 @@
 > **OBSOLETO:** este borrador quedó desactualizado (describe `backend` y `frontend` como repos
 > propios, lo cual es incorrecto). La guía vigente es `.claude/CLAUDE.md`. No usar este archivo.
+> Tampoco vale su `docker compose up -d` en `backend/`: `backend/docker-compose.yml` ya no existe desde el
+> feature 003 (la base se levanta con `docker compose up -d db` desde la raíz o con `.\dev.ps1`).
 
 # HealthOps (Solidus) — Guía del proyecto
 
