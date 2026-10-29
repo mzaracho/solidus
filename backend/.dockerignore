@@ -6,3 +6,10 @@ npm-debug.log
 .env
 .env.*
 !.env.example
+
+# Certificados y claves: nunca entran al contexto de build
+**/*.pem
+**/*.crt
+**/*.key
+**/*.pfx
+**/*.p12

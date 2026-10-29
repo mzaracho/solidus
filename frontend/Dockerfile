@@ -1,16 +1,27 @@
 # Build Stage
 FROM node:22-alpine AS builder
 WORKDIR /app
-RUN apk add --no-cache libc6-compat
+
+# CA raiz extra opcional (antivirus o proxy que inspeccionan HTTPS): secreto de BuildKit "extra_ca".
+# Sin el secreto el build es el de siempre. Ver docker-compose.extra-ca.yml y .\dev.ps1 -ExportCa.
+# El secreto y el script se montan solo durante cada RUN: no quedan en ninguna capa.
+RUN --mount=type=secret,id=extra_ca \
+    --mount=type=bind,source=docker/with-extra-ca.sh,target=/tmp/with-extra-ca.sh \
+    sh /tmp/with-extra-ca.sh apk add --no-cache libc6-compat
 
 # Build Args for Inling
 ARG NEXT_PUBLIC_API_BASE_URL
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 
 COPY package*.json ./
-RUN npm install
+RUN --mount=type=secret,id=extra_ca \
+    --mount=type=bind,source=docker/with-extra-ca.sh,target=/tmp/with-extra-ca.sh \
+    sh /tmp/with-extra-ca.sh npm install
 COPY . .
-RUN npm run build
+# next build descarga Google Fonts (next/font/google): necesita la red del build.
+RUN --mount=type=secret,id=extra_ca \
+    --mount=type=bind,source=docker/with-extra-ca.sh,target=/tmp/with-extra-ca.sh \
+    sh /tmp/with-extra-ca.sh npm run build
 
 # Run Stage
 FROM node:22-alpine AS runner

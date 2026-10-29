@@ -1,0 +1,19 @@
+#!/bin/sh
+# Hook pre-commit de Solidus: rechaza commits con secretos o archivos prohibidos (ver scripts/pre-commit.ps1).
+# Se activa con .\dev.ps1 -Init (git config --local core.hooksPath .githooks).
+# Falla cerrado: si no hay PowerShell, rechaza el commit. Solo para falsos positivos sin secretos: git commit --no-verify
+root=$(git rev-parse --show-toplevel) || exit 1
+script="$root/scripts/pre-commit.ps1"
+if [ ! -f "$script" ]; then
+  echo "pre-commit: falta $script; se rechaza el commit por precaucion." >&2
+  exit 1
+fi
+for ps in powershell.exe pwsh; do
+  if command -v "$ps" >/dev/null 2>&1; then
+    "$ps" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$script"
+    exit $?
+  fi
+done
+echo "pre-commit: no se encontro PowerShell (powershell.exe o pwsh); se rechaza el commit por precaucion." >&2
+echo "Instalalo, o (solo si NO hay secretos) usa: git commit --no-verify" >&2
+exit 1

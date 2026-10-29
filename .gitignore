@@ -31,3 +31,10 @@ docs/superpowers/
 
 # --- Estado local de dev.ps1 (PIDs) ---
 .dev/
+
+# --- Certificados y claves locales (la CA extra de .dev/certs no se versiona) ---
+*.pem
+*.crt
+*.key
+*.pfx
+*.p12

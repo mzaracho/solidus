@@ -25,6 +25,7 @@ salvo que el usuario lo pida.
   `.claude/settings.local.json`.
 - Única fuente: el `.env` de la raíz (lo leen docker compose y `dev.ps1`). `backend/.env` lo GENERA
   `dev.ps1` a partir de ese archivo: no se edita a mano. Tras cambiar `.env`, correr `.\dev.ps1 -Init`.
+  `dev.ps1` deja esos archivos (y `.dev/`) con acceso solo del usuario actual, SYSTEM y Administradores.
 - Plantillas versionadas, solo con placeholders: `.env.example` (raíz), `backend/.env.example`
   (referencia para quien no usa `dev.ps1`) y `frontend/.env.example` (opcional).
 - `JWT_SECRET` es obligatorio, de 32 caracteres o más: el backend no arranca sin él.
@@ -35,7 +36,7 @@ salvo que el usuario lo pida.
   class-validator, Swagger, Jest 29 (solo tests de `jwt-config`), ESLint 9 + Prettier.
 - Frontend: Next.js 16.1 (Turbopack), React 19.2, TypeScript strict, Tailwind 4, shadcn/ui (Radix),
   Zustand, Recharts, date-fns, sonner. Sin framework de tests.
-- Infra: Docker Compose (db 5433, backend 8080, frontend Docker 3001→3000). En desarrollo el frontend
+- Infra: Docker Compose (db `postgres:16.11-alpine` en 5433, backend 8080, frontend Docker 3001→3000). En desarrollo el frontend
   corre en el host en `FRONTEND_PORT` (3000 por defecto).
 
 ## Convenciones — backend
@@ -74,12 +75,25 @@ mano. Detalle, códigos de salida y errores comunes: `docs/auditoria/COMANDOS.md
 - `.\dev.ps1 -Stop` — detiene procesos y contenedores (no borra volúmenes)
 - `.\dev.ps1 -Seed` (con o sin `-Docker`) — seeds locales; pide confirmación si la base tiene datos
 - `.\dev.ps1 -Smoke` — prueba de humo (backend, frontend, login si hay `SMOKE_USER`/`SMOKE_PASSWORD`)
-- `.\dev.ps1 -Init` — solo crea/sincroniza los `.env` y valida (correrlo tras editar `.env`)
+- `.\dev.ps1 -Init` — crea/sincroniza los `.env`, restringe sus permisos, activa el hook `pre-commit` y valida
+  (correrlo tras editar `.env`)
+- `.\dev.ps1 -CreateSmokeUser` — crea/actualiza el usuario de humo en la base local (credenciales al azar en
+  `.env`, sin mostrarlas; sin organización ni membresía; idempotente). Necesario para el login de `-Smoke`
+- `.\dev.ps1 -ExportCa [-Yes]` — exporta a `.dev/certs/extra-ca.pem` (ignorado) la CA de un antivirus/proxy que
+  inspecciona TLS; `-Docker` la usa sola en los builds y no queda en las imágenes. Sin el PEM el build es el normal
+- `.\dev.ps1 -RotateDbPassword [-Yes]` / `-RotateJwtSecret [-Yes]` — rotan la contraseña de Postgres / `JWT_SECRET`
+  (piden `ROTAR` o `-Yes`; código 10 si queda a medias, ver COMANDOS.md)
+- Códigos de salida: 0 a 10 (9 = falló `docker compose up --build`, 10 = rotación incompleta); tabla en COMANDOS.md.
+- Hook `pre-commit` (`.githooks/`, lo activa `-Init`): rechaza `.env`, `.bak`, `.sql` fuera de migraciones, claves y
+  certificados, valores de secretos del `.env` local y patrones de secretos; no imprime valores. `--no-verify` existe
+  pero no se usa con secretos. Segunda barrera pendiente: push protection de GitHub (acción del usuario).
 - Si la ExecutionPolicy bloquea el script: `powershell -ExecutionPolicy Bypass -File .\dev.ps1` o
   `Unblock-File .\dev.ps1, .\scripts\*.ps1`.
 - Variables opcionales del `.env` raíz: `FRONTEND_PORT` (puerto del frontend en desarrollo, default 3000;
-  entero 1024-65535, distinto de 5433 y 8080) y `BIND_ADDRESS` (interfaz de API y frontend en modo Docker,
-  default 127.0.0.1; Postgres siempre en 127.0.0.1).
+  entero 1024-65535, distinto de 5433 y 8080) y `BIND_ADDRESS` (interfaz de API y frontend, default 127.0.0.1;
+  Postgres siempre en 127.0.0.1). El modo desarrollo escucha solo en loopback: backend vía `LISTEN_HOST`
+  (que `dev.ps1` genera en `backend/.env`; default 127.0.0.1, el compose lo fija en 0.0.0.0 dentro del contenedor)
+  y `next dev -H`. En modo Docker `BIND_ADDRESS` debe ser IPv4 (IPv6: código 1).
 - Tests de `dev.ps1`: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dev-lib.tests.ps1`.
 
 Manual, sin `dev.ps1`:
@@ -100,8 +114,9 @@ Frontend (`cd frontend`):
 - `npx tsc --noEmit` · `npm run lint`
 - `npm run build` — si falla la descarga de Google Fonts por TLS:
   `NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS=1 npm run build`
-- El build Docker (`apk add`) también puede fallar por TLS en redes con inspección TLS: es del entorno,
-  no del proyecto (visto en el testing del 003).
+- El build Docker (`apk`, `npm`, Prisma, Google Fonts) falla por TLS detrás de un antivirus/proxy que inspecciona
+  HTTPS: correr `.\dev.ps1 -ExportCa` y luego `.\dev.ps1 -Docker` (sale con código 9 y esa pista). Nunca se desactiva
+  la verificación TLS.
 
 Stack completo manual (raíz, requiere el `.env` de la raíz): `docker compose up --build -d`.
 Seeds (archivos locales, no versionados): `.\dev.ps1 -Seed`; manual con `docker compose exec -T db psql`

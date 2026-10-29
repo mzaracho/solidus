@@ -1,0 +1,3 @@
+# Los scripts de shell y los hooks siempre con LF (core.autocrlf=true los dejaria en CRLF y sh fallaria).
+*.sh text eol=lf
+.githooks/* text eol=lf

@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16.11-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: "${POSTGRES_USER:?Definir POSTGRES_USER en .env (ver .env.example)}"
@@ -23,6 +23,8 @@ services:
       DATABASE_URL: "postgresql://${POSTGRES_USER:?Definir POSTGRES_USER en .env}:${POSTGRES_PASSWORD:?Definir POSTGRES_PASSWORD en .env}@db:5432/${POSTGRES_DB:?Definir POSTGRES_DB en .env}?schema=public"
       JWT_SECRET: "${JWT_SECRET:?Definir JWT_SECRET en .env (ver .env.example)}"
       PORT: 8080
+      # El contenedor escucha en su red; se publica segun BIND_ADDRESS (puertos de arriba).
+      LISTEN_HOST: "0.0.0.0"
       APP_NAME: "Solidus API"
       NODE_ENV: "production"
     depends_on:

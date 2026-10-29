@@ -163,7 +163,7 @@ src/
 
 ## 5. Despliegue / ejecución
 
-- **Docker Compose (raíz):** `db` (postgres:16-alpine, puerto host 5433), `backend` (8080;
+- **Docker Compose (raíz):** `db` (postgres:16.11-alpine fijada, puerto host 5433), `backend` (8080;
   espera DB con `nc`, corre `prisma migrate deploy` y `node dist/src/api/main.js`),
   `frontend` (host 3001 → 3000; `NEXT_PUBLIC_API_BASE_URL` horneado en build, tomado del `.env` raíz,
   default `http://localhost:8080/api`). Los puertos se publican en `127.0.0.1` por defecto

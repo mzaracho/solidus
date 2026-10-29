@@ -10,6 +10,7 @@ import { configurePipes } from './config/app/pipes-config';
 import { configureCors } from './config/app/cors-config';
 import { configureSwagger } from './config/app/swagger-config';
 import { configureNestInternalLogger } from './config/app/logger-config';
+import { getListenHost } from './config/app/listen-config';
 
 export async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -24,5 +25,5 @@ export async function bootstrap() {
   configureSwagger(app);
   configureCors(app, config);
 
-  await app.listen(config.get('PORT') ?? 8080, '0.0.0.0');
+  await app.listen(config.get('PORT') ?? 8080, getListenHost(config));
 }

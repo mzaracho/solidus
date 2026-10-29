@@ -1,0 +1,13 @@
+# Opcional: CA raiz extra para los builds (inspeccion HTTPS de un antivirus o proxy corporativo).
+# .\dev.ps1 -Docker lo agrega solo si existe .dev/certs/extra-ca.pem (ver .\dev.ps1 -ExportCa).
+# A mano: docker compose -f docker-compose.yml -f docker-compose.extra-ca.yml up --build -d
+services:
+  backend:
+    build:
+      secrets: [extra_ca]
+  frontend:
+    build:
+      secrets: [extra_ca]
+secrets:
+  extra_ca:
+    file: ./.dev/certs/extra-ca.pem
