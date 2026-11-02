@@ -414,14 +414,20 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
             ? (participants?.[0]?.professionalId ?? formData.professional)
             : formData.professional
 
+        // Paciente de otra organización en modo profesional: la atención se crea en esa organización, así
+        // que el tipo de actividad y el preset de la organización de la URL no aplican (el backend los rechazaría).
+        const isCrossOrgPatient = viewMode === 'PROFESSIONAL'
+            && !!formData.patientOrganizationId
+            && formData.patientOrganizationId !== orgSlug
+
         const baseItem = {
             ...formData,
             date: baseDate,
             amount: formData.gross,
             professionalId: primaryProfessionalId,
             participants,
-            activityTypeId: formData.activityTypeId,
-            presetId: formData.presetId,
+            activityTypeId: isCrossOrgPatient ? undefined : formData.activityTypeId,
+            presetId: isCrossOrgPatient ? undefined : formData.presetId,
             payerId: formData.payer === PAYER_PARTICULAR ? null : formData.payer,
             organizationId: formData.patientOrganizationId, // <--- Add this
             paymentStatus: formData.status === FORM_STATUS.PAID ? PAYMENT_STATUS.PAID : formData.status === FORM_STATUS.PARTIAL ? PAYMENT_STATUS.PARTIAL : PAYMENT_STATUS.UNPAID,

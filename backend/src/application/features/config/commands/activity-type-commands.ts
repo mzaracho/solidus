@@ -7,6 +7,8 @@ import { ActivityType } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
+import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
+import { foundOr404, inScope, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 import { FEE_STRATEGY, MAX_ROLES_PER_ACTIVITY_TYPE } from '@src/domain/constants/app.constants';
 import type { FeeStrategy } from '@src/domain/constants/app.constants';
 
@@ -68,7 +70,8 @@ export class CreateActivityTypeCommand implements IRequest<ActivityType> {
 export class CreateActivityTypeCommandHandler implements IRequestHandler<CreateActivityTypeCommand, ActivityType> {
   constructor(private readonly prisma: PrismaService) {}
 
-  async execute(command: CreateActivityTypeCommand): Promise<ActivityType> {
+  async execute(command: CreateActivityTypeCommand, ctx: RequestContext): Promise<ActivityType> {
+    const scope = requireOrgScope(ctx);
     // Validate roles count (max MAX_ROLES_PER_ACTIVITY_TYPE)
     if (command.roles && command.roles.length > MAX_ROLES_PER_ACTIVITY_TYPE) {
       throw new BadRequestException(`An activity type can have at most ${MAX_ROLES_PER_ACTIVITY_TYPE} roles.`);
@@ -85,7 +88,7 @@ export class CreateActivityTypeCommandHandler implements IRequestHandler<CreateA
 
     return this.prisma.activityType.create({
       data: {
-        organizationId: command.orgId,
+        organizationId: scope.primaryOrgId,
         code: command.code.toLowerCase().replace(/\s+/g, '_'),
         name: command.name,
         baseValue: command.baseValue != null ? command.baseValue : undefined,
@@ -129,7 +132,16 @@ export class UpdateActivityTypeCommand implements IRequest<ActivityType> {
 export class UpdateActivityTypeCommandHandler implements IRequestHandler<UpdateActivityTypeCommand, ActivityType> {
   constructor(private readonly prisma: PrismaService) {}
 
-  async execute(command: UpdateActivityTypeCommand): Promise<ActivityType> {
+  async execute(command: UpdateActivityTypeCommand, ctx: RequestContext): Promise<ActivityType> {
+    const scope = requireOrgScope(ctx);
+    const id = requireId(command.id);
+    // Los tipos por defecto del sistema (organizationId null) no entran en el scope: 404
+    await foundOr404(
+      this.prisma.activityType.findFirst({
+        where: { id, ...inScope(scope) },
+        select: { id: true },
+      }),
+    );
     if (command.roles && command.roles.length > MAX_ROLES_PER_ACTIVITY_TYPE) {
       throw new BadRequestException(`An activity type can have at most ${MAX_ROLES_PER_ACTIVITY_TYPE} roles.`);
     }
@@ -141,7 +153,7 @@ export class UpdateActivityTypeCommandHandler implements IRequestHandler<UpdateA
     if (command.roles !== undefined) data.roles = command.roles as any;
 
     return this.prisma.activityType.update({
-      where: { id: command.id },
+      where: { id },
       data,
     });
   }
@@ -158,10 +170,20 @@ export class DeleteActivityTypeCommand implements IRequest<ActivityType> {
 export class DeleteActivityTypeCommandHandler implements IRequestHandler<DeleteActivityTypeCommand, ActivityType> {
   constructor(private readonly prisma: PrismaService) {}
 
-  async execute(command: DeleteActivityTypeCommand): Promise<ActivityType> {
+  async execute(command: DeleteActivityTypeCommand, ctx: RequestContext): Promise<ActivityType> {
+    const scope = requireOrgScope(ctx);
+    const id = requireId(command.id);
+    // El control de pertenencia va antes del conteo: no se revelan usos de otra organización
+    await foundOr404(
+      this.prisma.activityType.findFirst({
+        where: { id, ...inScope(scope) },
+        select: { id: true },
+      }),
+    );
+
     // Check for existing WorkItems using this ActivityType
     const usageCount = await this.prisma.workItem.count({
-      where: { activityTypeId: command.id },
+      where: { activityTypeId: id },
     });
 
     if (usageCount > 0) {
@@ -170,6 +192,6 @@ export class DeleteActivityTypeCommandHandler implements IRequestHandler<DeleteA
       );
     }
 
-    return this.prisma.activityType.delete({ where: { id: command.id } });
+    return this.prisma.activityType.delete({ where: { id } });
   }
 }

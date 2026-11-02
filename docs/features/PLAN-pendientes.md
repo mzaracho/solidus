@@ -7,17 +7,17 @@ Lo mantiene el PO. Los números con `#` son de `docs/auditoria/BACKLOG.md`.
 
 | Orden | Feature | Ítems | Estado |
 |---|---|---|---|
-| 1 | 006-usuarios-dados-de-baja | #34 | En curso |
-| 2 | 007-aislamiento-organizaciones | #3, #4, #5 | Pendiente |
-| 3 | 008-fix-tabla-work-items | Bug O-3 del 005 | Pendiente |
-| 4 | 009-modo-desde-rol | #2 (resto: `x-mode`) | Pendiente |
+| 1 | 006-usuarios-dados-de-baja | #34 | **Hecho** (`d698615`) |
+| 2 | 007-aislamiento-organizaciones | #3, #4, #5 | **Hecho** (commit en curso) |
+| 3 | 008-fix-tabla-work-items | Bug O-3 del 005, #44 | Pendiente |
+| 4 | 009-modo-desde-rol | #2 (resto: `x-mode`), #41 | Pendiente |
 | 5 | 010-logs-y-limites | #37, #38, #14 (resto: `NODE_TLS_REJECT_UNAUTHORIZED`) | Pendiente |
 | 6 | 011-controladores-huerfanos | #39 | Pendiente |
 | 7 | 012-rate-limiting-login | #11 (resto) | Pendiente |
-| 8 | 013-errores-sin-details | #13 | Pendiente |
-| 9 | 014-validation-whitelist | #12 | Pendiente |
+| 8 | 013-errores-sin-details | #13, #42, y B-1 y B-2 del 006 | Pendiente |
+| 9 | 014-validation-whitelist | #12, #43 | Pendiente |
 | 10 | 015-transacciones | #16 | Pendiente |
-| 11 | 016-dinero-decimal | #17 | Pendiente |
+| 11 | 016-dinero-y-motor-honorarios | #17, #40 | Pendiente |
 | 12 | 017-cookie-httponly | #10 | Pendiente |
 | 13 | 018-test-suite-fuera-de-prod | #15 | Pendiente |
 | 14 | 019-docker-hardening | #19 | Pendiente |

@@ -7,7 +7,6 @@ import {
   Query,
   Param,
   Inject,
-  Headers,
   HttpCode,
 } from '@nestjs/common';
 import { CreatePatientDto } from '@src/application/features/patients/dtos/create-patient.dto';
@@ -27,6 +26,7 @@ import { GetPatientSummaryQuery } from '@src/application/features/patients/queri
 import { CreatePatientCommand } from '@src/application/features/patients/commands/create-patient-command';
 import { UpdatePatientCommand } from '@src/application/features/patients/commands/update-patient-command';
 import { MergePatientCommand } from '@src/application/features/patients/commands/merge-patient-command';
+import { CurrentOrgId } from '@src/infrastructure.bootstrap/config/core/authentication/current-org-decorator';
 @ApiTags('Patients')
 @Controller('v1/patients')
 export class PatientsController extends BaseController {
@@ -41,7 +41,7 @@ export class PatientsController extends BaseController {
     type: PatientResponseDto,
   })
   async findAll(
-    @Headers('x-org-id') orgId: string,
+    @CurrentOrgId() orgId: string,
     @CurrentUserId() userId: string,
     @Query('mode') modeQuery: string,
     @Query() query: FindAllPatientsQuery,
@@ -60,7 +60,7 @@ export class PatientsController extends BaseController {
     type: CreatePatientDto,
   })
   async create(
-    @Headers('x-org-id') orgId: string,
+    @CurrentOrgId() orgId: string,
     @Body() body: CreatePatientCommand,
   ): Promise<CreatePatientDto> {
     body.organizationId = orgId;
@@ -91,7 +91,7 @@ export class PatientsController extends BaseController {
   ): Promise<void> {
     const command = new MergePatientCommand();
     command.sourceId = sourceId;
-    command.targetId = body.targetId;
+    command.targetId = body?.targetId;
     return await this.dispatcher.dispatch(command);
   }
 

@@ -20,7 +20,7 @@ import { formatCurrency } from '@/lib/utils'
 import { PAYMENT_STATUS } from '@/lib/constants'
 import { RetroactiveModal } from './RetroactiveModal'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { updateWorkItem, deleteWorkItem } from '@/services/data'
+import { updateWorkItem, deleteWorkItem, isHandledApiError } from '@/services/data'
 import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 
@@ -64,7 +64,8 @@ const ActionsCell = ({ row }: { row: any }) => {
             await updateWorkItem(orgSlug, payment.id, { paymentStatus })
             toast.success('Estado actualizado')
             router.refresh()
-        } catch {
+        } catch (e) {
+            if (isHandledApiError(e)) return
             toast.error('Error al actualizar estado')
         }
     }
@@ -76,7 +77,8 @@ const ActionsCell = ({ row }: { row: any }) => {
             await deleteWorkItem(orgSlug, payment.id)
             toast.success('Registro eliminado')
             router.refresh()
-        } catch {
+        } catch (e) {
+            if (isHandledApiError(e)) return
             toast.error('Error al eliminar')
         }
     }
@@ -142,7 +144,8 @@ const ActionsCell = ({ row }: { row: any }) => {
                         toast.success('Actualizado correctamente')
                         setShowRetroactive(false)
                         router.refresh()
-                    } catch {
+                    } catch (e) {
+                        if (isHandledApiError(e)) return
                         toast.error('Error al guardar cambios')
                     }
                 }}

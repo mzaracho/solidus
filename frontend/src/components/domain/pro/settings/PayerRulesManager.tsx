@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Slider } from "@/components/ui/slider"
 import { AlertCircle, Plus, Check, Lock } from 'lucide-react'
 import { toast } from 'sonner'
-import { getPayers, getFeeRules, createPayer, createFeeRule, getProfessionalMemberships } from '@/services/data'
+import { getPayers, getFeeRules, createPayer, createFeeRule, getProfessionalMemberships, isHandledApiError } from '@/services/data'
 import {
     Dialog,
     DialogContent,
@@ -109,6 +109,7 @@ export function PayerRulesManager() {
             ))
         } catch (e) {
             console.error(e)
+            if (isHandledApiError(e)) return
             toast.error("Error al guardar regla")
         }
     }
@@ -126,9 +127,18 @@ export function PayerRulesManager() {
     const handleCreatePayer = async () => {
         if (!newPayerName) return
         setLoading(true)
+        let newPayer: { id: string }
         try {
-            const newPayer = await createPayer(orgSlug, newPayerName, newPayerRetention, newPayerCuit || undefined)
-            
+            newPayer = await createPayer(orgSlug, newPayerName, newPayerRetention, newPayerCuit || undefined)
+        } catch (e) {
+            // No se creó nada: se vuelve a mostrar el listado y el diálogo sigue abierto
+            setLoading(false)
+            if (isHandledApiError(e)) return
+            toast.error("Error al crear pagador")
+            return
+        }
+
+        try {
             // Crear regla de honorarios de inmediato
             const proPercent = 100 - newPayerRetention
             const payload = {
@@ -150,7 +160,14 @@ export function PayerRulesManager() {
             setIsDialogOpen(false)
             fetchData()
         } catch (e) {
-            toast.error("Error al crear pagador")
+            // El pagador ya existe: se cierra el diálogo y se refresca (fetchData apaga el loading)
+            setNewPayerName('')
+            setNewPayerRetention(0)
+            setNewPayerCuit('')
+            setIsDialogOpen(false)
+            fetchData()
+            if (isHandledApiError(e)) return
+            toast.error("El pagador se creó, pero no se pudo guardar su regla de honorarios")
         }
     }
 

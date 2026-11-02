@@ -16,6 +16,7 @@ import { toast } from 'sonner'
 
 import { useParams, useRouter } from 'next/navigation'
 import { useMemo } from 'react'
+import { useStore } from '@/store/useStore'
 import { PAYMENT_STATUS, ATTENDANCE, DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, PAYER_PARTICULAR } from '@/lib/constants'
 
 type Props = {
@@ -24,6 +25,7 @@ type Props = {
 }
 
 export function AtencionesTable({ canLoadActivities = false, currentUserId }: Props) {
+    const { orgRole } = useStore()
     const params = useParams()
     const router = useRouter()
     const orgSlug = params.orgSlug as string
@@ -163,8 +165,15 @@ export function AtencionesTable({ canLoadActivities = false, currentUserId }: Pr
     const doDelete = async (item: Attention) => {
         const raw = rawData.find(r => r.id === item.id)
         if (raw) {
-            await deleteWorkItem(orgSlug, raw.id)
-            router.refresh()
+            try {
+                await deleteWorkItem(orgSlug, raw.id)
+                toast.success('Registro eliminado')
+                router.refresh()
+            } catch (e) {
+                // Un 403 ya se avisó con el toast de acceso: no se duplica
+                if (isHandledApiError(e)) return
+                toast.error('No se pudo eliminar el registro')
+            }
         }
     }
 
@@ -178,7 +187,12 @@ export function AtencionesTable({ canLoadActivities = false, currentUserId }: Pr
 
     const handleUpdateAttendance = async (status: string) => {
         if (!attendanceItem) return
-        await updateWorkItem(orgSlug, attendanceItem.id, { attendance: status })
+        try {
+            await updateWorkItem(orgSlug, attendanceItem.id, { attendance: status })
+        } catch (e) {
+            if (!isHandledApiError(e)) toast.error('No se pudo actualizar la asistencia')
+            return
+        }
         setIsAttendanceModalOpen(false)
         setAttendanceItem(null)
         router.refresh()
@@ -197,7 +211,8 @@ export function AtencionesTable({ canLoadActivities = false, currentUserId }: Pr
             const raw = rawData.find(r => r.id === item.id)
             setDetailItem(raw || item)
         },
-    ), [orgSlug, rawData, currentUserId])
+        orgRole === 'MEMBER',
+    ), [orgSlug, rawData, currentUserId, orgRole])
 
     const uniquePayers = useMemo(() => {
         const payers = new Map();
@@ -331,12 +346,17 @@ export function AtencionesTable({ canLoadActivities = false, currentUserId }: Pr
                 isOpen={isPaymentModalOpen}
                 onClose={() => { setIsPaymentModalOpen(false); setItemToPay(null) }}
                 onConfirm={async (items, date, method) => {
-                    for (const item of items) {
-                        await updateWorkItem(orgSlug, item.id.toString(), {
-                            paymentStatus: PAYMENT_STATUS.PAID,
-                            paymentDate: date,
-                            paymentMethod: method
-                        })
+                    try {
+                        for (const item of items) {
+                            await updateWorkItem(orgSlug, item.id.toString(), {
+                                paymentStatus: PAYMENT_STATUS.PAID,
+                                paymentDate: date,
+                                paymentMethod: method
+                            })
+                        }
+                    } catch (e) {
+                        if (!isHandledApiError(e)) toast.error('Error al registrar el cobro')
+                        return
                     }
                     setIsPaymentModalOpen(false)
                     setRowSelection({})

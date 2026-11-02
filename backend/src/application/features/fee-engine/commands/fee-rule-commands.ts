@@ -4,8 +4,12 @@ import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/r
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsObject, IsString, IsOptional } from 'class-validator';
+import { IsDefined, IsObject, IsString, IsOptional, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { FeeRule, Prisma } from '@prisma/client';
+import { requireOrgScope, RequestContext, roleIn } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
+import { validateFeeRuleSplits } from '../fee-rule-splits';
+import { forbiddenAction, foundOr404, inOrg, optionalId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 
 // Get
 export class FindFeeRulesQuery implements IRequest<FeeRule[]> {
@@ -70,10 +74,72 @@ export class FindFeeRulesQueryHandler implements IRequestHandler<
 }
 
 // Create
+
+class FeeRulePayerConnectDto {
+  @ApiProperty()
+  @IsString()
+  id: string;
+}
+
+class FeeRulePayerRefDto {
+  @ApiPropertyOptional({ type: FeeRulePayerConnectDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => FeeRulePayerConnectDto)
+  connect?: FeeRulePayerConnectDto;
+}
+
+/** Body de POST fee-rules. Solo estos campos llegan a Prisma: cualquier otra clave se ignora. */
+export class CreateFeeRuleDto {
+  @ApiProperty()
+  @IsString()
+  name: string;
+
+  @ApiPropertyOptional({ description: 'Alternativa a payer.connect.id' })
+  @IsOptional()
+  @IsString()
+  payerId?: string;
+
+  @ApiPropertyOptional({ type: FeeRulePayerRefDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => FeeRulePayerRefDto)
+  payer?: FeeRulePayerRefDto;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  professionalCategory?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  serviceType?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  conditionProfessionalRole?: string;
+
+  @ApiProperty({ description: 'Definición de splits (JSON)' })
+  @IsDefined()
+  splits: Prisma.InputJsonValue;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  validFrom?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  validTo?: string;
+}
+
 export class CreateFeeRuleCommand implements IRequest<FeeRule> {
   @ApiProperty()
   @IsObject()
-  data: Prisma.FeeRuleCreateInput;
+  data: CreateFeeRuleDto;
 }
 
 @RequestHandler(CreateFeeRuleCommand)
@@ -84,18 +150,38 @@ export class CreateFeeRuleCommandHandler implements IRequestHandler<
 > {
   constructor(private readonly prisma: PrismaService) { }
 
-  async execute(command: CreateFeeRuleCommand): Promise<FeeRule> {
-    const { organization, payer, professionalCategory, splits } = command.data as any;
+  async execute(command: CreateFeeRuleCommand, ctx: RequestContext): Promise<FeeRule> {
+    const scope = requireOrgScope(ctx);
+    const orgId = scope.primaryOrgId;
+    const dto = command.data;
 
-    // 1. Try to find existing rule for this Payer in this Org
-    // We assume 1 Rule per Payer for the MVP Simple Settings
+    // 1. Pagador referenciado: tiene que ser de la organización del request
+    const payerId = optionalId(dto.payer?.connect?.id ?? dto.payerId);
+    let payerOwnerUserId: string | null = null;
+    if (payerId) {
+      const payer = await foundOr404(
+        this.prisma.payer.findFirst({
+          where: { id: payerId, ...inOrg(orgId) },
+          select: { id: true, professional: { select: { userId: true } } },
+        }),
+      );
+      payerOwnerUserId = payer.professional?.userId ?? null;
+    }
+
+    // 2. Permiso: ADMIN de la organización, o el dueño del pagador (pagador propio)
+    const isAdmin = roleIn(scope, orgId) === 'ADMIN';
+    const isPayerOwner = !!payerId && payerOwnerUserId !== null && payerOwnerUserId === scope.userId;
+    if (!isAdmin && !isPayerOwner) throw forbiddenAction();
+
+    // 2b. Esquema de splits (crear y editar la regla existente)
+    validateFeeRuleSplits(dto.splits);
+
+    // 3. Regla: 1 por pagador en esta organización (MVP de ajustes simples)
     const existingRule = await this.prisma.feeRule.findFirst({
       where: {
-        organizationId: organization?.connect?.id,
-        payerId: payer?.connect?.id,
-        // Assuming we are only dealing with Professional Category 'null' (General) or specific passed one
-        // specific mismatch might occur if we get stricter, but for now:
-        professionalCategory: professionalCategory
+        organizationId: orgId,
+        payerId: payerId,
+        professionalCategory: dto.professionalCategory ?? null,
       }
     });
 
@@ -104,14 +190,23 @@ export class CreateFeeRuleCommandHandler implements IRequestHandler<
       return this.prisma.feeRule.update({
         where: { id: existingRule.id },
         data: {
-          splits: splits
+          splits: dto.splits,
         }
       });
     }
 
-    // Create
-    return this.prisma.feeRule.create({
-      data: command.data,
-    });
+    // Create: el data de Prisma se arma con lista blanca
+    const data: Prisma.FeeRuleCreateInput = {
+      name: dto.name,
+      splits: dto.splits,
+      organization: { connect: { id: orgId } },
+      ...(payerId && { payer: { connect: { id: payerId } } }),
+      ...(dto.professionalCategory !== undefined && { professionalCategory: dto.professionalCategory }),
+      ...(dto.serviceType !== undefined && { serviceType: dto.serviceType }),
+      ...(dto.conditionProfessionalRole !== undefined && { conditionProfessionalRole: dto.conditionProfessionalRole }),
+      ...(dto.validFrom && { validFrom: new Date(dto.validFrom) }),
+      ...(dto.validTo && { validTo: new Date(dto.validTo) }),
+    };
+    return this.prisma.feeRule.create({ data });
   }
 }

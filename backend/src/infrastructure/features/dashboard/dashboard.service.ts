@@ -4,6 +4,7 @@ import { BeneficiaryType, PaymentStatus, Prisma } from '@prisma/client';
 import { isProfessionalMode } from '@src/domain/constants/app.constants';
 import { DashboardKpiQueryDto } from '@src/application/features/dashboard/Dtos/dashboard-kpi-query.dto';
 import { DashboardKpisResponseDto } from '@src/application/features/dashboard/Dtos/dashboard-kpis-response.dto';
+import { requireOrgId } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 
 @Injectable()
 export class DashboardService {
@@ -177,6 +178,7 @@ export class DashboardService {
     userId?: string,
     basis: 'ACCRUED' | 'CASH' = 'ACCRUED'
   ) {
+    organizationId = requireOrgId(organizationId);
     const where: Prisma.WorkItemWhereInput = {};
 
     if (basis === 'CASH') {
@@ -271,6 +273,7 @@ export class DashboardService {
     mode?: 'ORGANIZATION' | 'PROFESSIONAL',
     userId?: string
   ) {
+    organizationId = requireOrgId(organizationId);
     const where: Prisma.WorkItemWhereInput = {};
 
     if (startDate && endDate) {

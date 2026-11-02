@@ -3,6 +3,11 @@ import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfa
 import { PatientResponseDto } from '../dtos/patient-response.dto';
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { IPatientService } from '@src/domain/features/patients/service/i-patient-service';
+import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
+import { Inject, Injectable } from '@nestjs/common';
+import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
+import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
+import { foundOr404, inScope, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 
 export class UpdatePatientCommand implements IRequest<PatientResponseDto> {
   constructor(
@@ -35,14 +40,30 @@ export class UpdatePatientCommand implements IRequest<PatientResponseDto> {
   phone?: string;
 }
 
+@RequestHandler(UpdatePatientCommand)
+@Injectable()
 export class UpdatePatientCommandHandler implements IRequestHandler<
   UpdatePatientCommand,
   PatientResponseDto
 > {
-  constructor(private readonly patientService: IPatientService) { }
+  constructor(
+    @Inject(IPatientService) private readonly patientService: IPatientService,
+    private readonly prisma: PrismaService,
+  ) { }
 
-  async execute(command: UpdatePatientCommand): Promise<PatientResponseDto> {
-    const patient = await this.patientService.update(command.id, command);
+  async execute(
+    command: UpdatePatientCommand,
+    ctx: RequestContext,
+  ): Promise<PatientResponseDto> {
+    const scope = requireOrgScope(ctx);
+    const id = requireId(command.id);
+    await foundOr404(
+      this.prisma.patient.findFirst({
+        where: { id, ...inScope(scope) },
+        select: { id: true },
+      }),
+    );
+    const patient = await this.patientService.update(id, command);
     return new PatientResponseDto(
       patient.id,
       patient.organizationId,

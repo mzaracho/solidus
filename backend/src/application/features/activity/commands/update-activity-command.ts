@@ -1,10 +1,12 @@
 import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request';
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { WorkItem, AttendanceStatus, PaymentStatus } from '@prisma/client';
-import { isProfessionalMode } from '@src/domain/constants/app.constants';
+import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
+import { foundOr404, forbiddenAction, inScope, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
+import { canModifyActivity } from '../activity-ownership';
 
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString } from 'class-validator';
@@ -36,10 +38,6 @@ export class UpdateActivityCommand implements IRequest<WorkItem> {
   @IsOptional()
   @IsString()
   attendance?: string;
-
-  // Ownership check fields – populated by the controller from request context
-  userId?: string;
-  mode?: string;
 }
 
 @RequestHandler(UpdateActivityCommand)
@@ -50,16 +48,24 @@ export class UpdateActivityCommandHandler implements IRequestHandler<
 > {
   constructor(private readonly prisma: PrismaService) { }
 
-  async execute(command: UpdateActivityCommand): Promise<WorkItem> {
-    const { id } = command;
+  async execute(
+    command: UpdateActivityCommand,
+    ctx: RequestContext,
+  ): Promise<WorkItem> {
+    const scope = requireOrgScope(ctx);
+    const id = requireId(command.id);
 
-    // Ownership guard: a professional can only modify records they created
-    if (isProfessionalMode(command.mode) && command.userId) {
-      const existing = await this.prisma.workItem.findUnique({ where: { id }, select: { createdByUserId: true } });
-      if (existing && existing.createdByUserId && existing.createdByUserId !== command.userId) {
-        throw new ForbiddenException('No tienes permiso para modificar esta actividad.');
-      }
-    }
+    const existing = await foundOr404(
+      this.prisma.workItem.findFirst({
+        where: { id, ...inScope(scope) },
+        select: {
+          organizationId: true,
+          createdByUserId: true,
+          professional: { select: { userId: true } },
+        },
+      }),
+    );
+    if (!canModifyActivity(existing, scope, 'edit')) throw forbiddenAction();
 
     const data: any = {};
 

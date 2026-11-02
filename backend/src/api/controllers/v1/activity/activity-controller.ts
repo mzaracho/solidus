@@ -20,6 +20,7 @@ import { DeleteActivityCommand } from '@src/application/features/activity/comman
 import { BaseController } from '../../base/base-controller';
 
 import { CurrentUserId } from '@src/infrastructure.bootstrap/config/core/authentication/current-user-decorator';
+import { CurrentOrgId } from '@src/infrastructure.bootstrap/config/core/authentication/current-org-decorator';
 
 @Controller('activity')
 export class ActivityController extends BaseController {
@@ -35,12 +36,12 @@ export class ActivityController extends BaseController {
   @Get()
   async findAll(
     @Query() query: FindAllActivitiesQuery,
-    @Headers('x-org-id') orgId: string,
+    @CurrentOrgId() orgId: string,
     @CurrentUserId() userId: string,
     @Query('mode') modeQuery: string
   ): Promise<any> { // Using any for partial migration or PaginatedActivityResponseDto if verified
     // Or better, import the new DTO
-    query.organizationId = orgId || query.organizationId;
+    query.organizationId = orgId;
     query.userId = userId;
     query.mode = modeQuery; // Frontend sends mode as query param
     return this.dispatcher.dispatch(query);
@@ -50,12 +51,10 @@ export class ActivityController extends BaseController {
   async create(
     @Body() command: CreateActivityCommand,
     @Headers('x-mode') mode: string,
-    @Headers('x-org-id') orgId: string,
-    @CurrentUserId() userId: string,
+    @CurrentOrgId() orgId: string,
   ) {
     command.mode = mode; // Manually attach header if needed by logic
     command.organizationId = command.organizationId || orgId;
-    command.userId = userId; // Verified `sub` of the token
     return this.dispatcher.dispatch(command);
   }
 
@@ -63,21 +62,13 @@ export class ActivityController extends BaseController {
   async update(
     @Param('id') id: string,
     @Body() command: UpdateActivityCommand,
-    @Headers('x-mode') modeHeader: string,
-    @CurrentUserId() userId: string,
   ) {
     command.id = id;
-    command.userId = userId;
-    command.mode = modeHeader;
     return this.dispatcher.dispatch(command);
   }
 
   @Delete(':id')
-  async delete(
-    @Param('id') id: string,
-    @Headers('x-mode') modeHeader: string,
-    @CurrentUserId() userId: string,
-  ) {
-    return this.dispatcher.dispatch(new DeleteActivityCommand(id, userId, modeHeader));
+  async delete(@Param('id') id: string) {
+    return this.dispatcher.dispatch(new DeleteActivityCommand(id));
   }
 }

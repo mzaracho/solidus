@@ -2,9 +2,38 @@ import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfa
 import { CreatePayerDto } from '../Dtos/create-payer.dto';
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { Payer } from '@prisma/client';
+import { requireOrgScope, requireOrgId, RequestContext, roleIn, OrgScope } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
+import { forbiddenAction, foundOr404, inScope, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
+
+/**
+ * Pagador de la organización del request. Lo modifica el ADMIN de la organización del pagador
+ * o el dueño del pagador (Payer.professionalId -> Professional.userId = sub). Si no existe o es de
+ * otra organización: 404 genérico (antes de decidir el permiso).
+ */
+async function loadPayerForWrite(
+  prisma: PrismaService,
+  scope: OrgScope,
+  rawId: string,
+): Promise<{ id: string }> {
+  const id = requireId(rawId);
+  const payer = await foundOr404(
+    prisma.payer.findFirst({
+      where: { id, ...inScope(scope) },
+      select: {
+        id: true,
+        organizationId: true,
+        professional: { select: { userId: true } },
+      },
+    }),
+  );
+  const isAdmin = roleIn(scope, payer.organizationId) === 'ADMIN';
+  const isOwner = !!payer.professional?.userId && payer.professional.userId === scope.userId;
+  if (!isAdmin && !isOwner) throw forbiddenAction();
+  return { id };
+}
 
 // Get
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -46,6 +75,7 @@ export class GetPayersQueryHandler implements IRequestHandler<
   constructor(private readonly prisma: PrismaService) { }
 
   async execute(query: GetPayersQuery): Promise<{ items: Payer[]; total: number }> {
+    const orgId = requireOrgId(query.orgId);
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 12;
     const skip = (page - 1) * limit;
@@ -57,7 +87,7 @@ export class GetPayersQueryHandler implements IRequestHandler<
       const professional = await this.prisma.professional.findFirst({
         where: {
           userId: query.userId,
-          organizationId: query.orgId
+          organizationId: orgId
         }
       });
       professionalId = professional?.id;
@@ -67,7 +97,7 @@ export class GetPayersQueryHandler implements IRequestHandler<
     // 1. Belong to Org
     // 2. AND (Managed by System OR Created by ME)
     const whereCondition: any = {
-      organizationId: query.orgId,
+      organizationId: orgId,
     };
 
     if (professionalId) {
@@ -98,12 +128,7 @@ export class CreatePayerCommand implements IRequest<Payer> {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  orgId: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  userId?: string;
+  orgId?: string; // Se ignora: la organización y el usuario salen del contexto validado
 
   @ApiProperty()
   @IsString()
@@ -128,32 +153,37 @@ export class CreatePayerCommandHandler implements IRequestHandler<
 > {
   constructor(private readonly prisma: PrismaService) { }
 
-  async execute(command: CreatePayerCommand): Promise<Payer> {
+  async execute(command: CreatePayerCommand, ctx: RequestContext): Promise<Payer> {
+    const scope = requireOrgScope(ctx);
+    const orgId = scope.primaryOrgId;
+
     // Validate: if a CUIT is provided and it belongs to a registered Organization, block the creation
     if (command.cuit) {
       const existingOrg = await this.prisma.organization.findFirst({ where: { cuit: command.cuit } });
       if (existingOrg) {
-        throw new Error(
-          `La asociacion con ${existingOrg.name} tiene que gestionarla con ellos directamente. No puedes agregarla como pagador manualmente.`
+        throw new BadRequestException(
+          'Ese CUIT pertenece a una organización registrada: la asociación se gestiona con ella directamente.'
         );
       }
     }
 
-    let professionalId: string | undefined;
-
-    if (command.userId) {
-      const professional = await this.prisma.professional.findFirst({
-        where: {
-          userId: command.userId,
-          organizationId: command.orgId
-        }
-      });
-      professionalId = professional?.id;
+    // El pagador es propio si el usuario tiene Professional en la organización; si no, es de la
+    // organización y solo lo crea un ADMIN.
+    const professional = await this.prisma.professional.findFirst({
+      where: {
+        userId: scope.userId,
+        organizationId: orgId,
+        deletedAt: null,
+      }
+    });
+    const professionalId = professional?.id;
+    if (!professionalId && roleIn(scope, orgId) !== 'ADMIN') {
+      throw forbiddenAction();
     }
 
     return this.prisma.payer.create({
       data: {
-        organizationId: command.orgId,
+        organizationId: orgId,
         name: command.name,
         cuit: command.cuit ?? null,
         retentionPercentage: command.retentionPercentage || 0,
@@ -186,9 +216,11 @@ export class UpdatePayerCommandHandler implements IRequestHandler<
 > {
   constructor(private readonly prisma: PrismaService) { }
 
-  async execute(command: UpdatePayerCommand): Promise<Payer> {
+  async execute(command: UpdatePayerCommand, ctx: RequestContext): Promise<Payer> {
+    const scope = requireOrgScope(ctx);
+    const { id } = await loadPayerForWrite(this.prisma, scope, command.id);
     return this.prisma.payer.update({
-      where: { id: command.id },
+      where: { id },
       data: {
         name: command.name,
         retentionPercentage: command.retentionPercentage,
@@ -210,7 +242,9 @@ export class DeletePayerCommandHandler implements IRequestHandler<
 > {
   constructor(private readonly prisma: PrismaService) { }
 
-  async execute(command: DeletePayerCommand): Promise<Payer> {
-    return this.prisma.payer.delete({ where: { id: command.id } });
+  async execute(command: DeletePayerCommand, ctx: RequestContext): Promise<Payer> {
+    const scope = requireOrgScope(ctx);
+    const { id } = await loadPayerForWrite(this.prisma, scope, command.id);
+    return this.prisma.payer.delete({ where: { id } });
   }
 }

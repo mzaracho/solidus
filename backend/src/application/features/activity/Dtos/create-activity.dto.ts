@@ -120,10 +120,5 @@ export class CreateActivityDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  userId?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   mode?: string;
 }

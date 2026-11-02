@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { BeneficiaryType, OrgType } from '@prisma/client';
+import { BeneficiaryType, OrgType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../Prisma/prisma.service';
 
 export enum SplitType {
@@ -37,11 +37,18 @@ export class FeeResolutionService {
 
   constructor(private prisma: PrismaService) { }
 
-  async calculateSplits(context: WorkContext): Promise<SplitResult[]> {
+  /**
+   * `db` permite leer dentro de una transacción abierta (ve los registros recién creados).
+   * Los ids del contexto ya vienen verificados por quien llama.
+   */
+  async calculateSplits(
+    context: WorkContext,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<SplitResult[]> {
     const now = new Date();
 
     // Fetch Organization Type to determine strategy
-    const org = await this.prisma.organization.findUnique({
+    const org = await db.organization.findUnique({
       where: { id: context.organizationId },
       select: { type: true },
     });
@@ -51,7 +58,7 @@ export class FeeResolutionService {
     }
 
     // Fetch potential rules
-    const rules = await this.prisma.feeRule.findMany({
+    const rules = await db.feeRule.findMany({
       where: {
         organizationId: context.organizationId,
         validFrom: { lte: now },
@@ -82,7 +89,7 @@ export class FeeResolutionService {
     if (rules.length === 0) {
       // [FALLBACK] Check for Payer Retention (Common in Solo Practice)
       if (context.payerId) {
-        const payer = await this.prisma.payer.findUnique({ where: { id: context.payerId } });
+        const payer = await db.payer.findUnique({ where: { id: context.payerId } });
         if (payer && payer.retentionPercentage && payer.retentionPercentage > 0) {
           const retentionAmount = Number((context.grossAmount * (payer.retentionPercentage / 100)).toFixed(2));
           const proAmount = context.grossAmount - retentionAmount;
@@ -121,7 +128,7 @@ export class FeeResolutionService {
       // This handles the case where no fee rule is configured for the specific payer
       // (e.g., "Particular" payer in Psico LSA) but the professional has a category with a percentage.
       if (org.type === OrgType.CLINIC && context.professionalId) {
-        const professional = await this.prisma.professional.findUnique({
+        const professional = await db.professional.findUnique({
           where: { id: context.professionalId },
           include: { category: true },
         });

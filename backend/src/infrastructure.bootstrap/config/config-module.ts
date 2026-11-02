@@ -1,8 +1,6 @@
 import { Module } from '@nestjs/common';
-import { ConfigController } from '../../api/controllers/v1/config/config-controller';
 import { OrgController } from '../../api/controllers/v1/config/org-controller';
 import { ProController } from '../../api/controllers/v1/config/pro-controller';
-import { SystemController } from '../../api/controllers/v1/config/system-controller';
 import { ProfileController } from '../../api/controllers/v1/config/profile-controller';
 import { PrismaModule } from '../modules/features/prisma/prisma-module';
 import { GetOrgConfigQueryHandler } from '@src/application/features/config/queries/get-org-config-query';
@@ -30,7 +28,7 @@ import {
   UpdatePayerCommandHandler,
   DeletePayerCommandHandler,
 } from '@src/application/features/config/commands/payer-commands';
-import { SearchProfessionalsQueryHandler } from '@src/application/features/config/queries/search-professionals-query';
+import { LookupStaffByCuitQueryHandler } from '@src/application/features/config/queries/lookup-staff-by-cuit-query';
 import { UpdateOrganizationCommandHandler } from '@src/application/features/config/commands/update-organization-command';
 import {
   CreateActivityTypeCommandHandler,
@@ -43,10 +41,8 @@ import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 @Module({
   imports: [PrismaModule],
   controllers: [
-    ConfigController,
     OrgController,
     ProController,
-    SystemController,
     ProfileController,
   ],
   providers: [
@@ -67,7 +63,7 @@ import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
     CreatePayerCommandHandler,
     UpdatePayerCommandHandler,
     DeletePayerCommandHandler,
-    SearchProfessionalsQueryHandler,
+    LookupStaffByCuitQueryHandler,
     DispatcherProvider,
     GetActivityTypesQueryHandler,
     CreateActivityTypeCommandHandler,

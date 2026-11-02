@@ -6,7 +6,7 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { getColumns, Attention } from '../atenciones/columns'
 import { DataTable } from '@/components/ui/data-table'
-import { getWorkItems, deleteWorkItem, updateWorkItem, getPatientSummary } from '@/services/data'
+import { getWorkItems, deleteWorkItem, updateWorkItem, getPatientSummary, isHandledApiError } from '@/services/data'
 import { formatCurrency } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -91,7 +91,12 @@ export function DeudoresTable() {
             title: 'Eliminar registro',
             description: '¿Estás seguro de que deseas eliminar este registro?',
             onConfirm: async () => {
-                await deleteWorkItem(orgSlug, item.id)
+                try {
+                    await deleteWorkItem(orgSlug, item.id)
+                } catch (e) {
+                    if (!isHandledApiError(e)) toast.error('No se pudo eliminar el registro')
+                    return
+                }
                 toast.success('Registro eliminado')
                 await load()
             },
@@ -104,7 +109,12 @@ export function DeudoresTable() {
             title: 'Marcar como Cobrado',
             description: `¿Confirmar cobro para ${item.patientName}?`,
             onConfirm: async () => {
-                await updateWorkItem(orgSlug, item.id, { paymentStatus: PAYMENT_STATUS.PAID })
+                try {
+                    await updateWorkItem(orgSlug, item.id, { paymentStatus: PAYMENT_STATUS.PAID })
+                } catch (e) {
+                    if (!isHandledApiError(e)) toast.error('No se pudo marcar como cobrado')
+                    return
+                }
                 toast.success('Marcado como cobrado')
                 await load()
             },

@@ -9,10 +9,10 @@
 | # | Ítem | Riesgo | Esfuerzo |
 |---|---|---|---|
 | 1 | **RESUELTO (feature 005).** **Autenticación real**: un único `JwtModule` con `JWT_SECRET` obligatorio (fallar al arrancar si falta); `AuthGuard` global (`APP_GUARD`) que use `jwtService.verifyAsync`; `@Public()` solo en login; eliminar `VerifyTokenService` stub, `ApiKeyGuard` y `JwtAuthGuard` basado en `decode` | S1, S2, S5 | M |
-| 2 | **PARCIAL (feature 005):** `userId` sale de `sub` y `x-org-id` se valida contra membresías; falta deducir el modo del rol (`x-mode`). **Contexto de tenant desde el token, no desde headers**: derivar `userId` de `sub` y validar `x-org-id` contra las membresías/Professional del usuario en un guard/interceptor; el modo (org/pro) se deduce del rol, no de `x-mode` | S3 | L |
-| 3 | **Chequeo de pertenencia por recurso**: toda operación por `:id` (activity, patient, staff, payer, settlement, category, preset, activity type, merge) filtra por `organizationId` del contexto | S3 | M |
-| 4 | **Aplicar en backend `canLoadActivities` y ownership**: rechazar `POST /activity` si el Professional no tiene permiso; ownership independiente de `x-mode`; definir política para `createdByUserId = null` | S4 | S |
-| 5 | **Proteger o eliminar `ConfigController`** (duplica escrituras de `OrgController` sin guards) y aplicar `RequireOrgRole('ADMIN')` con rol verificado | S2 | S |
+| 2 | **PARCIAL (features 005 y 007; falta el modo derivado del rol, feature 009):** `userId` sale de `sub` y `x-org-id` se valida contra membresías; falta deducir el modo del rol (`x-mode`). **Contexto de tenant desde el token, no desde headers**: derivar `userId` de `sub` y validar `x-org-id` contra las membresías/Professional del usuario en un guard/interceptor; el modo (org/pro) se deduce del rol, no de `x-mode` | S3 | L |
+| 3 | **RESUELTO (feature 007).** **Chequeo de pertenencia por recurso**: toda operación por `:id` (activity, patient, staff, payer, settlement, category, preset, activity type, merge) filtra por `organizationId` del contexto | S3 | M |
+| 4 | **RESUELTO (feature 007).** **Aplicar en backend `canLoadActivities` y ownership**: rechazar `POST /activity` si el Professional no tiene permiso; ownership independiente de `x-mode`; definir política para `createdByUserId = null` | S4 | S |
+| 5 | **RESUELTO (feature 007; `ConfigController` eliminado, escrituras de `org/*` con ADMIN verificado).** **Proteger o eliminar `ConfigController`** (duplica escrituras de `OrgController` sin guards) y aplicar `RequireOrgRole('ADMIN')` con rol verificado | S2 | S |
 | 6 | **Rotar y purgar secretos/PII del repo raíz**: quitar `.claude/settings*.json` del índice (o limpiarlos), rotar contraseñas de prueba, sacar `seed_psicolsa.sql`/`seed_activities.sql` con datos reales del repo y evaluar reescritura de historial; agregar `.gitignore` en la raíz | S5, S6 | M |
 | 7 | **RESUELTO (feature 005).** **Dejar de loguear secretos**: `LoggingInterceptor` sin headers/body/response (o con redacción de `authorization`, `password`, `token`), respetar nivel de log por entorno, quitar `console.log` de payloads | S7 | S |
 | 8 | **RESUELTO (feature 005):** `next` 16.4.3 y `axios` 1.20.0. **Actualizar `next` a 16.4.3+** (CVE crítico de DoS) y `axios` a 1.20+ | Dependencias | S |
@@ -29,6 +29,18 @@ Origen: `docs/features/005-seguridad-backend/06-seguridad.md`. Ver los residuale
 | 37 | Loguear requests fallidos (método, ruta, status, duración), incluidos los 401 y 403 de los guards, sin datos sensibles | B-3 | S |
 | 38 | Bajar el límite del body (hoy 50 MB) a 1–2 MB | B-4 | S |
 | 39 | `ProductionController` y `ReportingController`: reemplazar `userId` por query con `@CurrentUserId()` (o borrarlos) y agregar un test que lo vigile | B-1 | S |
+
+## Candidatos surgidos del feature 007
+
+Origen: `docs/features/007-aislamiento-organizaciones/` (06-seguridad, 05-revision, 07-testing).
+
+| # | Ítem | Riesgo | Esfuerzo |
+|---|---|---|---|
+| 40 | Motor de honorarios: unificar la forma de `splits` entre la UI (`{role, percentage, beneficiaryType}`) y `FeeResolutionService` (`{beneficiary, type, value}`) y acotar los montos `FIXED` al bruto de la atención (`computeAmounts`: limitar a `grossAmount - totalAllocated`, mínimo 0) | MEDIA-2 (007) | M |
+| 41 | `settlements/calculate`: usar `@CurrentOrgId()` en lugar de `organizationId` de la query y sumar el controlador al invariante de `security-invariants.spec.ts`; evaluar `@RequireOrgRole('ADMIN')` en `settlements/calculate` y acceso por rol en el dashboard en modo organización | MENOR-1 e INFO-1 (007) | S |
+| 42 | Mensajes de error 404 en español y sin JSON crudo en los toasts del front (`updateWorkItem`/`deleteWorkItem` en `data.ts`, `AtencionesTable`, `AdmisionesTable`, `WorkItemForm`) | m-4 (re-revisión 1) | S |
+| 43 | DTOs con class-validator en los comandos de update (`UpdatePatientCommand`, `UpdateActivityCommand`, `UpdateStaffCommand`: enums de pago, email, fechas) para evitar 500 de Prisma. Relacionado con #12 | S-2 / BAJA-2 resto | M |
+| 44 | Ocultar "Eliminar" al MEMBER también en `workload/columns.tsx`, si aplica (ya se hizo en `AdmisionesTable`) | 007 §8.1 | S |
 
 ## P1 — Endurecimiento y consistencia
 

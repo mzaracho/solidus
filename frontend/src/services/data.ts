@@ -394,7 +394,9 @@ export async function createWorkItem(slug: string, data: any, ctx?: ApiContext) 
 
         if (!res.ok) {
             let errorMessage = 'Error al guardar la actividad';
-            try {
+            // Un 404 (recurso de otra organización o inexistente) no lleva detalle: se usa el texto por defecto
+            if (res.status !== 404) {
+              try {
                 const errBody = await res.json();
                 // Try to extract the most useful message from the backend error shape
                 if (errBody?.errors?.[0]?.message) {
@@ -407,7 +409,8 @@ export async function createWorkItem(slug: string, data: any, ctx?: ApiContext) 
                         if (details?.message) errorMessage = details.message;
                     } catch { /* ignore */ }
                 }
-            } catch { /* ignore JSON parse error */ }
+              } catch { /* ignore JSON parse error */ }
+            }
             throw new Error(errorMessage);
         }
         return await res.json();
@@ -452,7 +455,7 @@ export async function assignStaffCategory(slug: string, staffId: string, categor
     } catch (error) {
         rethrowServerAuthError(error);
         console.error(error);
-        return { success: false };
+        throw error;
     }
 }
 
@@ -562,7 +565,7 @@ export async function createPayer(slug: string, name: string, retentionPercentag
     } catch (error) {
         rethrowServerAuthError(error);
         console.error("createPayer Error", error);
-        return null;
+        throw error;
     }
 }
 
@@ -581,7 +584,7 @@ export async function createStaff(slug: string, data: any, ctx?: ApiContext) {
     } catch (error) {
         rethrowServerAuthError(error);
         console.error(error);
-        return { success: false };
+        throw error;
     }
 }
 
@@ -600,7 +603,7 @@ export async function updateStaff(slug: string, id: string, data: any, ctx?: Api
     } catch (error) {
         rethrowServerAuthError(error);
         console.error(error);
-        return { success: false };
+        throw error;
     }
 }
 
@@ -661,7 +664,7 @@ export async function createPatient(slug: string, data: any, ctx?: ApiContext) {
     } catch (error) {
         rethrowServerAuthError(error);
         console.error(error);
-        return null;
+        throw error;
     }
 }
 
@@ -700,7 +703,7 @@ export async function updatePatient(slug: string, id: string, data: any, ctx?: A
     } catch (error) {
         rethrowServerAuthError(error);
         console.error(error);
-        return null;
+        throw error;
     }
 }
 
@@ -723,7 +726,7 @@ export async function updateWorkItem(slug: string, id: string, data: any, ctx?: 
     } catch (error) {
         rethrowServerAuthError(error);
         console.error("updateWorkItem Error", error);
-        return { success: false, error };
+        throw error;
     }
 }
 
@@ -762,7 +765,7 @@ export async function deleteWorkItem(slug: string, id: string, ctx?: ApiContext)
     } catch (error) {
         rethrowServerAuthError(error);
         console.error("deleteWorkItem Error", error);
-        return false;
+        throw error;
     }
 }
 
@@ -825,11 +828,11 @@ export async function getOrgDetails(slug: string, ctx?: ApiContext) {
 }
 
 /**
- * POST /config/categories
+ * POST /org/categories
  */
 export async function createCategory(slug: string, name: string, percentage?: number, ctx?: ApiContext) {
     try {
-        const res = await apiFetch(`${API_BASE_URL}/config/categories`, {
+        const res = await apiFetch(`${API_BASE_URL}/org/categories`, {
             method: 'POST',
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify({ name, percentage }),
@@ -839,16 +842,16 @@ export async function createCategory(slug: string, name: string, percentage?: nu
     } catch (error) {
         rethrowServerAuthError(error);
         console.error('createCategory Error', error);
-        return null;
+        throw error;
     }
 }
 
 /**
- * PUT /config/categories/:id
+ * PUT /org/categories/:id
  */
 export async function updateCategory(slug: string, id: string, name: string, percentage?: number, ctx?: ApiContext) {
     try {
-        const res = await apiFetch(`${API_BASE_URL}/config/categories/${id}`, {
+        const res = await apiFetch(`${API_BASE_URL}/org/categories/${id}`, {
             method: 'PUT',
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify({ name, percentage }),
@@ -858,16 +861,16 @@ export async function updateCategory(slug: string, id: string, name: string, per
     } catch (error) {
         rethrowServerAuthError(error);
         console.error('updateCategory Error', error);
-        return null;
+        throw error;
     }
 }
 
 /**
- * DELETE /config/categories/:id
+ * DELETE /org/categories/:id
  */
 export async function deleteCategory(slug: string, id: string, ctx?: ApiContext) {
     try {
-        const res = await apiFetch(`${API_BASE_URL}/config/categories/${id}`, {
+        const res = await apiFetch(`${API_BASE_URL}/org/categories/${id}`, {
             method: 'DELETE',
             headers: getHeaders(slug, ctx?.token),
         });
@@ -876,7 +879,7 @@ export async function deleteCategory(slug: string, id: string, ctx?: ApiContext)
     } catch (error) {
         rethrowServerAuthError(error);
         console.error('deleteCategory Error', error);
-        return false;
+        throw error;
     }
 }
 
@@ -895,7 +898,7 @@ export async function createFeeRule(slug: string, data: any, ctx?: ApiContext) {
     } catch (error) {
         rethrowServerAuthError(error);
         console.error("createFeeRule Error", error);
-        return null;
+        throw error;
     }
 }
 
@@ -916,7 +919,7 @@ export async function createOrgPreset(slug: string, data: any, ctx?: ApiContext)
     } catch (error) {
         rethrowServerAuthError(error);
         console.error("createOrgPreset Error", error);
-        return null;
+        throw error;
     }
 }
 
@@ -934,7 +937,7 @@ export async function deleteOrgPreset(slug: string, id: string, ctx?: ApiContext
     } catch (error) {
         rethrowServerAuthError(error);
         console.error("deleteOrgPreset Error", error);
-        return false;
+        throw error;
     }
 }
 
@@ -953,7 +956,7 @@ export async function updateOrgPreset(slug: string, id: string, data: any, ctx?:
     } catch (error) {
         rethrowServerAuthError(error);
         console.error("updateOrgPreset Error", error);
-        return null;
+        throw error;
     }
 }
 
@@ -1008,11 +1011,11 @@ export async function calculateSettlements(slug: string, month: string, ctx?: Ap
 }
 
 /**
- * GET /config/activity-types
+ * GET /org/activity-types
  */
 export async function getActivityTypes(slug: string, ctx?: ApiContext) {
     try {
-        const res = await apiFetch(`${API_BASE_URL}/config/activity-types?orgId=${slug}`, {
+        const res = await apiFetch(`${API_BASE_URL}/org/activity-types`, {
             headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
@@ -1026,7 +1029,7 @@ export async function getActivityTypes(slug: string, ctx?: ApiContext) {
 }
 
 /**
- * POST /config/activity-types
+ * POST /org/activity-types
  */
 export async function createActivityType(slug: string, data: {
     code: string;
@@ -1035,7 +1038,7 @@ export async function createActivityType(slug: string, data: {
     cardValue?: number;
     roles?: { roleLabel: string; isRequired: boolean; feeStrategy: 'CATEGORY' | 'FIXED'; fixedPercentage?: number }[];
 }, ctx?: ApiContext) {
-    const res = await apiFetch(`${API_BASE_URL}/config/activity-types`, {
+    const res = await apiFetch(`${API_BASE_URL}/org/activity-types`, {
         method: 'POST',
         headers: getHeaders(slug, ctx?.token),
         body: JSON.stringify(data),
@@ -1048,7 +1051,7 @@ export async function createActivityType(slug: string, data: {
 }
 
 /**
- * PUT /config/activity-types/:id
+ * PUT /org/activity-types/:id
  */
 export async function updateActivityType(slug: string, id: string, data: {
     name?: string;
@@ -1056,7 +1059,7 @@ export async function updateActivityType(slug: string, id: string, data: {
     cardValue?: number;
     roles?: { roleLabel: string; isRequired: boolean; feeStrategy: 'CATEGORY' | 'FIXED'; fixedPercentage?: number }[];
 }, ctx?: ApiContext) {
-    const res = await apiFetch(`${API_BASE_URL}/config/activity-types/${id}`, {
+    const res = await apiFetch(`${API_BASE_URL}/org/activity-types/${id}`, {
         method: 'PUT',
         headers: getHeaders(slug, ctx?.token),
         body: JSON.stringify(data),
@@ -1069,10 +1072,10 @@ export async function updateActivityType(slug: string, id: string, data: {
 }
 
 /**
- * DELETE /config/activity-types/:id
+ * DELETE /org/activity-types/:id
  */
 export async function deleteActivityType(slug: string, id: string, ctx?: ApiContext) {
-    const res = await apiFetch(`${API_BASE_URL}/config/activity-types/${id}`, {
+    const res = await apiFetch(`${API_BASE_URL}/org/activity-types/${id}`, {
         method: 'DELETE',
         headers: getHeaders(slug, ctx?.token),
     });

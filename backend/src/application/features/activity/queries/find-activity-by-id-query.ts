@@ -1,9 +1,11 @@
 import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request';
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { BeneficiaryType } from '@prisma/client';
+import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
+import { foundOr404, inScope, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 
 export class FindActivityByIdQuery implements IRequest<any> {
     constructor(public readonly id: string) { }
@@ -17,9 +19,11 @@ export class FindActivityByIdQueryHandler implements IRequestHandler<
 > {
     constructor(private readonly prisma: PrismaService) { }
 
-    async execute(query: FindActivityByIdQuery): Promise<any> {
-        const activity = await this.prisma.workItem.findUnique({
-            where: { id: query.id },
+    async execute(query: FindActivityByIdQuery, ctx: RequestContext): Promise<any> {
+        const scope = requireOrgScope(ctx);
+        const id = requireId(query.id);
+        const activity = await foundOr404(this.prisma.workItem.findFirst({
+            where: { id, ...inScope(scope) },
             include: {
                 patient: true,
                 professional: true, // Organization-Professional relation
@@ -27,11 +31,7 @@ export class FindActivityByIdQueryHandler implements IRequestHandler<
                 preset: true,
                 splits: true, // Includes Beneficiary ID
             },
-        });
-
-        if (!activity) {
-            throw new NotFoundException('Activity not found');
-        }
+        }));
 
         // Resolve Co-Professional Name if possible requires extra query or finding it in splits
         const coProSplit = activity.splits.find(s => s.beneficiaryType === BeneficiaryType.PROFESSIONAL && s.beneficiaryId !== activity.professionalId);

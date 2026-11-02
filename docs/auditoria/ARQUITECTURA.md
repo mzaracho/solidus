@@ -81,7 +81,7 @@ A menudo el propio DTO de entrada (`@Body() command: XCommand`) es el comando.
 | DashboardController | `dashboard/{kpis,chart,payers}` | `AuthGuard` |
 | PatientsController | `v1/patients` (+ `:id/debt`, `:id/summary`, `:id/merge`) | `AuthGuard` |
 | SettlementsController | `settlements` (+ `calculate`, `:id/details`) | ninguno |
-| ConfigController | `config/*` (dictionaries, org-rules, categories, activity-types CRUD) | ninguno |
+| ConfigController | Eliminado en el feature 007 (el front usa `org/*`) | — |
 | OrgController | `org/*` (organización, categorías, presets, staff, activity-types) | `AuthGuard` + `OrgRoleGuard` en escrituras |
 | ProController | `pro/{context,memberships,profile,payers}` | `AuthGuard` |
 | ProfileController | `profile` (mock) | ninguno |

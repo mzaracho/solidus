@@ -31,7 +31,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Plus } from "lucide-react"
-import { getOrgConfig, assignStaffCategory, createStaff, updateStaff } from '@/services/data'
+import { getOrgConfig, assignStaffCategory, createStaff, updateStaff, isHandledApiError } from '@/services/data'
+import { toast } from 'sonner'
 
 interface Professional {
     id: string
@@ -70,14 +71,24 @@ export function ProfessionalManager() {
         setProfessionals(prev => prev.map(p =>
             p.id === profId ? { ...p, categoryId: catId } : p
         ))
-        await assignStaffCategory(orgSlug, profId, catId)
+        try {
+            await assignStaffCategory(orgSlug, profId, catId)
+        } catch (e) {
+            if (!isHandledApiError(e)) toast.error('No se pudo asignar la categoría')
+            loadData() // revierte el cambio optimista
+        }
     }
 
     const handleCreate = async () => {
         // Basic validation
         if (!newPro.name || !newPro.surname || !newPro.email || !newPro.cuit) return;
 
-        await createStaff(orgSlug, newPro)
+        try {
+            await createStaff(orgSlug, newPro)
+        } catch (e) {
+            if (!isHandledApiError(e)) toast.error('Error al guardar profesional')
+            return
+        }
         setIsDialogOpen(false)
         setNewPro({ name: '', surname: '', email: '', cuit: '', phone: '', canLoadActivities: false })
         loadData() // Refresh list
@@ -185,7 +196,12 @@ export function ProfessionalManager() {
                                                 checked={prof.canLoadActivities || false} 
                                                 onCheckedChange={async (val) => {
                                                     setProfessionals(prev => prev.map(p => p.id === prof.id ? { ...p, canLoadActivities: val } : p));
-                                                    await updateStaff(orgSlug, prof.id, { name: prof.name || prof.displayName.split(' ')[0], surname: prof.surname || prof.displayName.split(' ').slice(1).join(' '), email: prof.email || '', cuit: prof.cuit || '', phone: prof.phone || '', canLoadActivities: val });
+                                                    try {
+                                                        await updateStaff(orgSlug, prof.id, { name: prof.name || prof.displayName.split(' ')[0], surname: prof.surname || prof.displayName.split(' ').slice(1).join(' '), email: prof.email || '', cuit: prof.cuit || '', phone: prof.phone || '', canLoadActivities: val });
+                                                    } catch (e) {
+                                                        if (!isHandledApiError(e)) toast.error('Error al guardar profesional')
+                                                        loadData()
+                                                    }
                                                 }} 
                                             />
                                         </div>

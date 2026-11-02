@@ -5,7 +5,7 @@ import { Plus, Trash2, Bean } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useParams } from 'next/navigation'
-import { getOrgConfig, createOrgPreset, deleteOrgPreset, updateOrgPreset, getActivityTypes } from '@/services/data'
+import { getOrgConfig, createOrgPreset, deleteOrgPreset, updateOrgPreset, getActivityTypes, isHandledApiError } from '@/services/data'
 import { Pencil } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -107,7 +107,8 @@ export function ReferenceValuesManager() {
                 toast.error("Error al guardar valor")
             }
         } catch (e) {
-            toast.error("Error de conexión")
+            if (isHandledApiError(e)) return
+            toast.error("Error al guardar valor")
         }
     }
 
@@ -126,7 +127,8 @@ export function ReferenceValuesManager() {
                 toast.error("Error al eliminar")
             }
         } catch (e) {
-            toast.error("Error de conexión")
+            if (isHandledApiError(e)) return
+            toast.error("Error al eliminar")
         }
     }
 

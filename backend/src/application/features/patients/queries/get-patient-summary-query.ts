@@ -3,6 +3,8 @@ import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfa
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
+import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
+import { foundOr404, inScope, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 
 export interface PatientSummaryItem {
   id: string;
@@ -30,10 +32,21 @@ export class GetPatientSummaryQueryHandler
 {
   constructor(private readonly prisma: PrismaService) {}
 
-  async execute(query: GetPatientSummaryQuery): Promise<PatientSummary> {
+  async execute(
+    query: GetPatientSummaryQuery,
+    ctx: RequestContext,
+  ): Promise<PatientSummary> {
+    const scope = requireOrgScope(ctx);
+    const patientId = requireId(query.patientId);
+    await foundOr404(
+      this.prisma.patient.findFirst({
+        where: { id: patientId, ...inScope(scope) },
+        select: { id: true },
+      }),
+    );
     const items = await this.prisma.workItem.findMany({
       where: {
-        patientId: query.patientId,
+        patientId,
         paymentStatus: { not: 'PAID' },
       },
       include: {

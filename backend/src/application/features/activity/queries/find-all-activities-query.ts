@@ -197,6 +197,7 @@ export class FindAllActivitiesQueryHandler implements IRequestHandler<
       paymentMethod: item.paymentMethod,
       paymentDate: item.paymentDate,
       attendance: item.attendance,
+      createdByUserId: item.createdByUserId ?? null,
       commission: item.splits
         .filter((s) => s.beneficiaryType === BeneficiaryType.ORG)
         .reduce((sum, s) => sum + Number((s as any).amount), 0),

@@ -88,9 +88,35 @@ describe('OrgAccessGuard', () => {
     await expect(guard.canActivate(context)).resolves.toBe(true);
     expect(request.orgAccess).toEqual({
       organizationIds: [orgA],
+      primaryOrgId: orgA,
       roles: { [orgA]: 'ADMIN' },
     });
     expect(getAccess).toHaveBeenCalledWith(userId, orgA);
+  });
+
+  it('primaryOrgId: header; sin header, query organizationId; solo body orgId; normalizado', async () => {
+    const run = async (parts: Parameters<typeof makeContext>[1]) => {
+      const { context, request } = makeContext(Ctrl.prototype.normal, {
+        userId,
+        ...parts,
+      });
+      await guard.canActivate(context);
+      return request.orgAccess;
+    };
+    const both = await run({
+      headers: { 'x-org-id': orgA },
+      query: { organizationId: orgB },
+    });
+    expect(both.primaryOrgId).toBe(orgA);
+    const query = await run({ query: { organizationId: orgB } });
+    expect(query.primaryOrgId).toBe(orgB);
+    const body = await run({ body: { orgId: orgA } });
+    expect(body.primaryOrgId).toBe(orgA);
+    const upper = await run({
+      headers: { 'x-org-id': ` ${orgA.toUpperCase()} ` },
+    });
+    expect(upper.primaryOrgId).toBe(orgA);
+    expect(upper.organizationIds).toContain(upper.primaryOrgId);
   });
 
   it('solo Professional: pasa con rol null', async () => {

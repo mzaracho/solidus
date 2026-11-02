@@ -6,7 +6,6 @@ import {
   Delete,
   Body,
   Param,
-  Headers,
   Inject,
   Query,
   UseGuards,
@@ -15,7 +14,10 @@ import { IDispatcher } from '@src/infrastructure.bootstrap/config/core/cqrs/inte
 import { GetOrgConfigQuery } from '@src/application/features/config/queries/get-org-config-query';
 import { GetOrganizationQuery } from '@src/application/features/config/queries/get-organization-query';
 import { GetActivityTypesQuery } from '@src/application/features/config/queries/get-activity-types-query';
-import { OrgRoleGuard, RequireOrgRole } from '@src/infrastructure.bootstrap/guards/org-role-guard';
+import {
+  OrgRoleGuard,
+  RequireOrgRole,
+} from '@src/infrastructure.bootstrap/guards/org-role-guard';
 import { CreateCategoryCommand } from '@src/application/features/config/commands/category-commands';
 import { CreatePresetCommand } from '@src/application/features/config/commands/preset-commands';
 import { CreateStaffCommand } from '@src/application/features/config/commands/staff-commands';
@@ -38,15 +40,13 @@ import {
   DeleteActivityTypeCommand,
 } from '@src/application/features/config/commands/activity-type-commands';
 import { UpdateOrganizationCommand } from '@src/application/features/config/commands/update-organization-command';
+import { LookupStaffByCuitQuery } from '@src/application/features/config/queries/lookup-staff-by-cuit-query';
 import { BaseController } from '../../base/base-controller';
-import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
+import { CurrentOrgId } from '@src/infrastructure.bootstrap/config/core/authentication/current-org-decorator';
 
 @Controller('org')
 export class OrgController extends BaseController {
-  constructor(
-    @Inject(IDispatcher) private readonly dispatcher: IDispatcher,
-    private readonly prisma: PrismaService,
-  ) {
+  constructor(@Inject(IDispatcher) private readonly dispatcher: IDispatcher) {
     super();
   }
 
@@ -54,7 +54,7 @@ export class OrgController extends BaseController {
   @RequireOrgRole('ADMIN')
   @UseGuards(OrgRoleGuard)
   async updateOrganization(
-    @Headers('x-org-id') id: string,
+    @CurrentOrgId() id: string,
     @Body() command: UpdateOrganizationCommand,
   ) {
     command.id = id;
@@ -62,13 +62,13 @@ export class OrgController extends BaseController {
   }
 
   @Get()
-  async getOrganization(@Headers('x-org-id') id: string) {
+  async getOrganization(@CurrentOrgId() id: string) {
     return this.dispatcher.dispatch(new GetOrganizationQuery({ orgId: id }));
   }
 
   @Get('config')
   async getConfig(
-    @Headers('x-org-id') orgId: string,
+    @CurrentOrgId() orgId: string,
     @Query() query: GetOrgConfigQuery,
   ) {
     query.orgId = orgId;
@@ -80,11 +80,7 @@ export class OrgController extends BaseController {
   @Post('categories')
   @RequireOrgRole('ADMIN')
   @UseGuards(OrgRoleGuard)
-  async createCategory(
-    @Headers('x-org-id') orgId: string,
-    @Body() command: CreateCategoryCommand,
-  ) {
-    command.orgId = orgId;
+  async createCategory(@Body() command: CreateCategoryCommand) {
     return this.dispatcher.dispatch(command);
   }
 
@@ -111,11 +107,7 @@ export class OrgController extends BaseController {
   @Post('presets')
   @RequireOrgRole('ADMIN')
   @UseGuards(OrgRoleGuard)
-  async createPreset(
-    @Headers('x-org-id') orgId: string,
-    @Body() command: CreatePresetCommand,
-  ) {
-    command.orgId = orgId;
+  async createPreset(@Body() command: CreatePresetCommand) {
     return this.dispatcher.dispatch(command);
   }
 
@@ -142,11 +134,7 @@ export class OrgController extends BaseController {
   @Post('staff')
   @RequireOrgRole('ADMIN')
   @UseGuards(OrgRoleGuard)
-  async addStaff(
-    @Headers('x-org-id') orgId: string,
-    @Body() command: CreateStaffCommand,
-  ) {
-    command.orgId = orgId;
+  async addStaff(@Body() command: CreateStaffCommand) {
     return this.dispatcher.dispatch(command);
   }
 
@@ -181,53 +169,26 @@ export class OrgController extends BaseController {
 
   /**
    * GET /org/staff/lookup?cuit=:cuit
-   * Looks up whether a CUIT belongs to an existing Organization or Professional.
-   * Used when adding a new staff member to warn/link automatically.
+   * Busca un profesional por CUIT solo dentro de la organización del request (respuesta mínima).
    */
   @Get('staff/lookup')
   @RequireOrgRole('ADMIN')
   @UseGuards(OrgRoleGuard)
   async lookupStaffByCuit(@Query('cuit') cuit: string) {
-    if (!cuit) return { type: 'NOT_FOUND' };
-
-    const org = await this.prisma.organization.findFirst({ where: { cuit } });
-    if (org) {
-      return { type: 'ORGANIZATION', id: org.id, name: org.name };
-    }
-
-    const pro = await this.prisma.professional.findFirst({
-      where: { cuit, deletedAt: null },
-      include: { organization: true },
-    });
-    if (pro) {
-      return {
-        type: 'PROFESSIONAL',
-        id: pro.id,
-        name: pro.displayName,
-        email: pro.email,
-        phone: pro.phone,
-        hasUser: !!pro.userId,
-      };
-    }
-
-    return { type: 'NOT_FOUND' };
+    return this.dispatcher.dispatch(new LookupStaffByCuitQuery(cuit));
   }
 
   // ─── ACTIVITY TYPES ──────────────────────────────────────────────────────────
 
   @Get('activity-types')
-  async getActivityTypes(@Headers('x-org-id') orgId: string) {
+  async getActivityTypes(@CurrentOrgId() orgId: string) {
     return this.dispatcher.dispatch(new GetActivityTypesQuery(orgId));
   }
 
   @Post('activity-types')
   @RequireOrgRole('ADMIN')
   @UseGuards(OrgRoleGuard)
-  async createActivityType(
-    @Headers('x-org-id') orgId: string,
-    @Body() command: CreateActivityTypeCommand,
-  ) {
-    command.orgId = orgId;
+  async createActivityType(@Body() command: CreateActivityTypeCommand) {
     return this.dispatcher.dispatch(command);
   }
 

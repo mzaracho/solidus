@@ -15,7 +15,7 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { getOrgConfig, createCategory, updateCategory, deleteCategory } from '@/services/data'
+import { getOrgConfig, createCategory, updateCategory, deleteCategory, isHandledApiError } from '@/services/data'
 import { toast } from 'sonner'
 
 interface Category {
@@ -68,7 +68,8 @@ export function CategoryManager() {
             setNewCat({ name: '', split: '' })
             await load()
             toast.success('Categoría creada')
-        } catch {
+        } catch (e) {
+            if (isHandledApiError(e)) return
             toast.error('Error al crear categoría')
         }
     }
@@ -95,7 +96,8 @@ export function CategoryManager() {
             cancelEdit()
             await load()
             toast.success('Categoría actualizada')
-        } catch {
+        } catch (e) {
+            if (isHandledApiError(e)) return
             toast.error('Error al actualizar categoría')
         }
     }
@@ -110,7 +112,8 @@ export function CategoryManager() {
             if (!ok) throw new Error()
             await load()
             toast.success('Categoría eliminada')
-        } catch {
+        } catch (e) {
+            if (isHandledApiError(e)) return
             toast.error('Error al eliminar categoría. Puede estar en uso por un profesional.')
         }
     }

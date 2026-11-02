@@ -75,7 +75,11 @@ export class OrgAccessGuard implements CanActivate {
       throw denied();
     }
 
-    const result: OrgAccessContext = { organizationIds: [], roles: {} };
+    const result: OrgAccessContext = {
+      organizationIds: [],
+      primaryOrgId: [...orgIds][0],
+      roles: {},
+    };
     for (const orgId of orgIds) {
       const access = await this.orgAccess.getAccess(userId, orgId);
       if (!access.allowed) throw denied();

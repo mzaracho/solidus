@@ -48,6 +48,8 @@ export const getColumns = (
     onUpdateAttendance: (item: Attention) => void,
     currentUserId: string | null = null,
     onViewDetail?: (item: Attention) => void,
+    // MEMBER de la organización: puede editar y cobrar atenciones ajenas, pero borrar solo las propias
+    isMember: boolean = false,
 ): ColumnDef<Attention>[] => [
         {
             id: "select",
@@ -165,6 +167,8 @@ export const getColumns = (
                 const isOwner = !payment.createdByUserId || payment.createdByUserId === currentUserId
                 // Actividades de orgs externas son siempre read-only
                 const canModify = isOwner && !payment.isExternal
+                // Editar y cobrar: el dueño, o un MEMBER sobre cualquier atención de su organización
+                const canEdit = (isOwner || isMember) && !payment.isExternal
 
                 return (
                     <DropdownMenu>
@@ -189,13 +193,13 @@ export const getColumns = (
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                                disabled={payment.paid || !canModify}
-                                onClick={() => canModify && onEdit(payment)}
-                                title={payment.isExternal ? 'No podés editar actividades de organizaciones externas' : !isOwner ? 'Solo podés editar actividades que cargaste vos' : undefined}
+                                disabled={payment.paid || !canEdit}
+                                onClick={() => canEdit && onEdit(payment)}
+                                title={payment.isExternal ? 'No podés editar actividades de organizaciones externas' : !canEdit ? 'Solo podés editar actividades que cargaste vos' : undefined}
                             >
                                 <Edit className="mr-2 h-4 w-4" /> Editar
                             </DropdownMenuItem>
-                            {!payment.paid && canModify && (
+                            {!payment.paid && canEdit && (
                                 <DropdownMenuItem className="text-green-600 cursor-pointer" onClick={() => onMarkPaid(payment)}>
                                     <CheckCircle className="mr-2 h-4 w-4" /> Marcar Cobrado
                                 </DropdownMenuItem>

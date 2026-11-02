@@ -34,7 +34,7 @@ import {
     DialogTrigger,
 } from '@/components/ui/dialog'
 
-import { getPatients, createPatient, updatePatient, getWorkItems, mergePatient } from '@/services/data'
+import { getPatients, createPatient, updatePatient, getWorkItems, mergePatient, isHandledApiError } from '@/services/data'
 import { PAYMENT_STATUS } from '@/lib/constants'
 import { useStore } from '@/store/useStore'
 
@@ -103,6 +103,7 @@ export function PatientDirectory() {
             setFormData({ firstName: '', lastName: '', email: '', phone: '' })
             loadPatients()
         } catch (e) {
+            if (isHandledApiError(e)) return
             toast.error("Error al crear paciente")
         }
     }
@@ -116,6 +117,7 @@ export function PatientDirectory() {
             loadPatients()
             setSelectedPatient({ ...selectedPatient, ...formData })
         } catch (e) {
+            if (isHandledApiError(e)) return
             toast.error("Error al actualizar paciente")
         }
     }
@@ -158,7 +160,8 @@ export function PatientDirectory() {
             setIsMergeOpen(false)
             setSelectedPatient(null)
             loadPatients()
-        } catch {
+        } catch (e) {
+            if (isHandledApiError(e)) return
             toast.error('Error al combinar pacientes')
         } finally {
             setMergeLoading(false)

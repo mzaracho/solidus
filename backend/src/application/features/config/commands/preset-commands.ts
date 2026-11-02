@@ -5,6 +5,8 @@ import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/r
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { FeePreset } from '@prisma/client';
+import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
+import { foundOr404, inScope, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNumber, IsOptional, IsString } from 'class-validator';
@@ -43,10 +45,11 @@ export class CreatePresetCommandHandler implements IRequestHandler<
 > {
   constructor(private readonly prisma: PrismaService) { }
 
-  async execute(command: CreatePresetCommand): Promise<FeePreset> {
+  async execute(command: CreatePresetCommand, ctx: RequestContext): Promise<FeePreset> {
+    const scope = requireOrgScope(ctx);
     const preset = await this.prisma.feePreset.create({
       data: {
-        organizationId: command.orgId,
+        organizationId: scope.primaryOrgId,
         name: command.name,
         value: command.baseValue,
         cardValue: command.cardValue ? command.cardValue : null,
@@ -99,9 +102,17 @@ export class UpdatePresetCommandHandler implements IRequestHandler<
 > {
   constructor(private readonly prisma: PrismaService) { }
 
-  async execute(command: UpdatePresetCommand): Promise<FeePreset> {
+  async execute(command: UpdatePresetCommand, ctx: RequestContext): Promise<FeePreset> {
+    const scope = requireOrgScope(ctx);
+    const id = requireId(command.id);
+    await foundOr404(
+      this.prisma.feePreset.findFirst({
+        where: { id, ...inScope(scope) },
+        select: { id: true },
+      }),
+    );
     const preset = await this.prisma.feePreset.update({
-      where: { id: command.id },
+      where: { id },
       data: {
         name: command.name,
         value: command.baseValue,
@@ -136,7 +147,15 @@ export class DeletePresetCommandHandler implements IRequestHandler<
 > {
   constructor(private readonly prisma: PrismaService) { }
 
-  async execute(command: DeletePresetCommand): Promise<FeePreset> {
-    return this.prisma.feePreset.delete({ where: { id: command.id } });
+  async execute(command: DeletePresetCommand, ctx: RequestContext): Promise<FeePreset> {
+    const scope = requireOrgScope(ctx);
+    const id = requireId(command.id);
+    await foundOr404(
+      this.prisma.feePreset.findFirst({
+        where: { id, ...inScope(scope) },
+        select: { id: true },
+      }),
+    );
+    return this.prisma.feePreset.delete({ where: { id } });
   }
 }

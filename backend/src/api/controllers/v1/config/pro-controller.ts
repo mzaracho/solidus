@@ -6,7 +6,6 @@ import {
   Delete,
   Body,
   Param,
-  Headers,
   Inject,
   Query,
 } from '@nestjs/common';
@@ -21,6 +20,7 @@ import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { BaseController } from '../../base/base-controller';
 import { CurrentUserId } from '@src/infrastructure.bootstrap/config/core/authentication/current-user-decorator';
 import { OrgOptional } from '@src/infrastructure.bootstrap/config/core/authentication/org-optional-decorator';
+import { CurrentOrgId } from '@src/infrastructure.bootstrap/config/core/authentication/current-org-decorator';
 
 @Controller('pro')
 export class ProController extends BaseController {
@@ -38,7 +38,7 @@ export class ProController extends BaseController {
    */
   @Get('context')
   async getContext(
-    @Headers('x-org-id') orgId: string,
+    @CurrentOrgId() orgId: string,
     @CurrentUserId() userId: string,
   ) {
     if (!userId || !orgId) return null;
@@ -109,9 +109,15 @@ export class ProController extends BaseController {
    */
   @Put('profile')
   async updateProfile(
-    @Headers('x-org-id') orgId: string,
+    @CurrentOrgId() orgId: string,
     @CurrentUserId() userId: string,
-    @Body() data: { displayName?: string; cuit?: string; phone?: string; email?: string },
+    @Body()
+    data: {
+      displayName?: string;
+      cuit?: string;
+      phone?: string;
+      email?: string;
+    },
   ) {
     if (!userId || !orgId) return null;
 
@@ -134,22 +140,9 @@ export class ProController extends BaseController {
     });
   }
 
-  @Get('payers/lookup')
-  async lookupPayerByCuit(@Query('cuit') cuit: string) {
-    if (!cuit) return { type: 'FREE' };
-
-    // Check if the CUIT belongs to a registered Organization
-    const org = await this.prisma.organization.findFirst({ where: { cuit } });
-    if (org) {
-      return { type: 'ORGANIZATION', name: org.name, id: org.id };
-    }
-
-    return { type: 'FREE' };
-  }
-
   @Get('payers')
   async getPayers(
-    @Headers('x-org-id') orgId: string,
+    @CurrentOrgId() orgId: string,
     @CurrentUserId() userId: string,
     @Query() query: GetPayersQuery,
   ) {
@@ -159,15 +152,10 @@ export class ProController extends BaseController {
   }
 
   @Post('payers')
-  async createPayer(
-    @Headers('x-org-id') orgId: string,
-    @CurrentUserId() userId: string,
-    @Body() command: CreatePayerCommand,
-  ) {
-    command.orgId = orgId;
-    command.userId = userId;
+  async createPayer(@Body() command: CreatePayerCommand) {
     return this.dispatcher.dispatch(command);
   }
+
   @Put('payers/:id')
   async updatePayer(
     @Param('id') id: string,

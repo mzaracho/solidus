@@ -53,6 +53,14 @@ salvo que el usuario lo pida.
   (acepta `PROFESSIONAL` y `pro`).
 - Errores de negocio con excepciones HTTP de Nest (`BadRequestException`, `ForbiddenException`,
   `NotFoundException`), no `throw new Error`.
+- Endpoint nuevo con datos de una organización: usar `@CurrentUserId()` / `@CurrentOrgId()`, `requireOrgScope(ctx)`
+  y `foundOr404` / `inScope` / `inOrg` (`infrastructure.bootstrap/config/core/authentication/org-resource.ts`);
+  agregar el caso a `ID_ROUTE_CASES` de `test/org-isolation.spec.ts` (el test estructural falla si falta una ruta con
+  parámetros) y clasificar los campos `*Id` nuevos en `security-invariants.spec.ts`.
+- Atenciones (007): ADMIN puede todo; MEMBER edita y cobra cualquier atención de su organización pero borra solo las
+  propias (`createdByUserId`); quien solo tiene un `Professional` edita/borra lo suyo y necesita `canLoadActivities`
+  para crear. Detalle: `docs/features/007-aislamiento-organizaciones/00-estado.md`.
+- `ConfigController` ya no existe: el front usa `org/*` (escrituras ADMIN) y `pro/*`.
 - Prettier: comillas simples, trailing commas (`.prettierrc`).
 
 ## Convenciones — frontend
@@ -132,17 +140,17 @@ Seeds (archivos locales, no versionados): `.\dev.ps1 -Seed`; manual con `docker 
 3. Nunca agregar secretos, tokens, contraseñas ni datos reales de pacientes/profesionales
    a archivos versionados (incluye seeds, specs, docs y settings de Claude). Usar datos ficticios.
    Ninguna credencial, ni siquiera de prueba o de desarrollo, puede subirse a GitHub.
-4. Seguridad (estado actual, ver `docs/auditoria/RIESGOS.md`): los JWT se verifican (guard global,
-   HS256, issuer/audience); la identidad sale de `sub` (`@CurrentUserId()`; `x-user-id` no se lee) y la
-   organización (`x-org-id`, `organizationId`/`orgId` de query o body) se valida contra `OrganizationMember` o
-   `Professional` activo, con 403 si no hay vínculo. El guard global responde 401 a usuarios inexistentes o
-   dados de baja (`User.deletedAt`) con una consulta por PK en cada request. Siguen abiertos: pertenencia del recurso por `:id`
-   (IDOR), modo derivado del rol (`x-mode` aún lo manda el cliente), ADMIN en `ConfigController`, cookie de
-   sesión sin HttpOnly y rate limiting del login. Todo endpoint nuevo o modificado debe:
-   - estar autenticado (por defecto lo está; `@Public()` solo con justificación),
-   - tener la organización validada (por defecto; `@OrgOptional` solo con justificación),
-   - verificar pertenencia del recurso al operar por `:id`,
-   - aplicar permisos en el backend (ocultar un botón en el front no es control de acceso).
+4. Seguridad (ver `docs/auditoria/RIESGOS.md`): el JWT se verifica (005) y el aislamiento entre organizaciones está
+   resuelto (007). Reglas vigentes para todo endpoint nuevo o modificado:
+   - autenticación (guard global) y organización tomada SOLO de `@CurrentOrgId()` / `RequestContext` (segundo
+     parámetro de `execute`, lo pasa el Dispatcher); nunca de `@Headers('x-org-id')`, query ni body (lo vigila
+     `src/security-invariants.spec.ts`),
+   - recursos por `:id` y ids referenciados verificados contra la organización (helper `org-resource.ts`); si no
+     pertenece, 404 genérico idéntico al de un id inexistente,
+   - permisos en el backend con el rol de la base: las escrituras de `org/*` exigen `@RequireOrgRole('ADMIN')`;
+     `x-mode` no da permisos (solo se lee en `activity-controller.ts` al crear).
+   Pendiente (ver BACKLOG): modo derivado del rol para qué datos se muestran (feature 009), cookie `HttpOnly`,
+   rate limiting en login.
 5. Operaciones que escriben varias tablas van dentro de `prisma.$transaction`.
 6. Cambios de schema: migración Prisma + `prisma generate` + mencionar en la spec del feature.
 7. Antes de dar por terminado un cambio: `npx tsc --noEmit` en el repo afectado sin errores,

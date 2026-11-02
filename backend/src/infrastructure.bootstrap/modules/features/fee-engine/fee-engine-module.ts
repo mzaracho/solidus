@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { FeeRulesController } from '@src/api/controllers/v1/fee-engine/fee-rules-controller';
-import { ProfessionalCategoryController } from '@src/api/controllers/v1/fee-engine/professional-category-controller';
 import { FeeResolutionService } from '@src/infrastructure/features/fee-engine/fee-resolution.service';
 import { PrismaModule } from '../prisma/prisma-module';
 import { DispatcherProvider } from '@src/infrastructure.bootstrap/config/core/cqrs/dispatcher-provider';
@@ -17,7 +16,7 @@ import {
     FindFeeRulesQueryHandler,
     CreateFeeRuleCommandHandler,
   ],
-  controllers: [FeeRulesController, ProfessionalCategoryController],
+  controllers: [FeeRulesController],
   exports: [FeeResolutionService],
 })
 export class FeeEngineModule { }

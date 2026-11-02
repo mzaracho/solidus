@@ -3,6 +3,7 @@ import { ActivityParticipantDto, CreateActivityDto } from '../Dtos/create-activi
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
 import { Injectable } from '@nestjs/common';
+import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 import { ActivityService } from '@src/infrastructure/features/activity/activity.service';
 import { WorkItem } from '@src/domain/features/activity/WorkItem.entity';
 
@@ -115,8 +116,6 @@ export class CreateActivityCommand implements IRequest<WorkItem> {
   @IsOptional()
   @IsString()
   mode?: string;
-
-  userId?: string; // Internal use
 }
 
 @RequestHandler(CreateActivityCommand)
@@ -127,7 +126,8 @@ export class CreateActivityCommandHandler implements IRequestHandler<
 > {
   constructor(private readonly activityService: ActivityService) { }
 
-  async execute(command: CreateActivityCommand): Promise<WorkItem> {
+  async execute(command: CreateActivityCommand, ctx: RequestContext): Promise<WorkItem> {
+    const scope = requireOrgScope(ctx);
     const dto: CreateActivityDto = {
       organizationId: command.organizationId,
       date: command.date,
@@ -147,9 +147,8 @@ export class CreateActivityCommandHandler implements IRequestHandler<
       amountBase: command.amountBase,
       amountCard: command.amountCard,
       attendance: command.attendance,
-      userId: command.userId,
       serviceType: command.serviceType,
     };
-    return this.activityService.createActivity(dto, command.mode ?? 'org');
+    return this.activityService.createActivity(dto, command.mode ?? 'org', scope);
   }
 }

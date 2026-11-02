@@ -84,6 +84,17 @@ export default function ProfessionalsPage() {
         }
 
         setCreating(true)
+        // Si falla la categoría después de guardar al profesional, el alta/edición ya está hecha:
+        // se cierra el diálogo, se recarga y se informa el error.
+        let categoryError: unknown = null
+        const assignCategory = async (staffId: string) => {
+            try {
+                await assignStaffCategory(orgSlug, staffId, formData.categoryId)
+            } catch (err) {
+                console.error(err)
+                categoryError = err
+            }
+        }
         try {
             let res
             if (editingId) {
@@ -91,9 +102,11 @@ export default function ProfessionalsPage() {
                 res = await updateStaff(orgSlug, editingId, formData)
                 // Update category separately if changed
                 if (formData.categoryId) {
-                    await assignStaffCategory(orgSlug, editingId, formData.categoryId)
+                    await assignCategory(editingId)
                 }
-                if (res?.warning) {
+                if (categoryError) {
+                    // el aviso de error se muestra más abajo
+                } else if (res?.warning) {
                     toast.warning(res.warning)
                 } else {
                     toast.success('Profesional actualizado exitosamente')
@@ -104,9 +117,9 @@ export default function ProfessionalsPage() {
                 if (res && res.id) {
                     // Assign category if selected
                     if (formData.categoryId) {
-                        await assignStaffCategory(orgSlug, res.id, formData.categoryId)
+                        await assignCategory(res.id)
                     }
-                    toast.success('Profesional creado exitosamente')
+                    if (!categoryError) toast.success('Profesional creado exitosamente')
                 } else {
                     throw new Error('No se pudo crear')
                 }
@@ -116,8 +129,12 @@ export default function ProfessionalsPage() {
             setFormData({ name: '', surname: '', userId: '', cuit: '', email: '', phone: '', canLoadActivities: false, categoryId: '' })
             setEditingId(null)
             load()
+            if (categoryError && !isHandledApiError(categoryError)) {
+                toast.error('Se guardó el profesional, pero no se pudo asignar la categoría')
+            }
         } catch (e) {
             console.error(e)
+            if (isHandledApiError(e)) return
             toast.error('Error al guardar profesional')
         } finally {
             setCreating(false)

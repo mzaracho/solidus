@@ -1,12 +1,13 @@
-import { Controller, Get, Post, Body, Query, Inject, Headers } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Controller, Get, Post, Body, Query, Inject } from '@nestjs/common';
 import { IDispatcher } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-dispatcher';
 import {
   FindFeeRulesQuery,
   CreateFeeRuleCommand,
+  CreateFeeRuleDto,
 } from '@src/application/features/fee-engine/commands/fee-rule-commands';
 import { BaseController } from '../../base/base-controller';
 import { CurrentUserId } from '@src/infrastructure.bootstrap/config/core/authentication/current-user-decorator';
+import { CurrentOrgId } from '@src/infrastructure.bootstrap/config/core/authentication/current-org-decorator';
 
 @Controller('fee-rules')
 export class FeeRulesController extends BaseController {
@@ -16,7 +17,7 @@ export class FeeRulesController extends BaseController {
 
   @Get()
   async findAll(
-    @Headers('x-org-id') orgId: string,
+    @CurrentOrgId() orgId: string,
     @CurrentUserId() userId: string,
     @Query() query: FindFeeRulesQuery,
   ) {
@@ -26,15 +27,9 @@ export class FeeRulesController extends BaseController {
   }
 
   @Post()
-  async create(
-    @Headers('x-org-id') orgId: string,
-    @Body() data: Prisma.FeeRuleCreateInput,
-  ) {
+  async create(@Body() data: CreateFeeRuleDto) {
     const command = new CreateFeeRuleCommand();
-    command.data = {
-      ...data,
-      organization: { connect: { id: orgId } },
-    };
+    command.data = data;
     return this.dispatcher.dispatch(command);
   }
 }

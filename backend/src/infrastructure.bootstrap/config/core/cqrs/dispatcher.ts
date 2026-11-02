@@ -4,6 +4,8 @@ import { ContextIdFactory, ModuleRef } from '@nestjs/core';
 import { Reflector } from '@nestjs/core';
 import { IRequest } from './interfaces/i-request';
 import { REQUEST_HANDLER_METADATA_KEY } from './constant';
+import { AuthenticatedRequest } from '../authentication/auth-context';
+import { buildRequestContext } from './request-context';
 
 export class Dispatcher implements IDispatcher {
   constructor(
@@ -31,6 +33,9 @@ export class Dispatcher implements IDispatcher {
     }
 
     const handler = await this.moduleRef.resolve(handlerType, contextId);
-    return handler.execute(request);
+    return handler.execute(
+      request,
+      buildRequestContext(this.request as unknown as AuthenticatedRequest),
+    );
   }
 }

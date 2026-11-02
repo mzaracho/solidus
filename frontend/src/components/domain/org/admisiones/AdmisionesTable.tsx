@@ -5,7 +5,7 @@ import { DataTable } from '@/components/ui/data-table'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useParams } from 'next/navigation'
-import { getWorkItems, getOrgConfig, createWorkItem, deleteWorkItem, updateWorkItem, getWorkItemById, getActivityTypes } from '@/services/data'
+import { getWorkItems, getOrgConfig, createWorkItem, deleteWorkItem, updateWorkItem, getWorkItemById, getActivityTypes, isHandledApiError } from '@/services/data'
 import { WorkItemForm } from '@/components/domain/workload/form/WorkItemForm'
 import { ActivityDetailDialog } from './ActivityDetailDialog'
 import { PaymentRegistrationModal } from '@/components/domain/payment/PaymentRegistrationModal'
@@ -16,6 +16,9 @@ import { format } from 'date-fns'
 import { formatCurrency } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
+import { jwtDecode } from 'jwt-decode'
+import { useStore } from '@/store/useStore'
+import { readSessionToken } from '@/lib/session'
 import {
     Select,
     SelectContent,
@@ -37,11 +40,28 @@ function StatusBadge({ status }: { status: string }) {
     return <Badge variant="secondary">Pendiente</Badge>
 }
 
+/** Usuario y Professional propio según el token (solo presentación; el backend decide los permisos). */
+function readIdentity(): { userId: string | null; professionalId: string | null } {
+    const token = typeof window === 'undefined' ? null : readSessionToken()
+    if (!token) return { userId: null, professionalId: null }
+    try {
+        const d = jwtDecode<{ sub?: string; professionalId?: string | null }>(token)
+        return { userId: d.sub ?? null, professionalId: d.professionalId ?? null }
+    } catch {
+        return { userId: null, professionalId: null } // token ilegible: sin identidad
+    }
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function AdmisionesTable() {
     const params = useParams()
     const orgSlug = params.orgSlug as string
+    const { orgRole } = useStore()
+
+    // Usuario y Professional propio (del token) para decidir qué botón Eliminar se muestra.
+    // Es solo presentación: el backend decide quién puede borrar (403 si no corresponde).
+    const { userId: currentUserId, professionalId: currentProfessionalId } = readIdentity()
 
     // ── Data ──────────────────────────────────────────────────────────────────
     const [loading, setLoading] = useState(true)
@@ -102,6 +122,8 @@ export function AdmisionesTable() {
                 paymentMethod: i.paymentMethod || null,
                 fees: i.grossAmount ?? 0,
                 presetId: i.presetId,
+                professionalId: i.professionalId ?? null,
+                createdByUserId: i.createdByUserId ?? null,
             }))
 
             setLocalData(mapped)
@@ -167,6 +189,8 @@ export function AdmisionesTable() {
             toast.success('Registro eliminado')
             loadData()
         } catch (e: any) {
+            // Un 403 ya se avisó con el toast de acceso: no se duplica
+            if (isHandledApiError(e)) return
             const msg = e?.response?.data?.errors?.[0]?.message
                 || e?.message
                 || 'Error al eliminar el registro'
@@ -255,6 +279,11 @@ export function AdmisionesTable() {
             cell: ({ row }) => {
                 const item = row.original
                 const paid = isPaidStatus(item.paymentStatus)
+                // MEMBER: solo borra lo propio (o, sin autor registrado, lo de su Professional). ADMIN: todo.
+                const canDelete = orgRole !== 'MEMBER'
+                    || (item.createdByUserId
+                        ? item.createdByUserId === currentUserId
+                        : !!item.professionalId && item.professionalId === currentProfessionalId)
                 return (
                     <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary"
@@ -274,16 +303,17 @@ export function AdmisionesTable() {
                             <CreditCard className="h-4 w-4" />
                         </Button>
                         <Button variant="ghost" size="icon"
-                            className={`h-8 w-8 ${paid ? 'opacity-40 cursor-not-allowed' : 'text-destructive hover:bg-destructive/10'}`}
-                            onClick={() => !paid && setConfirmDelete(item)}
-                            disabled={paid} title={paid ? 'No se puede eliminar una actividad cobrada' : 'Eliminar'}>
+                            className={`h-8 w-8 ${paid || !canDelete ? 'opacity-40 cursor-not-allowed' : 'text-destructive hover:bg-destructive/10'}`}
+                            onClick={() => !paid && canDelete && setConfirmDelete(item)}
+                            disabled={paid || !canDelete}
+                            title={paid ? 'No se puede eliminar una actividad cobrada' : !canDelete ? 'Solo podés eliminar tus propias atenciones' : 'Eliminar'}>
                             <Trash2 className="h-4 w-4" />
                         </Button>
                     </div>
                 )
             },
         },
-    ], [categories])
+    ], [categories, orgRole, currentUserId, currentProfessionalId])
 
     // ─────────────────────────────────────────────────────────────────────────
     return (
@@ -426,12 +456,17 @@ export function AdmisionesTable() {
                 isOpen={isPaymentModalOpen}
                 onClose={() => { setIsPaymentModalOpen(false); setItemToPay(null) }}
                 onConfirm={async (items, date, method) => {
-                    for (const item of items) {
-                        await updateWorkItem(orgSlug, item.id.toString(), {
-                            paymentStatus: PAYMENT_STATUS.PAID,
-                            paymentDate: date,
-                            paymentMethod: method,
-                        })
+                    try {
+                        for (const item of items) {
+                            await updateWorkItem(orgSlug, item.id.toString(), {
+                                paymentStatus: PAYMENT_STATUS.PAID,
+                                paymentDate: date,
+                                paymentMethod: method,
+                            })
+                        }
+                    } catch (e) {
+                        if (!isHandledApiError(e)) toast.error('Error al registrar el cobro')
+                        return
                     }
                     setIsPaymentModalOpen(false)
                     setItemToPay(null)

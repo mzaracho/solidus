@@ -25,6 +25,8 @@ export interface AuthContext {
 /** Resultado de la validación de pertenencia (OrgAccessGuard). */
 export interface OrgAccessContext {
   organizationIds: string[];
+  /** Organización principal del request (x-org-id o la primera fuente presente). Siempre está en organizationIds. */
+  primaryOrgId: string;
   /** Rol de membresía por organización; null si el vínculo es solo de Professional. */
   roles: Record<string, OrgRoleValue | null>;
 }
@@ -41,4 +43,5 @@ export const AUTH_ERROR_CODE = {
   UNAUTHORIZED: 'unauthorized',
   ORG_ACCESS_DENIED: 'org-access-denied',
   FORBIDDEN: 'forbidden',
+  NOT_FOUND: 'not-found',
 } as const;
