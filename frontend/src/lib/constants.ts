@@ -73,3 +73,39 @@ export const MIN_PATIENT_SEARCH_LENGTH = 3
 
 // ─── Type Prefix (internal selector prefix) ──────────────────────────────────
 export const ACTIVITY_TYPE_PREFIX = '__type__'
+
+// ─── Sesión y acceso (feature 005) ────────────────────────────────────────────
+export const ROUTES = {
+    LOGIN: '/login',
+    NO_ACCESS: '/sin-acceso',
+} as const
+
+// Códigos de error que devuelve el backend en el body (campo `code`).
+export const API_ERROR_CODE = {
+    UNAUTHORIZED: 'unauthorized',
+    ORG_ACCESS_DENIED: 'org-access-denied',
+    FORBIDDEN: 'forbidden',
+} as const
+
+export const SESSION_MESSAGES = {
+    // Login
+    loginSubtitle: 'Iniciá sesión para continuar',
+    sessionExpired: 'Tu sesión venció. Ingresá de nuevo para continuar.',
+    invalidCredentials: 'Usuario o contraseña incorrectos.',
+    missingFields: 'Ingresá tu usuario y tu contraseña.',
+    network: 'No pudimos conectarnos con el servidor. Revisá tu conexión e intentá de nuevo.',
+    server: 'No pudimos iniciar tu sesión por un problema de nuestro lado. Probá de nuevo en unos minutos.',
+    unexpected: 'Recibimos una respuesta inesperada del servidor. Probá de nuevo y, si sigue pasando, avisale a soporte.',
+    other: 'No pudimos iniciar tu sesión. Probá de nuevo en unos minutos.',
+    submitIdle: 'Ingresar',
+    submitBusy: 'Ingresando…',
+    // Sin acceso
+    noAccessTitle: 'Sin acceso a esta organización',
+    noAccessDescription: 'No tenés permiso para ver esta organización. Si creés que es un error, pedile acceso a un administrador.',
+    noOrgTitle: 'Tu cuenta no tiene organizaciones asignadas',
+    noOrgDescription: 'Ingresaste correctamente, pero todavía no pertenecés a ninguna organización. Pedile a un administrador que te dé acceso.',
+    backToStart: 'Volver al inicio',
+    logout: 'Cerrar sesión',
+    // Acción puntual rechazada (403)
+    forbiddenAction: 'No tenés permiso para hacer esto en esta organización.',
+} as const

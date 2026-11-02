@@ -6,6 +6,7 @@ import { PatientsModule } from './features/patients/patients-module';
 import { DashboardModule } from './features/dashboard/dashboard-module';
 import { SettlementsModule } from './features/settlements/settlements-module';
 import { AuthModule } from './features/auth/auth-module';
+import { HealthModule } from './features/health/health-module';
 import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { jwtModuleAsyncOptions } from '../config/app/jwt-config';
@@ -14,8 +15,12 @@ import {
   GlobalFilterProvider,
   HttpFilterProvider,
 } from '../config/providers/filter-provider';
+import {
+  AuthenticationGuardProvider,
+  OrgAccessGuardProvider,
+} from '../config/providers/guard-provider';
 import { LoggerModule } from '../config/modules/logger-module';
-import { VerifyTokenModule } from './features/auth/verify-token-module';
+import { OrgAccessService } from '@src/infrastructure/features/auth/services/org-access.service';
 
 import { ConfigModule as FeatureConfigModule } from '../config/config-module';
 
@@ -28,15 +33,23 @@ import { ConfigModule as FeatureConfigModule } from '../config/config-module';
     PatientsModule,
     DashboardModule,
     SettlementsModule,
-    VerifyTokenModule,
+    HealthModule,
     FeatureConfigModule, // Registering the missing module
     LoggerModule,
     ConfigModule.forRoot({ isGlobal: true }),
     JwtModule.registerAsync({
       global: true,
-      ...jwtModuleAsyncOptions('1d'),
+      ...jwtModuleAsyncOptions(),
     }),
   ],
-  providers: [GlobalFilterProvider, AxiosFilterProvider, HttpFilterProvider],
+  providers: [
+    GlobalFilterProvider,
+    AxiosFilterProvider,
+    HttpFilterProvider,
+    OrgAccessService,
+    // El orden es el de ejecución: autenticación primero, pertenencia después.
+    AuthenticationGuardProvider,
+    OrgAccessGuardProvider,
+  ],
 })
 export class AppModule {}

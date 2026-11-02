@@ -1,5 +1,4 @@
 import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { LoggingInterceptor } from './interceptors/logging.interceptor';
 import { AppModule } from './modules/app-module';
 import { NestExpressApplication } from '@nestjs/platform-express';
@@ -11,19 +10,24 @@ import { configureCors } from './config/app/cors-config';
 import { configureSwagger } from './config/app/swagger-config';
 import { configureNestInternalLogger } from './config/app/logger-config';
 import { getListenHost } from './config/app/listen-config';
+import { getRuntimeEnv } from './config/app/runtime-env';
 
 export async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
   });
-  app.useGlobalInterceptors(new LoggingInterceptor());
   const config = app.get(ConfigService);
+  app.useGlobalInterceptors(
+    new LoggingInterceptor({
+      debugEnabled: getRuntimeEnv(config) !== 'production',
+    }),
+  );
   configureBodyParser(app, config);
   configureGlobalPrefix(app);
   configurePipes(app);
   configureNestInternalLogger(app, config);
-  configureSwagger(app);
   configureCors(app, config);
+  configureSwagger(app, config);
 
   await app.listen(config.get('PORT') ?? 8080, getListenHost(config));
 }

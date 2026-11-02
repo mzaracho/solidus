@@ -354,8 +354,8 @@ function Invoke-SmokeTest {
     $apiBase = 'http://{0}:{1}' -f $probe, $script:BackendPort
 
     Write-DevStep 'Backend'
-    if ((Get-HttpStatus -Url ($apiBase + '/')) -eq 200) { Write-DevOk ('Backend OK ({0}/)' -f $apiBase) }
-    else { Write-Host ('FALLO Backend no responde en {0}/. Ejecuta .\dev.ps1.' -f $apiBase) -ForegroundColor Red; $failed = $true }
+    if ((Get-HttpStatus -Url ($apiBase + $script:BackendHealthPath)) -eq 200) { Write-DevOk ('Backend OK ({0}{1})' -f $apiBase, $script:BackendHealthPath) }
+    else { Write-Host ('FALLO Backend no responde en {0}{1}. Ejecuta .\dev.ps1.' -f $apiBase, $script:BackendHealthPath) -ForegroundColor Red; $failed = $true }
 
     Write-DevStep 'Frontend'
     $dockerFrontend = ((Test-DockerDaemon) -and (@(Get-ComposeRunningServices -RootDir $RootDir) -contains 'frontend'))

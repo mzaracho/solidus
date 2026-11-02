@@ -27,6 +27,8 @@ services:
       LISTEN_HOST: "0.0.0.0"
       APP_NAME: "Solidus API"
       NODE_ENV: "production"
+      # Origenes del navegador permitidos (frontend Docker en 3001). Extra opcionales: CORS_EXTRA_ORIGINS en .env.
+      CORS_ORIGIN: "http://localhost:3001,http://127.0.0.1:3001,${CORS_EXTRA_ORIGINS:-}"
     depends_on:
       - db
 

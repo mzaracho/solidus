@@ -387,6 +387,7 @@ function Test-RootEnv {
     }
     [void](ConvertTo-FrontendPort -Value (Get-DictValue $d 'FRONTEND_PORT'))
     [void](ConvertTo-BindAddress -Value (Get-DictValue $d 'BIND_ADDRESS'))
+    [void](ConvertTo-CorsOriginList -Value (Get-DictValue $d 'CORS_EXTRA_ORIGINS'))
     [void](ConvertTo-CaThumbprintList -Value (Get-DictValue $d 'EXTRA_CA_THUMBPRINT'))
     foreach ($n in 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB', 'JWT_SECRET', 'DATABASE_URL') {
         $v = [Environment]::GetEnvironmentVariable($n)
@@ -441,11 +442,39 @@ function Test-BindAddressLoopback {
     return ($a.StartsWith('127.') -or $a -eq '::1')
 }
 
+function ConvertTo-CorsOriginList {
+    # Lista de origenes del navegador (CORS_EXTRA_ORIGINS), separados por comas. Vacia o ausente = lista vacia.
+    # Cada entrada es esquema + host (o IPv6 entre corchetes) + puerto opcional: sin path, sin barra final y sin comodines.
+    # Misma regla que parseCorsOrigins del backend. Una entrada invalida: error con codigo 1, sin mostrar el valor.
+    param([AllowNull()][string]$Value)
+    $result = New-Object System.Collections.ArrayList
+    if ([string]::IsNullOrWhiteSpace($Value)) { return @() }
+    foreach ($part in $Value.Split(',')) {
+        $entry = $part.Trim()
+        if ($entry.Length -eq 0) { continue }
+        if ($entry -notmatch '^https?://(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]+)(:[0-9]{1,5})?$') {
+            Stop-Dev -Message 'CORS_EXTRA_ORIGINS en .env tiene un origen invalido.' -ExitCode 1 -Hint 'Usa origenes completos separados por comas (por ejemplo http://192.0.2.10:3000), sin path, sin barra final y sin comodines; o borra la linea.'
+        }
+        if (-not $result.Contains($entry)) { [void]$result.Add($entry) }
+    }
+    return @($result)
+}
+
+function Get-DevCorsOrigin {
+    # Valor de CORS_ORIGIN para backend/.env: los origenes del frontend en desarrollo (localhost y 127.0.0.1) mas los extra.
+    param([Parameter(Mandatory)][int]$FrontendPort, [AllowNull()][string[]]$Extra = @())
+    $list = New-Object System.Collections.ArrayList
+    [void]$list.Add(('http://localhost:{0}' -f $FrontendPort))
+    [void]$list.Add(('http://127.0.0.1:{0}' -f $FrontendPort))
+    foreach ($e in @($Extra)) { if (-not [string]::IsNullOrWhiteSpace($e) -and -not $list.Contains($e)) { [void]$list.Add($e) } }
+    return ($list -join ',')
+}
+
 function Get-BindExposureWarning {
     # Texto del aviso cuando BIND_ADDRESS expone los servicios en la red, o $null si es loopback.
     param([AllowNull()][string]$BindAddress)
     if (Test-BindAddressLoopback -BindAddress $BindAddress) { return $null }
-    return 'BIND_ADDRESS en .env publica la API y el frontend en la red (no solo en esta PC). La API todavia no verifica los JWT y el tenant sale de headers del cliente: cualquiera que llegue a ese puerto puede operar. Usalo solo en una red de confianza; para volver a solo esta PC borra la variable o pone 127.0.0.1.'
+    return 'BIND_ADDRESS en .env publica la API y el frontend en la red (no solo en esta PC). La API exige JWT y valida la organizacion, pero queda accesible para quien llegue a esos puertos: usalo solo en una red de confianza. Para abrir el frontend desde otro equipo hay que agregar su origen (http://<IP>:<puerto>) a CORS_EXTRA_ORIGINS en .env y correr .\dev.ps1 -Init. Para volver a solo esta PC borra la variable o pone 127.0.0.1.'
 }
 
 function Assert-DockerBindAddress {
@@ -496,6 +525,7 @@ function Sync-BackendEnv {
     $db = Get-DictValue $root 'POSTGRES_DB'
     $jwt = Get-DictValue $root 'JWT_SECRET'
     $listenHost = ConvertTo-BindAddress -Value (Get-DictValue $root 'BIND_ADDRESS')
+    $corsOrigin = Get-DevCorsOrigin -FrontendPort (ConvertTo-FrontendPort -Value (Get-DictValue $root 'FRONTEND_PORT')) -Extra (ConvertTo-CorsOriginList -Value (Get-DictValue $root 'CORS_EXTRA_ORIGINS'))
 
     $warnings = New-Object System.Collections.ArrayList
     $existingText = ''
@@ -534,7 +564,7 @@ function Sync-BackendEnv {
 
     # Clasificacion de claves existentes.
     $defaultKeys = @('NODE_ENV', 'APP_NAME', 'PORT')
-    $derivedKeys = @('DATABASE_URL', 'JWT_SECRET', 'LISTEN_HOST')
+    $derivedKeys = @('DATABASE_URL', 'JWT_SECRET', 'LISTEN_HOST', 'CORS_ORIGIN')
     $obsoleteKeys = @('POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB')
     $defaultLines = @{}
     $localLines = New-Object System.Collections.Specialized.OrderedDictionary
@@ -548,12 +578,14 @@ function Sync-BackendEnv {
     if (-not $defaultLines.ContainsKey('PORT')) { $defaultLines['PORT'] = 'PORT=8080' }
 
     $lines = New-Object System.Collections.ArrayList
-    [void]$lines.Add($script:GeneratedHeader + ' a partir de ../.env. No editar DATABASE_URL, JWT_SECRET ni LISTEN_HOST aqui:')
+    [void]$lines.Add($script:GeneratedHeader + ' a partir de ../.env. No editar DATABASE_URL, JWT_SECRET, LISTEN_HOST ni CORS_ORIGIN aqui:')
     [void]$lines.Add('# editar el .env de la raiz y correr .\dev.ps1 -Init. Las demas variables se conservan.')
     [void]$lines.Add('DATABASE_URL="' + (Build-DatabaseUrl -User $user -Password $pass -Database $db) + '"')
     [void]$lines.Add('JWT_SECRET=' + (ConvertTo-EnvValue -Value $jwt))
     # Interfaz donde escucha el backend en modo desarrollo (la deriva de BIND_ADDRESS; por defecto solo loopback).
     [void]$lines.Add('LISTEN_HOST=' + (ConvertTo-EnvValue -Value $listenHost))
+    # Origenes del navegador permitidos por CORS: el frontend de desarrollo (FRONTEND_PORT) mas CORS_EXTRA_ORIGINS.
+    [void]$lines.Add('CORS_ORIGIN=' + (ConvertTo-EnvValue -Value $corsOrigin))
     [void]$lines.Add($defaultLines['NODE_ENV'])
     [void]$lines.Add($defaultLines['APP_NAME'])
     [void]$lines.Add($defaultLines['PORT'])

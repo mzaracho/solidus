@@ -15,6 +15,8 @@ import {
     DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { useEffect, useState } from 'react'
+import { ROUTES } from '@/lib/constants'
+import { clearSessionCookie } from '@/lib/session'
 
 function getNameFromToken(): string {
     try {
@@ -43,8 +45,8 @@ export function Sidebar() {
     const userName = typeof document !== 'undefined' ? getNameFromToken() : 'Usuario'
 
     const handleLogout = () => {
-        document.cookie = 'auth_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
-        window.location.href = '/login'
+        clearSessionCookie()
+        window.location.href = ROUTES.LOGIN
     }
 
     const orgLinks = [
@@ -60,13 +62,15 @@ export function Sidebar() {
     const [canLoadActivities, setCanLoadActivities] = useState<boolean | null>(null)
 
     useEffect(() => {
-        if (!storeOrgSlug || viewMode !== 'PROFESSIONAL') return
+        // Organización de la URL (no la persistida en el store: puede ser de otra sesión y el backend responde 403).
+        const urlOrgSlug = params?.orgSlug as string | undefined
+        if (!urlOrgSlug || viewMode !== 'PROFESSIONAL') return
         import('@/services/data').then(({ getProfessionalContext }) => {
-            getProfessionalContext(storeOrgSlug).then(ctx => {
+            getProfessionalContext(urlOrgSlug).then(ctx => {
                 setCanLoadActivities(ctx?.canLoadActivities ?? false)
             })
         })
-    }, [storeOrgSlug, viewMode])
+    }, [params?.orgSlug, viewMode])
 
     const proLinks = [
         { href: `/${orgSlug}/dashboard`, label: 'Dashboard', icon: BarChart3, restricted: false },

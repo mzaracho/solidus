@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../Prisma/prisma.service';
 import { Prisma, PaymentStatus, BeneficiaryType } from '@prisma/client';
 import { isProfessionalMode, FEE_STRATEGY, FeeStrategy } from '@src/domain/constants/app.constants';
@@ -16,6 +16,8 @@ interface ActivityTypeRoleConfig {
 
 @Injectable()
 export class ActivityService {
+  private readonly logger = new Logger(ActivityService.name);
+
   constructor(
     private prisma: PrismaService,
     private feeEngine: FeeResolutionService,
@@ -84,7 +86,7 @@ export class ActivityService {
       payerId = defaultPayer?.id;
 
       if (!payerId) {
-        console.log(`[CreateActivity] Auto-creating "${privatePayerName}" payer for Org:`, data.organizationId);
+        this.logger.debug(`[CreateActivity] Auto-creating default payer for org ${data.organizationId}`);
         const createdPayer = await this.prisma.payer.create({
           data: {
             organizationId: data.organizationId,
@@ -102,13 +104,6 @@ export class ActivityService {
 
     // ── Resolve Primary Professional ──────────────────────────────────────────
     let professionalId = data.professionalId;
-
-    console.log('[CreateActivity] Attempting auto-resolution', {
-      userId: data.userId,
-      mode,
-      professionalId,
-      orgId: data.organizationId,
-    });
 
     if (!professionalId && isProfessionalMode(mode) && data.userId) {
       let pro = await this.prisma.professional.findFirst({
@@ -131,12 +126,11 @@ export class ActivityService {
                 canLoadActivities: true
               }
             });
-            console.log(`[CreateActivity] Auto-created Professional record for Virtual Org: ${org.id}`);
+            this.logger.debug(`[CreateActivity] Auto-created Professional record for virtual org ${org.id}`);
           }
         }
       }
 
-      console.log('[CreateActivity] Resolution Result:', pro);
       if (pro) professionalId = pro.id;
     }
 
@@ -200,8 +194,6 @@ export class ActivityService {
       ...(data.presetId && { preset: { connect: { id: data.presetId } } }),
     };
 
-    console.log('[CreateActivity] Persisting WorkItem:', JSON.stringify(prismaData));
-
     const workItem = await this.prisma.workItem.create({ data: prismaData });
 
     // ── Create WorkItemParticipants ────────────────────────────────────────────
@@ -252,7 +244,7 @@ export class ActivityService {
 
     if (isProfessionalMode(mode) && isPrivate) {
       const proPct = orgSettings.proModePrivatePatientPct / 100;
-      console.log(`[CreateActivity] Private Patient in Pro Mode (SOLO_PRACTICE): ${orgSettings.proModePrivatePatientPct}% to Professional`);
+      this.logger.debug(`[CreateActivity] Private patient in pro mode (SOLO_PRACTICE): ${orgSettings.proModePrivatePatientPct}% to professional`);
       splits = [{
         beneficiaryType: BeneficiaryType.PROFESSIONAL,
         beneficiaryId: professionalId,

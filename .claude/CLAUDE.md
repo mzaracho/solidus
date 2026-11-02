@@ -33,9 +33,9 @@ salvo que el usuario lo pida.
 
 ## Stack
 - Backend: TypeScript 5.9, NestJS 10, Prisma 5.22, PostgreSQL 16, JWT (`@nestjs/jwt`), bcrypt,
-  class-validator, Swagger, Jest 29 (solo tests de `jwt-config`), ESLint 9 + Prettier.
+  class-validator, Swagger, Jest 29 (specs de guards, login, logs, CORS, rutas, etc. en `src/` y `test/`), ESLint 9 + Prettier.
 - Frontend: Next.js 16.1 (Turbopack), React 19.2, TypeScript strict, Tailwind 4, shadcn/ui (Radix),
-  Zustand, Recharts, date-fns, sonner. Sin framework de tests.
+  Zustand, Recharts, date-fns, sonner. Tests con `node --test` (`npm test`), sin framework.
 - Infra: Docker Compose (db `postgres:16.11-alpine` en 5433, backend 8080, frontend Docker 3001→3000). En desarrollo el frontend
   corre en el host en `FRONTEND_PORT` (3000 por defecto).
 
@@ -89,6 +89,10 @@ mano. Detalle, códigos de salida y errores comunes: `docs/auditoria/COMANDOS.md
   pero no se usa con secretos. Segunda barrera pendiente: push protection de GitHub (acción del usuario).
 - Si la ExecutionPolicy bloquea el script: `powershell -ExecutionPolicy Bypass -File .\dev.ps1` o
   `Unblock-File .\dev.ps1, .\scripts\*.ps1`.
+- CORS: `CORS_ORIGIN` (lista separada por comas, sin comodines; obligatoria con `NODE_ENV=production`) la genera
+  `dev.ps1` en `backend/.env`; `CORS_EXTRA_ORIGINS` (opcional, `.env` raíz) agrega orígenes, p. ej. al usar `BIND_ADDRESS`.
+- Swagger en http://localhost:8080/docs solo con `NODE_ENV` `development` o `test` (otro valor cuenta como
+  producción). Salud pública sin auth: `GET /health/liveness` (fuera de `/api`).
 - Variables opcionales del `.env` raíz: `FRONTEND_PORT` (puerto del frontend en desarrollo, default 3000;
   entero 1024-65535, distinto de 5433 y 8080) y `BIND_ADDRESS` (interfaz de API y frontend, default 127.0.0.1;
   Postgres siempre en 127.0.0.1). El modo desarrollo escucha solo en loopback: backend vía `LISTEN_HOST`
@@ -102,16 +106,16 @@ Backend (`cd backend`):
 - `docker compose up -d db` (desde la raíz) — Postgres local en 5433; requiere `backend/.env` ya generado
   (`.\dev.ps1 -Init`)
 - `npm install` · `npx prisma migrate deploy` · `npx prisma generate`
-- `npm run start:dev` — API en http://localhost:8080/api, Swagger en http://localhost:8080/
+- `npm run start:dev` — API en http://localhost:8080/api, Swagger en http://localhost:8080/docs
 - `npx tsc --noEmit` — type-check
 - `npx eslint "{src,apps,libs,test}/**/*.ts"` — lint sin modificar archivos
 - `npm run lint` — ATENCIÓN: aplica `--fix` y reescribe archivos
-- `npm test` — Jest (hoy solo `jwt-config.spec.ts`)
+- `npm test` — Jest (13 suites)
 - `npm run build` — reescribe `dist/`
 
 Frontend (`cd frontend`):
 - `npm install` · `npm run dev` (http://localhost:3000; con `dev.ps1`, el puerto de `FRONTEND_PORT`)
-- `npx tsc --noEmit` · `npm run lint`
+- `npx tsc --noEmit` · `npm run lint` · `npm test` (`node --test`)
 - `npm run build` — si falla la descarga de Google Fonts por TLS:
   `NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS=1 npm run build`
 - El build Docker (`apk`, `npm`, Prisma, Google Fonts) falla por TLS detrás de un antivirus/proxy que inspecciona
@@ -128,10 +132,14 @@ Seeds (archivos locales, no versionados): `.\dev.ps1 -Seed`; manual con `docker 
 3. Nunca agregar secretos, tokens, contraseñas ni datos reales de pacientes/profesionales
    a archivos versionados (incluye seeds, specs, docs y settings de Claude). Usar datos ficticios.
    Ninguna credencial, ni siquiera de prueba o de desarrollo, puede subirse a GitHub.
-4. Seguridad (estado actual, ver `docs/auditoria/RIESGOS.md`): los JWT no se verifican y el
-   tenant se toma de headers del cliente. Todo endpoint nuevo o modificado debe:
-   - estar protegido por autenticación,
-   - filtrar por la organización del usuario autenticado,
+4. Seguridad (estado actual, ver `docs/auditoria/RIESGOS.md`): los JWT se verifican (guard global,
+   HS256, issuer/audience); la identidad sale de `sub` (`@CurrentUserId()`; `x-user-id` no se lee) y la
+   organización (`x-org-id`, `organizationId`/`orgId` de query o body) se valida contra `OrganizationMember` o
+   `Professional` activo, con 403 si no hay vínculo. Siguen abiertos: pertenencia del recurso por `:id`
+   (IDOR), modo derivado del rol (`x-mode` aún lo manda el cliente), ADMIN en `ConfigController`, cookie de
+   sesión sin HttpOnly y rate limiting del login. Todo endpoint nuevo o modificado debe:
+   - estar autenticado (por defecto lo está; `@Public()` solo con justificación),
+   - tener la organización validada (por defecto; `@OrgOptional` solo con justificación),
    - verificar pertenencia del recurso al operar por `:id`,
    - aplicar permisos en el backend (ocultar un botón en el front no es control de acceso).
 5. Operaciones que escriben varias tablas van dentro de `prisma.$transaction`.

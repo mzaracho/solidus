@@ -1,12 +1,12 @@
 import { ConfigService } from '@nestjs/config';
-import {
-  JwtModuleAsyncOptions,
-  JwtModuleOptions,
-  JwtSignOptions,
-} from '@nestjs/jwt';
+import { JwtModuleAsyncOptions, JwtModuleOptions } from '@nestjs/jwt';
 import { isString } from '../core/type-guards';
 
 export const JWT_SECRET_MIN_LENGTH = 32;
+export const JWT_ALGORITHM = 'HS256';
+export const JWT_ISSUER = 'solidus-api';
+export const JWT_AUDIENCE = 'solidus-web';
+export const JWT_EXPIRES_IN = '8h';
 
 /**
  * Devuelve el secreto JWT o falla al arrancar si falta o es demasiado corto.
@@ -27,14 +27,22 @@ export function getRequiredJwtSecret(config: ConfigService): string {
   return secret;
 }
 
-export function jwtModuleAsyncOptions(
-  expiresIn: JwtSignOptions['expiresIn'],
-): JwtModuleAsyncOptions {
+export function jwtModuleAsyncOptions(): JwtModuleAsyncOptions {
   return {
     inject: [ConfigService],
     useFactory: (config: ConfigService): JwtModuleOptions => ({
       secret: getRequiredJwtSecret(config),
-      signOptions: { expiresIn },
+      signOptions: {
+        expiresIn: JWT_EXPIRES_IN,
+        algorithm: JWT_ALGORITHM,
+        issuer: JWT_ISSUER,
+        audience: JWT_AUDIENCE,
+      },
+      verifyOptions: {
+        algorithms: [JWT_ALGORITHM],
+        issuer: JWT_ISSUER,
+        audience: JWT_AUDIENCE,
+      },
     }),
   };
 }

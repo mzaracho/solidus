@@ -3,7 +3,7 @@ import { isString } from '../core/type-guards';
 
 /**
  * Solo loopback: si LISTEN_HOST falta o está vacía el backend NO queda expuesto en la red (falla cerrado).
- * Los JWT no se verifican y el tenant viene de headers del cliente (ver docs/auditoria/RIESGOS.md).
+ * Aun con JWT y organización validados, el modo desarrollo no se expone en la red sin pedirlo (BIND_ADDRESS).
  */
 export const DEFAULT_LISTEN_HOST = '127.0.0.1';
 

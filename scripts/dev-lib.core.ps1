@@ -12,6 +12,8 @@ $script:ExitCodeRemoteDocker = 8
 $script:DefaultFrontendPort = 3000
 $script:DockerFrontendPort = 3001
 $script:BackendPort = 8080
+# Ruta publica de salud del backend (fuera de /api). Reemplaza a '/' (antes Swagger) en las esperas y en -Smoke.
+$script:BackendHealthPath = '/health/liveness'
 $script:ReservedPorts = @($script:DevPostgresPort, $script:BackendPort)
 $script:ExitCodeComposeUp = 9
 $script:ExitCodeRotateIncomplete = 10

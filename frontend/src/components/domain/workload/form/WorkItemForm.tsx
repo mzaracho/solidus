@@ -21,7 +21,7 @@ import {
     DialogFooter,
 } from "@/components/ui/dialog"
 import { useStore } from '@/store/useStore'
-import { getPatients, getActivityTypes } from '@/services/data'
+import { getPatients, getActivityTypes, isHandledApiError } from '@/services/data'
 import { DatePicker } from '@/components/ui/date-picker'
 import {
     PAYMENT_STATUS,
@@ -445,6 +445,8 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
         } catch (error: any) {
             // Error is already shown by the parent (AtencionesTable), but show here too for safety
             // Only show if parent didn't already show it
+            // Un 403 ya se avisó con el toast de acceso (UX 3.4): no se duplica con otro mensaje.
+            if (isHandledApiError(error)) return
             const msg = error?.message || 'Error al guardar la actividad'
             toast.error(msg)
             // Don't close the modal on error

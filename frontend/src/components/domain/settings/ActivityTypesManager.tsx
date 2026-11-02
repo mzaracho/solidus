@@ -21,7 +21,7 @@ import {
     DialogTitle,
     DialogFooter,
 } from '@/components/ui/dialog'
-import { getActivityTypes, createActivityType, updateActivityType, deleteActivityType } from '@/services/data'
+import { getActivityTypes, createActivityType, updateActivityType, deleteActivityType, isHandledApiError } from '@/services/data'
 
 type FeeStrategy = 'CATEGORY' | 'FIXED'
 
@@ -204,6 +204,7 @@ export function ActivityTypesManager() {
             setDialogOpen(false)
             await load()
         } catch (e: any) {
+            if (isHandledApiError(e)) return
             toast.error(e.message || 'Error al guardar')
         } finally {
             setSaving(false)
@@ -220,6 +221,7 @@ export function ActivityTypesManager() {
             toast.success('Prestación eliminada')
             await load()
         } catch (e: any) {
+            if (isHandledApiError(e)) return
             toast.error(e.message || 'Error al eliminar')
         }
     }

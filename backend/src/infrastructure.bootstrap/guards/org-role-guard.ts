@@ -6,8 +6,11 @@ import {
   SetMetadata,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { JwtService } from '@nestjs/jwt';
 import { OrgRole } from '@prisma/client';
+import {
+  AUTH_ERROR_CODE,
+  AuthenticatedRequest,
+} from '../config/core/authentication/auth-context';
 
 export const REQUIRED_ORG_ROLE_KEY = 'requiredOrgRole';
 
@@ -19,15 +22,13 @@ export const RequireOrgRole = (role: OrgRole) =>
   SetMetadata(REQUIRED_ORG_ROLE_KEY, role);
 
 /**
- * Guard that validates the authenticated user's OrgRole from the JWT payload.
- * Only blocks access if a required role is declared via @RequireOrgRole().
+ * Guard que valida el rol del usuario autenticado en la organización pedida.
+ * El rol sale de la base (OrgAccessGuard), no del `orgRole` del token, que corresponde a la
+ * primera membresía. Solo bloquea si hay un rol declarado con @RequireOrgRole().
  */
 @Injectable()
 export class OrgRoleGuard implements CanActivate {
-  constructor(
-    private readonly reflector: Reflector,
-    private readonly jwtService: JwtService,
-  ) {}
+  constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
     const requiredRole = this.reflector.getAllAndOverride<string>(
@@ -38,29 +39,22 @@ export class OrgRoleGuard implements CanActivate {
     // No role restriction declared → allow
     if (!requiredRole) return true;
 
-    const request = context.switchToHttp().getRequest();
-    const authHeader = request.headers?.authorization;
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const access = request.orgAccess;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new ForbiddenException('Authentication required.');
-    }
+    const forbidden = () =>
+      new ForbiddenException({
+        code: AUTH_ERROR_CODE.FORBIDDEN,
+        message: 'Forbidden',
+      });
 
-    const token = authHeader.split(' ')[1];
-    let payload: any;
+    if (!access || access.organizationIds.length === 0) throw forbidden();
 
-    try {
-      payload = this.jwtService.decode(token);
-    } catch {
-      throw new ForbiddenException('Invalid token.');
-    }
-
-    const orgRole: string | null = payload?.orgRole ?? null;
-
-    if (requiredRole === OrgRole.ADMIN && orgRole !== OrgRole.ADMIN) {
-      throw new ForbiddenException(
-        'Solo los administradores pueden realizar esta acción.',
-      );
-    }
+    // Para cada organización involucrada el usuario debe tener el rol exigido.
+    const ok = access.organizationIds.every(
+      (orgId) => access.roles[orgId] === requiredRole,
+    );
+    if (!ok) throw forbidden();
 
     return true;
   }

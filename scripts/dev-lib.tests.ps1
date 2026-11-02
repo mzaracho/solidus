@@ -920,6 +920,49 @@ try {
     Assert-Equal 1 (Get-ErrorCode { Sync-BackendEnv -RootDir $lh }) 'BIND_ADDRESS invalida: Sync-BackendEnv es error 1'
     Assert-True ((Read-Raw (Join-Path $RepoRoot 'backend\.env.example')) -match 'LISTEN_HOST') 'LISTEN_HOST: backend/.env.example lo documenta'
 
+    # --- Feature 005: CORS, salud y avisos ---
+    foreach ($okCors in @('', '   ', 'http://localhost:3000', ' http://localhost:3000 , https://app.example.test:8443 ', 'http://[::1]:3000', 'http://192.0.2.10:3000,')) {
+        Assert-Equal 0 (Get-ErrorCode { [void](ConvertTo-CorsOriginList -Value $okCors) }) "CORS 005: acepta '$okCors'"
+    }
+    Assert-Equal 2 @(ConvertTo-CorsOriginList -Value ' http://localhost:3000 , http://[::1]:3001 ').Count 'CORS 005: dos entradas con espacios'
+    Assert-Equal 0 @(ConvertTo-CorsOriginList -Value '').Count 'CORS 005: vacio es lista vacia'
+    foreach ($badCors in @('*', 'http://localhost:3000/', 'http://localhost:3000/path', 'ftp://localhost:3000', 'localhost:3000', 'http://a b:3000', 'http://*.example.test')) {
+        Assert-Equal 1 (Get-ErrorCode { [void](ConvertTo-CorsOriginList -Value $badCors) }) "CORS 005: rechaza '$badCors' con codigo 1"
+    }
+    Assert-Equal 'http://localhost:3005,http://127.0.0.1:3005' (Get-DevCorsOrigin -FrontendPort 3005) 'CORS 005: origenes de desarrollo'
+    Assert-Equal 'http://localhost:3005,http://127.0.0.1:3005,http://192.0.2.10:3005' (Get-DevCorsOrigin -FrontendPort 3005 -Extra @('http://192.0.2.10:3005')) 'CORS 005: extras al final'
+    $co = New-Sandbox
+    Write-Utf8NoBom -Path (Join-Path $co '.env') -Text "POSTGRES_USER=fakeuser`nPOSTGRES_PASSWORD=$FakeRootPass`nPOSTGRES_DB=fakedb`nJWT_SECRET=$FakeRootJwt`nFRONTEND_PORT=3005`nCORS_EXTRA_ORIGINS=http://192.0.2.10:3005`n"
+    [void](Sync-BackendEnv -RootDir $co)
+    $coBe = Join-Path (Join-Path $co 'backend') '.env'
+    Assert-Equal 1 @([regex]::Matches((Read-Raw $coBe), '(?m)^CORS_ORIGIN=')).Count 'CORS 005: una sola linea CORS_ORIGIN'
+    Assert-True ((Read-Raw $coBe) -match "(?m)^CORS_ORIGIN='http://localhost:3005,http://127\.0\.0\.1:3005,http://192\.0\.2\.10:3005'$") 'CORS 005: CORS_ORIGIN sigue a FRONTEND_PORT y a los extras (entre comillas simples)'
+    Assert-True ((Read-Raw $coBe) -match '(?m)^# GENERADO por dev\.ps1.*CORS_ORIGIN') 'CORS 005: la cabecera menciona CORS_ORIGIN'
+    Write-Utf8NoBom -Path $coBe -Text ((Read-Raw $coBe) + "CORS_ORIGIN=http://evil.example`n")
+    [void](Sync-BackendEnv -RootDir $co)
+    Assert-True (-not ((Read-Raw $coBe) -match 'evil\.example')) 'CORS 005: una linea local CORS_ORIGIN se reemplaza'
+    Assert-Equal 1 @([regex]::Matches((Read-Raw $coBe), '(?m)^CORS_ORIGIN=')).Count 'CORS 005: sigue habiendo una sola linea'
+    $coAgain = Sync-BackendEnv -RootDir $co
+    Assert-True (-not $coAgain.Changed) 'CORS 005: una segunda ejecucion no reescribe'
+    Write-Utf8NoBom -Path (Join-Path $co '.env') -Text "POSTGRES_USER=fakeuser`nPOSTGRES_PASSWORD=$FakeRootPass`nPOSTGRES_DB=fakedb`nJWT_SECRET=$FakeRootJwt`nCORS_EXTRA_ORIGINS=*`n"
+    Assert-Equal 1 (Get-ErrorCode { Test-RootEnv -RootDir $co }) 'CORS 005: Test-RootEnv rechaza CORS_EXTRA_ORIGINS invalida'
+    Assert-Equal 1 (Get-ErrorCode { Sync-BackendEnv -RootDir $co }) 'CORS 005: Sync-BackendEnv rechaza CORS_EXTRA_ORIGINS invalida'
+    Write-Utf8NoBom -Path (Join-Path $co '.env') -Text "POSTGRES_USER=fakeuser`nPOSTGRES_PASSWORD=$FakeRootPass`nPOSTGRES_DB=fakedb`nJWT_SECRET=$FakeRootJwt`nCORS_EXTRA_ORIGINS=http://192.0.2.10:3000`n"
+    Assert-Equal 0 (Get-ErrorCode { [void](Test-RootEnv -RootDir $co) }) 'CORS 005: Test-RootEnv acepta CORS_EXTRA_ORIGINS valida'
+    $composeCors = Read-Raw (Join-Path $RepoRoot 'docker-compose.yml')
+    Assert-True ($composeCors -match 'CORS_ORIGIN:\s*"[^"]*http://localhost:3001[^"]*http://127\.0\.0\.1:3001') 'CORS 005: el compose define CORS_ORIGIN con los origenes de 3001'
+    Assert-True ($composeCors -match 'CORS_EXTRA_ORIGINS:-') 'CORS 005: el compose suma CORS_EXTRA_ORIGINS'
+    Assert-True ((Read-Raw (Join-Path $RepoRoot '.env.example')) -match '(?m)^# CORS_EXTRA_ORIGINS=') 'CORS 005: .env.example documenta CORS_EXTRA_ORIGINS'
+    $beExample = Read-Raw (Join-Path $RepoRoot 'backend\.env.example')
+    Assert-True ($beExample -match '(?m)^CORS_ORIGIN=') 'CORS 005: backend/.env.example define CORS_ORIGIN'
+    Assert-True (-not ($beExample -match 'CORS_METHODS')) 'CORS 005: backend/.env.example ya no menciona CORS_METHODS'
+    Assert-Equal '/health/liveness' $script:BackendHealthPath 'Salud 005: ruta publica de salud'
+    $devHealth = Read-Raw (Join-Path $RepoRoot 'dev.ps1')
+    Assert-True (-not ($devHealth -match "8080/'")) 'Salud 005: dev.ps1 ya no espera en la raiz (Swagger)'
+    Assert-Equal 2 @([regex]::Matches($devHealth, 'Wait-Http -Url \(''http://\{0\}:8080\{1\}'' -f \$probeHost, \$script:BackendHealthPath\)')).Count 'Salud 005: los dos Wait-Http usan la ruta de salud'
+    $wExposed = Get-BindExposureWarning -BindAddress '0.0.0.0'
+    Assert-True ($wExposed -match 'CORS_EXTRA_ORIGINS' -and $wExposed -match 'JWT' -and -not ($wExposed -match 'no verifica|todavia no')) 'Bind 005: el aviso menciona CORS_EXTRA_ORIGINS y ya no dice que los JWT no se verifican'
+
     # --- BIND_ADDRESS: loopback, aviso de exposicion (M-4) e IPv6 en modo Docker (R-2) ---
     foreach ($lo in @('', '   ', '127.0.0.1', '127.5.5.5', '::1')) { Assert-True (Test-BindAddressLoopback -BindAddress $lo) "Bind M-4: '$lo' es loopback" }
     Assert-True (Test-BindAddressLoopback -BindAddress $null) 'Bind M-4: null es loopback (default)'
@@ -1838,6 +1881,15 @@ try {
     Assert-Equal 'UpToDate' (Get-NodeModulesState -Dir $n) 'node_modules: sello vigente'
     Set-Content -LiteralPath (Join-Path $n 'package-lock.json') -Value '{"a":1}' -Encoding ASCII
     Assert-Equal 'Install' (Get-NodeModulesState -Dir $n) 'node_modules: lock cambiado'
+    # Smoke 005: Invoke-SmokeTest consulta la ruta de salud (se redefinen las dependencias de red; va al final a proposito).
+    $smokeBox = New-Sandbox
+    Write-Utf8NoBom -Path (Join-Path $smokeBox '.env') -Text "POSTGRES_USER=fakeuser`nPOSTGRES_PASSWORD=$FakeRootPass`nPOSTGRES_DB=fakedb`nJWT_SECRET=$FakeRootJwt`n"
+    $script:SmokeUrls = New-Object System.Collections.ArrayList
+    function Get-HttpStatus { param([string]$Url) [void]$script:SmokeUrls.Add($Url); return 200 }
+    function Test-DockerDaemon { return $false }
+    $smokeCode = Invoke-SmokeTest -RootDir $smokeBox
+    Assert-Equal 0 $smokeCode 'Smoke 005: con todo en 200 devuelve 0'
+    Assert-Equal 'http://127.0.0.1:8080/health/liveness' ([string]$script:SmokeUrls[0]) 'Smoke 005: el backend se prueba en /health/liveness'
 }
 finally {
     Remove-Item -LiteralPath $TestRoot -Recurse -Force -ErrorAction SilentlyContinue

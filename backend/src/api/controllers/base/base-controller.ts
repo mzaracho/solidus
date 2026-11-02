@@ -1,7 +1,5 @@
-import { UseGuards } from '@nestjs/common';
-import { ApiSecurity } from '@nestjs/swagger';
-import { ApiKeyGuard } from '@src/infrastructure.bootstrap/guards/api-key-guard';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
-@UseGuards(ApiKeyGuard)
-@ApiSecurity('x-api-key')
+// La autenticación es global (AuthenticationGuard, APP_GUARD): no hay guard por controlador.
+@ApiBearerAuth()
 export abstract class BaseController {}

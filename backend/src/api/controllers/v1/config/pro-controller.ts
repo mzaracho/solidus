@@ -9,7 +9,6 @@ import {
   Headers,
   Inject,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import { IDispatcher } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-dispatcher';
 import {
@@ -20,9 +19,9 @@ import {
 } from '@src/application/features/config/commands/payer-commands';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { BaseController } from '../../base/base-controller';
-import { AuthGuard } from '@src/infrastructure.bootstrap/config/providers/auth-guard-provider';
+import { CurrentUserId } from '@src/infrastructure.bootstrap/config/core/authentication/current-user-decorator';
+import { OrgOptional } from '@src/infrastructure.bootstrap/config/core/authentication/org-optional-decorator';
 
-@UseGuards(AuthGuard)
 @Controller('pro')
 export class ProController extends BaseController {
   constructor(
@@ -40,7 +39,7 @@ export class ProController extends BaseController {
   @Get('context')
   async getContext(
     @Headers('x-org-id') orgId: string,
-    @Headers('x-user-id') userId: string,
+    @CurrentUserId() userId: string,
   ) {
     if (!userId || !orgId) return null;
 
@@ -69,10 +68,9 @@ export class ProController extends BaseController {
    * Returns all organizations where the authenticated user has a Professional record,
    * along with their assigned category name and percentage.
    */
+  @OrgOptional()
   @Get('memberships')
-  async getMemberships(
-    @Headers('x-user-id') userId: string,
-  ) {
+  async getMemberships(@CurrentUserId() userId: string) {
     if (!userId) return [];
 
     const professionals = await this.prisma.professional.findMany({
@@ -112,7 +110,7 @@ export class ProController extends BaseController {
   @Put('profile')
   async updateProfile(
     @Headers('x-org-id') orgId: string,
-    @Headers('x-user-id') userId: string,
+    @CurrentUserId() userId: string,
     @Body() data: { displayName?: string; cuit?: string; phone?: string; email?: string },
   ) {
     if (!userId || !orgId) return null;
@@ -152,21 +150,18 @@ export class ProController extends BaseController {
   @Get('payers')
   async getPayers(
     @Headers('x-org-id') orgId: string,
-    @Headers('x-user-id') userId: string,
+    @CurrentUserId() userId: string,
     @Query() query: GetPayersQuery,
   ) {
-    console.log('GET /pro/payers hit', { orgId, userId, query });
     query.orgId = orgId;
     query.userId = userId;
-    const result = await this.dispatcher.dispatch(query);
-    console.log('GET /pro/payers result count:', (result as any)?.length);
-    return result;
+    return this.dispatcher.dispatch(query);
   }
 
   @Post('payers')
   async createPayer(
     @Headers('x-org-id') orgId: string,
-    @Headers('x-user-id') userId: string,
+    @CurrentUserId() userId: string,
     @Body() command: CreatePayerCommand,
   ) {
     command.orgId = orgId;

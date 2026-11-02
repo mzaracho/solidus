@@ -10,7 +10,7 @@ import { ActivityDetailModal } from './ActivityDetailModal'
 import { PaymentRegistrationModal } from '@/components/domain/payment/PaymentRegistrationModal'
 import { SmartFilterBar } from '@/components/domain/shared/SmartFilterBar'
 import { Plus, CreditCard } from 'lucide-react'
-import { getWorkItems, getFeeRules, createWorkItem, deleteWorkItem, updateWorkItem, getPayers, getOrgConfig, getProfessionalMemberships } from '@/services/data'
+import { getWorkItems, getFeeRules, createWorkItem, deleteWorkItem, updateWorkItem, getPayers, getOrgConfig, getProfessionalMemberships, isHandledApiError } from '@/services/data'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from 'sonner'
 
@@ -141,7 +141,7 @@ export function AtencionesTable({ canLoadActivities = false, currentUserId }: Pr
             router.refresh()
         } catch (error: any) {
             const msg = error?.message || 'Error al guardar la actividad'
-            toast.error(msg)
+            if (!isHandledApiError(error)) toast.error(msg)
             // Re-throw so WorkItemForm can also react if needed
             throw error
         }

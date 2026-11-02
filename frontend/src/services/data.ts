@@ -1,4 +1,12 @@
 import { format } from 'date-fns'
+import { API_ERROR_CODE, ROUTES, SESSION_MESSAGES } from '@/lib/constants'
+import {
+    SESSION_EXPIRED_REASON,
+    buildLoginPath,
+    clearSessionCookie,
+    getCookieMaxAgeSeconds,
+    readSessionToken,
+} from '@/lib/session'
 
 // En el servidor (SSR) el default es localhost (npm run dev fuera de Docker). En Docker lo define
 // docker-compose.yml con INTERNAL_API_URL=http://backend:8080/api.
@@ -17,56 +25,148 @@ export const COLORS = {
     chart: ['#6366f1', '#8b5cf6', '#ec4899', '#10b981', '#f59e0b', '#3b82f6', '#14b8a6']
 };
 
-// --- HELPER FOR HEADERS ---
-function getAuthToken() {
-    if (typeof document !== 'undefined') {
-        const match = document.cookie.match(new RegExp('(^| )auth_token=([^;]+)'));
-        if (match) return match[2];
-    }
-    return null;
+// --- AUTENTICACION Y TRANSPORTE ---
+
+/** Contexto opcional de las llamadas. En el servidor el token se pasa explicito (viene de la cookie, ver session.server.ts). */
+export interface ApiContext {
+    token?: string | null;
 }
 
-function parseJwt(token: string) {
+/** El backend respondio 401 (o no hay token en el servidor). En el cliente nunca se lanza: se redirige al login. */
+export class ApiUnauthorizedError extends Error {
+    constructor() {
+        super('Unauthorized');
+        this.name = 'ApiUnauthorizedError';
+    }
+}
+
+/** El backend respondio 403. `orgDenied`: la organizacion no es accesible. `handled`: ya se aviso al usuario (toast). */
+export class ApiForbiddenError extends Error {
+    readonly orgDenied: boolean;
+    readonly handled: boolean;
+    constructor(options: { orgDenied: boolean; handled: boolean }) {
+        super(SESSION_MESSAGES.forbiddenAction);
+        this.name = 'ApiForbiddenError';
+        this.orgDenied = options.orgDenied;
+        this.handled = options.handled;
+    }
+}
+
+/** true si el error ya se comunico al usuario (toast de 403): los componentes no deben mostrar otro. */
+export function isHandledApiError(error: unknown): boolean {
+    return error instanceof ApiForbiddenError && error.handled;
+}
+
+let forbiddenNotifier: (() => void) | null = null;
+
+/** Registra quien muestra el toast de 403 (lo hace providers.tsx; asi data.ts no importa sonner). */
+export function registerApiForbiddenNotifier(notifier: (() => void) | null) {
+    forbiddenNotifier = notifier;
+}
+
+// Evita navegaciones multiples cuando varias llamadas en paralelo reciben 401 o 403.
+let navigating = false;
+
+const isBrowser = () => typeof window !== 'undefined';
+
+function getHeaders(orgSlug: string, token?: string | null) {
+    const resolved = token ?? (isBrowser() ? readSessionToken() : null);
+    // En el servidor no hay cookie accesible desde aqui: sin token no se llama a la API.
+    if (!resolved && !isBrowser()) throw new ApiUnauthorizedError();
+
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        // Organizacion de la URL: el backend verifica que el usuario pertenezca a ella.
+        'x-org-id': orgSlug,
+    };
+    if (resolved) headers['Authorization'] = `Bearer ${resolved}`;
+    return headers;
+}
+
+function navigateOnce(path: string): Promise<never> {
+    if (!navigating) {
+        navigating = true;
+        window.location.assign(path);
+    }
+    // La llamada no resuelve ni falla: la pagina se descarta con la navegacion completa (sin toast ni pantalla vacia).
+    return new Promise<never>(() => { });
+}
+
+async function readErrorCode(res: Response): Promise<string | null> {
     try {
-        const base64Url = token.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function (c) {
-            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-        }).join(''));
-        return JSON.parse(jsonPayload);
-    } catch (e) {
+        const body = await res.clone().json();
+        return typeof body?.code === 'string' ? body.code : null;
+    } catch {
         return null;
     }
 }
 
+/** Unico punto de clasificacion de respuestas: 401 y 403 se resuelven aqui; el resto lo maneja cada funcion. */
+async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+    const res = await fetch(url, init);
 
-function getHeaders(orgSlug: string) {
-    const token = getAuthToken();
-    let orgIdToUse = orgSlug; // Default to slug (legacy/error case)
-
-    if (token) {
-        const decoded = parseJwt(token);
-        // If token provides specific Org Context (UUID), use it. 
-        // Note: For multi-org tokens, this might be null, but standard flow injects it.
-        // Assuming the backend ONLY accepts UUIDs in x-org-id.
-        if (decoded && decoded.organizationId) {
-            orgIdToUse = decoded.organizationId;
-        }
+    if (res.status === 401) {
+        if (!isBrowser()) throw new ApiUnauthorizedError();
+        clearSessionCookie();
+        return navigateOnce(buildLoginPath({
+            reason: SESSION_EXPIRED_REASON,
+            from: window.location.pathname + window.location.search,
+        }));
     }
 
-    const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'x-org-id': orgIdToUse,
-    };
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-        const decoded = parseJwt(token);
-        // Inject Real User Context from Token
-        if (decoded && decoded.sub) {
-            headers['x-user-id'] = decoded.sub;
-        }
+    if (res.status === 403) {
+        const orgDenied = (await readErrorCode(res)) === API_ERROR_CODE.ORG_ACCESS_DENIED;
+        if (!isBrowser()) throw new ApiForbiddenError({ orgDenied, handled: false });
+        const isRead = (init?.method ?? 'GET').toUpperCase() === 'GET';
+        if (isRead && orgDenied) return navigateOnce(ROUTES.NO_ACCESS);
+        forbiddenNotifier?.();
+        throw new ApiForbiddenError({ orgDenied, handled: true });
     }
-    return headers;
+
+    return res;
+}
+
+/** En el servidor, un 401 o 403 nunca debe quedar tapado por el valor por defecto de una funcion (null, []). */
+function rethrowServerAuthError(error: unknown) {
+    if (!isBrowser() && (error instanceof ApiUnauthorizedError || error instanceof ApiForbiddenError)) {
+        throw error;
+    }
+}
+
+export type LoginResult =
+    | { status: 'ok'; token: string; maxAge: number }
+    | { status: 'invalid' | 'bad-request' | 'server' | 'network' | 'unexpected' | 'other' };
+
+/**
+ * POST /v1/auth/login. No usa apiFetch: su 401 es de credenciales, no de sesion.
+ * Nunca lanza ni expone el cuerpo de la respuesta.
+ */
+export async function login(user: string, password: string): Promise<LoginResult> {
+    let res: Response;
+    try {
+        res = await fetch(`${API_BASE_URL}/v1/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user, password }),
+        });
+    } catch {
+        return { status: 'network' };
+    }
+    if (res.status === 401) return { status: 'invalid' };
+    if (res.status === 400) return { status: 'bad-request' };
+    if (res.status >= 500) return { status: 'server' };
+    if (!res.ok) return { status: 'other' };
+
+    try {
+        const data = await res.json();
+        const token = typeof data?.token === 'string' ? data.token : '';
+        if (!token) return { status: 'unexpected' };
+        const maxAge = getCookieMaxAgeSeconds(token, Date.now());
+        if (maxAge === null) return { status: 'unexpected' };
+        return { status: 'ok', token, maxAge };
+    } catch {
+        return { status: 'unexpected' };
+    }
 }
 
 // --- SERVICE FUNCTIONS ---
@@ -79,10 +179,9 @@ export async function getDashboardStats(
     slug: string,
     mode: 'ORGANIZATION' | 'PROFESSIONAL',
     range: string = '30d',
-    chartBasis: 'ACCRUED' | 'CASH' = 'ACCRUED'
-) {
+    chartBasis: 'ACCRUED' | 'CASH' = 'ACCRUED', ctx?: ApiContext) {
     try {
-        const headers = getHeaders(slug);
+        const headers = getHeaders(slug, ctx?.token);
 
         // Calculate dates based on range
         const end = new Date();
@@ -128,9 +227,9 @@ export async function getDashboardStats(
 
         // Parallel fetch for KPIs, Chart and Payers
         const [kpiRes, chartRes, payerRes] = await Promise.all([
-            fetch(`${API_BASE_URL}/dashboard/kpis?mode=${mode}&startDate=${startDate}&endDate=${endDate}`, { headers, cache: 'no-store' }),
-            fetch(`${API_BASE_URL}/dashboard/chart?mode=${mode}&startDate=${startDate}&endDate=${endDate}&groupBy=day&basis=${chartBasis}`, { headers, cache: 'no-store' }),
-            fetch(`${API_BASE_URL}/dashboard/payers?mode=${mode}&startDate=${startDate}&endDate=${endDate}`, { headers, cache: 'no-store' })
+            apiFetch(`${API_BASE_URL}/dashboard/kpis?mode=${mode}&startDate=${startDate}&endDate=${endDate}`, { headers, cache: 'no-store' }),
+            apiFetch(`${API_BASE_URL}/dashboard/chart?mode=${mode}&startDate=${startDate}&endDate=${endDate}&groupBy=day&basis=${chartBasis}`, { headers, cache: 'no-store' }),
+            apiFetch(`${API_BASE_URL}/dashboard/payers?mode=${mode}&startDate=${startDate}&endDate=${endDate}`, { headers, cache: 'no-store' })
         ]);
 
         if (!kpiRes.ok || !chartRes.ok) throw new Error('Failed to fetch dashboard stats');
@@ -154,6 +253,9 @@ export async function getDashboardStats(
 
 
     } catch (error) {
+
+
+        rethrowServerAuthError(error);
         console.error(error);
         return null;
     }
@@ -163,7 +265,7 @@ export async function getDashboardStats(
  * GET /activity
  * Previously: /api/v1/orgs/:slug/work-items
  */
-export async function getWorkItems(slug: string, mode: 'ORGANIZATION' | 'PROFESSIONAL', filters?: any, page: number = 1, limit: number = 20) {
+export async function getWorkItems(slug: string, mode: 'ORGANIZATION' | 'PROFESSIONAL', filters?: any, page: number = 1, limit: number = 20, ctx?: ApiContext) {
     try {
         const params = new URLSearchParams({
             mode: mode,
@@ -192,8 +294,8 @@ export async function getWorkItems(slug: string, mode: 'ORGANIZATION' | 'PROFESS
             if (filters.patient) params.set('search', filters.patient);
         }
 
-        const res = await fetch(`${API_BASE_URL}/activity?${params.toString()}`, {
-            headers: getHeaders(slug),
+        const res = await apiFetch(`${API_BASE_URL}/activity?${params.toString()}`, {
+            headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
 
@@ -206,6 +308,7 @@ export async function getWorkItems(slug: string, mode: 'ORGANIZATION' | 'PROFESS
         }
         return data; // { items, total, ... }
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error(error);
         return { items: [], total: 0 };
     }
@@ -217,7 +320,7 @@ export async function getWorkItems(slug: string, mode: 'ORGANIZATION' | 'PROFESS
  * GET /v1/patients
  * Previously: /api/v1/orgs/:slug/patients
  */
-export async function getPatients(slug: string, search?: string, page: number = 1, limit: number = 12, mode?: 'ORGANIZATION' | 'PROFESSIONAL') {
+export async function getPatients(slug: string, search?: string, page: number = 1, limit: number = 12, mode?: 'ORGANIZATION' | 'PROFESSIONAL', ctx?: ApiContext) {
     try {
         const url = new URL(`${API_BASE_URL}/v1/patients`);
         if (search) url.searchParams.append('search', search);
@@ -225,8 +328,8 @@ export async function getPatients(slug: string, search?: string, page: number = 
         url.searchParams.append('limit', limit.toString());
         if (mode) url.searchParams.append('mode', mode);
 
-        const res = await fetch(url.toString(), {
-            headers: getHeaders(slug),
+        const res = await apiFetch(url.toString(), {
+            headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
         if (!res.ok) throw new Error('Failed to fetch patients');
@@ -241,6 +344,7 @@ export async function getPatients(slug: string, search?: string, page: number = 
             total: data.total ?? data.totalItems ?? 0
         };
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error(error);
         return { items: [], total: 0 };
     }
@@ -250,15 +354,16 @@ export async function getPatients(slug: string, search?: string, page: number = 
  * GET /fee-rules
  * Previously: /api/v1/orgs/:slug/config/rules
  */
-export async function getFeeRules(slug: string, mode: 'ORGANIZATION' | 'PROFESSIONAL') {
+export async function getFeeRules(slug: string, mode: 'ORGANIZATION' | 'PROFESSIONAL', ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/fee-rules?mode=${mode}`, {
-            headers: getHeaders(slug),
+        const res = await apiFetch(`${API_BASE_URL}/fee-rules?mode=${mode}`, {
+            headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
         if (!res.ok) throw new Error('Failed to fetch fee rules');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error(error);
         return null; // Return empty array or null based on component expectation
     }
@@ -269,9 +374,9 @@ export async function getFeeRules(slug: string, mode: 'ORGANIZATION' | 'PROFESSI
  * Previously: /api/v1/orgs/:slug/work-items
  * Requires x-mode header
  */
-export async function createWorkItem(slug: string, data: any) {
+export async function createWorkItem(slug: string, data: any, ctx?: ApiContext) {
     try {
-        const headers = getHeaders(slug);
+        const headers = getHeaders(slug, ctx?.token);
 
         // Backend ActivityController expects 'x-mode' header. 
         // We assume 'mode' is inside data or needs to be passed. 
@@ -281,7 +386,7 @@ export async function createWorkItem(slug: string, data: any) {
             (headers as any)['x-mode'] = data.mode;
         }
 
-        const res = await fetch(`${API_BASE_URL}/activity`, {
+        const res = await apiFetch(`${API_BASE_URL}/activity`, {
             method: 'POST',
             headers: headers,
             body: JSON.stringify(data)
@@ -307,6 +412,7 @@ export async function createWorkItem(slug: string, data: any) {
         }
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error(error);
         throw error; // re-throw so the caller can handle and show the error
     }
@@ -316,15 +422,16 @@ export async function createWorkItem(slug: string, data: any) {
  * GET /org/config
  * Returns categories, presets, and staff (professionals)
  */
-export async function getOrgConfig(slug: string) {
+export async function getOrgConfig(slug: string, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/org/config?orgId=${slug}`, {
-            headers: getHeaders(slug),
+        const res = await apiFetch(`${API_BASE_URL}/org/config?orgId=${slug}`, {
+            headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
         if (!res.ok) throw new Error('Failed to fetch org config');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error(error);
         return { categories: [], presets: [], staff: [] };
     }
@@ -333,16 +440,17 @@ export async function getOrgConfig(slug: string) {
 /**
  * PUT /org/staff/:id/category
  */
-export async function assignStaffCategory(slug: string, staffId: string, categoryId: string) {
+export async function assignStaffCategory(slug: string, staffId: string, categoryId: string, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/org/staff/${staffId}/category`, {
+        const res = await apiFetch(`${API_BASE_URL}/org/staff/${staffId}/category`, {
             method: 'PUT',
-            headers: getHeaders(slug),
+            headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify({ categoryId })
         });
         if (!res.ok) throw new Error('Failed to assign category');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error(error);
         return { success: false };
     }
@@ -352,15 +460,16 @@ export async function assignStaffCategory(slug: string, staffId: string, categor
  * GET /pro/payers
  */
 // GET /pro/payers
-export async function getPayers(slug: string, page: number = 1, limit: number = 12) {
+export async function getPayers(slug: string, page: number = 1, limit: number = 12, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/pro/payers?page=${page}&limit=${limit}`, {
-            headers: getHeaders(slug),
+        const res = await apiFetch(`${API_BASE_URL}/pro/payers?page=${page}&limit=${limit}`, {
+            headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
         if (!res.ok) throw new Error('Failed to fetch payers');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error(error);
         return { items: [], total: 0 };
     }
@@ -370,15 +479,16 @@ export async function getPayers(slug: string, page: number = 1, limit: number = 
  * GET /pro/context
  * Returns the professional record (id, displayName, canLoadActivities) for the authenticated user.
  */
-export async function getProfessionalContext(slug: string): Promise<{ id: string; displayName: string; cuit?: string; phone?: string; email?: string; canLoadActivities: boolean; userId: string; categoryId?: string; category?: { id: string; name: string; percentage: number } } | null> {
+export async function getProfessionalContext(slug: string, ctx?: ApiContext): Promise<{ id: string; displayName: string; cuit?: string; phone?: string; email?: string; canLoadActivities: boolean; userId: string; categoryId?: string; category?: { id: string; name: string; percentage: number } } | null> {
     try {
-        const res = await fetch(`${API_BASE_URL}/pro/context`, {
-            headers: getHeaders(slug),
+        const res = await apiFetch(`${API_BASE_URL}/pro/context`, {
+            headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
         if (!res.ok) return null;
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error('getProfessionalContext Error', error);
         return null;
     }
@@ -388,7 +498,7 @@ export async function getProfessionalContext(slug: string): Promise<{ id: string
  * GET /pro/memberships
  * Returns all orgs the authenticated professional belongs to, with their assigned category and percentage.
  */
-export async function getProfessionalMemberships(slug: string): Promise<Array<{
+export async function getProfessionalMemberships(slug: string, ctx?: ApiContext): Promise<Array<{
     orgId: string;
     orgName: string;
     professionalId: string;
@@ -398,13 +508,14 @@ export async function getProfessionalMemberships(slug: string): Promise<Array<{
     categoryPercentage: number | null;
 }>> {
     try {
-        const res = await fetch(`${API_BASE_URL}/pro/memberships`, {
-            headers: getHeaders(slug),
+        const res = await apiFetch(`${API_BASE_URL}/pro/memberships`, {
+            headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
         if (!res.ok) return [];
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error('getProfessionalMemberships Error', error);
         return [];
     }
@@ -414,11 +525,11 @@ export async function getProfessionalMemberships(slug: string): Promise<Array<{
  * PUT /pro/profile
  * Updates the professional record for the authenticated user.
  */
-export async function updateProfessionalProfile(slug: string, data: any) {
+export async function updateProfessionalProfile(slug: string, data: any, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/pro/profile`, {
+        const res = await apiFetch(`${API_BASE_URL}/pro/profile`, {
             method: 'PUT',
-            headers: getHeaders(slug),
+            headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
         if (!res.ok) {
@@ -427,6 +538,7 @@ export async function updateProfessionalProfile(slug: string, data: any) {
         }
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error("updateProfessionalProfile Error", error);
         throw error;
     }
@@ -435,11 +547,11 @@ export async function updateProfessionalProfile(slug: string, data: any) {
 /**
  * POST /pro/payers
  */
-export async function createPayer(slug: string, name: string, retentionPercentage: number = 0, cuit?: string) {
+export async function createPayer(slug: string, name: string, retentionPercentage: number = 0, cuit?: string, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/pro/payers`, {
+        const res = await apiFetch(`${API_BASE_URL}/pro/payers`, {
             method: 'POST',
-            headers: getHeaders(slug),
+            headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify({ name, retentionPercentage, ...(cuit ? { cuit } : {}) })
         });
         if (!res.ok) {
@@ -448,6 +560,7 @@ export async function createPayer(slug: string, name: string, retentionPercentag
         }
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error("createPayer Error", error);
         return null;
     }
@@ -456,16 +569,17 @@ export async function createPayer(slug: string, name: string, retentionPercentag
 /**
  * POST /org/staff
  */
-export async function createStaff(slug: string, data: any) {
+export async function createStaff(slug: string, data: any, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/org/staff`, {
+        const res = await apiFetch(`${API_BASE_URL}/org/staff`, {
             method: 'POST',
-            headers: getHeaders(slug),
+            headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
         if (!res.ok) throw new Error('Failed to create staff');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error(error);
         return { success: false };
     }
@@ -474,16 +588,17 @@ export async function createStaff(slug: string, data: any) {
 /**
  * PUT /org/staff/:id
  */
-export async function updateStaff(slug: string, id: string, data: any) {
+export async function updateStaff(slug: string, id: string, data: any, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/org/staff/${id}`, {
+        const res = await apiFetch(`${API_BASE_URL}/org/staff/${id}`, {
             method: 'PUT',
-            headers: getHeaders(slug),
+            headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
         if (!res.ok) throw new Error('Failed to update staff');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error(error);
         return { success: false };
     }
@@ -492,11 +607,11 @@ export async function updateStaff(slug: string, id: string, data: any) {
 /**
  * DELETE /org/staff/:id
  */
-export async function deleteStaff(slug: string, id: string) {
+export async function deleteStaff(slug: string, id: string, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/org/staff/${id}`, {
+        const res = await apiFetch(`${API_BASE_URL}/org/staff/${id}`, {
             method: 'DELETE',
-            headers: getHeaders(slug)
+            headers: getHeaders(slug, ctx?.token)
         });
         if (!res.ok) {
             const err = await res.text();
@@ -504,6 +619,7 @@ export async function deleteStaff(slug: string, id: string) {
         }
         return true;
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error(error);
         // Throw to let UI handle the specific error (e.g. FK constraint)
         throw error;
@@ -515,15 +631,16 @@ export async function deleteStaff(slug: string, id: string) {
  * GET /v1/patients/:id/summary
  * Returns total debt + list of pending work items for a patient
  */
-export async function getPatientSummary(slug: string, patientId: string) {
+export async function getPatientSummary(slug: string, patientId: string, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/v1/patients/${patientId}/summary`, {
-            headers: getHeaders(slug),
+        const res = await apiFetch(`${API_BASE_URL}/v1/patients/${patientId}/summary`, {
+            headers: getHeaders(slug, ctx?.token),
             cache: 'no-store',
         });
         if (!res.ok) throw new Error('Failed to fetch patient summary');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error('getPatientSummary Error', error);
         return null;
     }
@@ -532,16 +649,17 @@ export async function getPatientSummary(slug: string, patientId: string) {
 /**
  * POST /v1/patients
  */
-export async function createPatient(slug: string, data: any) {
+export async function createPatient(slug: string, data: any, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/v1/patients`, {
+        const res = await apiFetch(`${API_BASE_URL}/v1/patients`, {
             method: 'POST',
-            headers: getHeaders(slug),
+            headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
         if (!res.ok) throw new Error('Failed to create patient');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error(error);
         return null;
     }
@@ -551,16 +669,17 @@ export async function createPatient(slug: string, data: any) {
  * POST /v1/patients/:sourceId/merge
  * Merges source patient into target: reassigns all work items and deletes source.
  */
-export async function mergePatient(slug: string, sourceId: string, targetId: string) {
+export async function mergePatient(slug: string, sourceId: string, targetId: string, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/v1/patients/${sourceId}/merge`, {
+        const res = await apiFetch(`${API_BASE_URL}/v1/patients/${sourceId}/merge`, {
             method: 'POST',
-            headers: getHeaders(slug),
+            headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify({ targetId }),
         });
         if (!res.ok) throw new Error('Failed to merge patients');
         return true;
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error(error);
         throw error;
     }
@@ -569,16 +688,17 @@ export async function mergePatient(slug: string, sourceId: string, targetId: str
 /**
  * PUT /v1/patients/:id
  */
-export async function updatePatient(slug: string, id: string, data: any) {
+export async function updatePatient(slug: string, id: string, data: any, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/v1/patients/${id}`, {
+        const res = await apiFetch(`${API_BASE_URL}/v1/patients/${id}`, {
             method: 'PUT',
-            headers: getHeaders(slug),
+            headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
         if (!res.ok) throw new Error('Failed to update patient');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error(error);
         return null;
     }
@@ -588,11 +708,11 @@ export async function updatePatient(slug: string, id: string, data: any) {
  * PUT /activity/:id
  * Previously: /api/v1/orgs/:slug/work-items/:id
  */
-export async function updateWorkItem(slug: string, id: string, data: any) {
+export async function updateWorkItem(slug: string, id: string, data: any, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/activity/${id}`, {
+        const res = await apiFetch(`${API_BASE_URL}/activity/${id}`, {
             method: 'PUT',
-            headers: getHeaders(slug),
+            headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
         if (!res.ok) {
@@ -601,6 +721,7 @@ export async function updateWorkItem(slug: string, id: string, data: any) {
         }
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error("updateWorkItem Error", error);
         return { success: false, error };
     }
@@ -609,15 +730,16 @@ export async function updateWorkItem(slug: string, id: string, data: any) {
 /**
  * GET /activity/:id
  */
-export async function getWorkItemById(slug: string, id: string) {
+export async function getWorkItemById(slug: string, id: string, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/activity/${id}`, {
-            headers: getHeaders(slug),
+        const res = await apiFetch(`${API_BASE_URL}/activity/${id}`, {
+            headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
         if (!res.ok) throw new Error('Failed to fetch work item');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error("getWorkItemById Error", error);
         return null;
     }
@@ -626,11 +748,11 @@ export async function getWorkItemById(slug: string, id: string) {
 /**
  * DELETE /activity/:id
  */
-export async function deleteWorkItem(slug: string, id: string) {
+export async function deleteWorkItem(slug: string, id: string, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/activity/${id}`, {
+        const res = await apiFetch(`${API_BASE_URL}/activity/${id}`, {
             method: 'DELETE',
-            headers: getHeaders(slug)
+            headers: getHeaders(slug, ctx?.token)
         });
         if (!res.ok) {
             const err = await res.text();
@@ -638,6 +760,7 @@ export async function deleteWorkItem(slug: string, id: string) {
         }
         return true;
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error("deleteWorkItem Error", error);
         return false;
     }
@@ -647,12 +770,11 @@ export async function deleteWorkItem(slug: string, id: string) {
 /**
  * PUT /org
  */
-export async function updateOrgSettings(slug: string, data: any) {
+export async function updateOrgSettings(slug: string, data: any, ctx?: ApiContext) {
     try {
-        const headers = getHeaders(slug);
-        console.log("data.ts: updateOrgSettings", { slug, headers, data });
+        const headers = getHeaders(slug, ctx?.token);
 
-        const res = await fetch(`${API_BASE_URL}/org`, {
+        const res = await apiFetch(`${API_BASE_URL}/org`, {
             method: 'PUT',
             headers: headers,
             body: JSON.stringify(data)
@@ -677,6 +799,7 @@ export async function updateOrgSettings(slug: string, data: any) {
         }
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error("updateOrgSettings Error", error);
         throw error;
     }
@@ -686,15 +809,16 @@ export async function updateOrgSettings(slug: string, data: any) {
  * GET /org
  * Fetches Organization details (name, CUIT, settings)
  */
-export async function getOrgDetails(slug: string) {
+export async function getOrgDetails(slug: string, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/org`, {
-            headers: getHeaders(slug),
+        const res = await apiFetch(`${API_BASE_URL}/org`, {
+            headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
         if (!res.ok) throw new Error('Failed to fetch org details');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error("getOrgDetails Error", error);
         return null;
     }
@@ -703,16 +827,17 @@ export async function getOrgDetails(slug: string) {
 /**
  * POST /config/categories
  */
-export async function createCategory(slug: string, name: string, percentage?: number) {
+export async function createCategory(slug: string, name: string, percentage?: number, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/config/categories`, {
+        const res = await apiFetch(`${API_BASE_URL}/config/categories`, {
             method: 'POST',
-            headers: getHeaders(slug),
+            headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify({ name, percentage }),
         });
         if (!res.ok) throw new Error('Failed to create category');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error('createCategory Error', error);
         return null;
     }
@@ -721,16 +846,17 @@ export async function createCategory(slug: string, name: string, percentage?: nu
 /**
  * PUT /config/categories/:id
  */
-export async function updateCategory(slug: string, id: string, name: string, percentage?: number) {
+export async function updateCategory(slug: string, id: string, name: string, percentage?: number, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/config/categories/${id}`, {
+        const res = await apiFetch(`${API_BASE_URL}/config/categories/${id}`, {
             method: 'PUT',
-            headers: getHeaders(slug),
+            headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify({ name, percentage }),
         });
         if (!res.ok) throw new Error('Failed to update category');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error('updateCategory Error', error);
         return null;
     }
@@ -739,15 +865,16 @@ export async function updateCategory(slug: string, id: string, name: string, per
 /**
  * DELETE /config/categories/:id
  */
-export async function deleteCategory(slug: string, id: string) {
+export async function deleteCategory(slug: string, id: string, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/config/categories/${id}`, {
+        const res = await apiFetch(`${API_BASE_URL}/config/categories/${id}`, {
             method: 'DELETE',
-            headers: getHeaders(slug),
+            headers: getHeaders(slug, ctx?.token),
         });
         if (!res.ok) throw new Error('Failed to delete category');
         return true;
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error('deleteCategory Error', error);
         return false;
     }
@@ -756,16 +883,17 @@ export async function deleteCategory(slug: string, id: string) {
 /**
  * POST /fee-rules
  */
-export async function createFeeRule(slug: string, data: any) {
+export async function createFeeRule(slug: string, data: any, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/fee-rules`, {
+        const res = await apiFetch(`${API_BASE_URL}/fee-rules`, {
             method: 'POST',
-            headers: getHeaders(slug),
+            headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
         if (!res.ok) throw new Error('Failed to create fee rule');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error("createFeeRule Error", error);
         return null;
     }
@@ -776,16 +904,17 @@ export async function createFeeRule(slug: string, data: any) {
 /**
  * POST /org/presets
  */
-export async function createOrgPreset(slug: string, data: any) {
+export async function createOrgPreset(slug: string, data: any, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/org/presets`, {
+        const res = await apiFetch(`${API_BASE_URL}/org/presets`, {
             method: 'POST',
-            headers: getHeaders(slug),
+            headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
         if (!res.ok) throw new Error('Failed to create preset');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error("createOrgPreset Error", error);
         return null;
     }
@@ -794,15 +923,16 @@ export async function createOrgPreset(slug: string, data: any) {
 /**
  * DELETE /org/presets/:id
  */
-export async function deleteOrgPreset(slug: string, id: string) {
+export async function deleteOrgPreset(slug: string, id: string, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/org/presets/${id}`, {
+        const res = await apiFetch(`${API_BASE_URL}/org/presets/${id}`, {
             method: 'DELETE',
-            headers: getHeaders(slug)
+            headers: getHeaders(slug, ctx?.token)
         });
         if (!res.ok) throw new Error('Failed to delete preset');
         return true;
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error("deleteOrgPreset Error", error);
         return false;
     }
@@ -811,16 +941,17 @@ export async function deleteOrgPreset(slug: string, id: string) {
 /**
  * PUT /org/presets/:id
  */
-export async function updateOrgPreset(slug: string, id: string, data: any) {
+export async function updateOrgPreset(slug: string, id: string, data: any, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/org/presets/${id}`, {
+        const res = await apiFetch(`${API_BASE_URL}/org/presets/${id}`, {
             method: 'PUT',
-            headers: getHeaders(slug),
+            headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
         if (!res.ok) throw new Error('Failed to update preset');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error("updateOrgPreset Error", error);
         return null;
     }
@@ -829,9 +960,9 @@ export async function updateOrgPreset(slug: string, id: string, data: any) {
 /**
  * GET /settlements/calculate
  */
-export async function calculateSettlements(slug: string, month: string) {
+export async function calculateSettlements(slug: string, month: string, ctx?: ApiContext) {
     try {
-        const orgDetails = await getOrgDetails(slug); // We need the ID, not slug usually, but headers handle slug->UUID often? 
+        const orgDetails = await getOrgDetails(slug, ctx); // We need the ID, not slug usually, but headers handle slug->UUID often? 
         // Wait, the backend query expects 'organizationId'. 
         // 'getHeaders' puts orgSlug/ID in 'x-org-id'.
         // But the Query DTO has 'organizationId' property.
@@ -859,17 +990,18 @@ export async function calculateSettlements(slug: string, month: string) {
 
         let orgId = slug;
         // Try to fetch real ID if slug seems like a slug
-        const details = await getOrgDetails(slug);
+        const details = await getOrgDetails(slug, ctx);
         if (details && details.id) orgId = details.id;
 
-        const res = await fetch(`${API_BASE_URL}/settlements/calculate?month=${month}&organizationId=${orgId}`, {
-            headers: getHeaders(slug),
+        const res = await apiFetch(`${API_BASE_URL}/settlements/calculate?month=${month}&organizationId=${orgId}`, {
+            headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
 
         if (!res.ok) throw new Error('Failed to calculate settlements');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error("calculateSettlements Error", error);
         return [];
     }
@@ -878,15 +1010,16 @@ export async function calculateSettlements(slug: string, month: string) {
 /**
  * GET /config/activity-types
  */
-export async function getActivityTypes(slug: string) {
+export async function getActivityTypes(slug: string, ctx?: ApiContext) {
     try {
-        const res = await fetch(`${API_BASE_URL}/config/activity-types?orgId=${slug}`, {
-            headers: getHeaders(slug),
+        const res = await apiFetch(`${API_BASE_URL}/config/activity-types?orgId=${slug}`, {
+            headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
         if (!res.ok) throw new Error('Failed to fetch activity types');
         return await res.json();
     } catch (error) {
+        rethrowServerAuthError(error);
         console.error("getActivityTypes Error", error);
         return [];
     }
@@ -901,10 +1034,10 @@ export async function createActivityType(slug: string, data: {
     baseValue?: number;
     cardValue?: number;
     roles?: { roleLabel: string; isRequired: boolean; feeStrategy: 'CATEGORY' | 'FIXED'; fixedPercentage?: number }[];
-}) {
-    const res = await fetch(`${API_BASE_URL}/config/activity-types`, {
+}, ctx?: ApiContext) {
+    const res = await apiFetch(`${API_BASE_URL}/config/activity-types`, {
         method: 'POST',
-        headers: getHeaders(slug),
+        headers: getHeaders(slug, ctx?.token),
         body: JSON.stringify(data),
     });
     if (!res.ok) {
@@ -922,10 +1055,10 @@ export async function updateActivityType(slug: string, id: string, data: {
     baseValue?: number;
     cardValue?: number;
     roles?: { roleLabel: string; isRequired: boolean; feeStrategy: 'CATEGORY' | 'FIXED'; fixedPercentage?: number }[];
-}) {
-    const res = await fetch(`${API_BASE_URL}/config/activity-types/${id}`, {
+}, ctx?: ApiContext) {
+    const res = await apiFetch(`${API_BASE_URL}/config/activity-types/${id}`, {
         method: 'PUT',
-        headers: getHeaders(slug),
+        headers: getHeaders(slug, ctx?.token),
         body: JSON.stringify(data),
     });
     if (!res.ok) {
@@ -938,10 +1071,10 @@ export async function updateActivityType(slug: string, id: string, data: {
 /**
  * DELETE /config/activity-types/:id
  */
-export async function deleteActivityType(slug: string, id: string) {
-    const res = await fetch(`${API_BASE_URL}/config/activity-types/${id}`, {
+export async function deleteActivityType(slug: string, id: string, ctx?: ApiContext) {
+    const res = await apiFetch(`${API_BASE_URL}/config/activity-types/${id}`, {
         method: 'DELETE',
-        headers: getHeaders(slug),
+        headers: getHeaders(slug, ctx?.token),
     });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));

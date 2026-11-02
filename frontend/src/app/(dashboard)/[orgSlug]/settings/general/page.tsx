@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Save, Loader2 } from 'lucide-react'
-import { updateOrgSettings, getOrgDetails, getProfessionalContext, updateProfessionalProfile } from '@/services/data'
+import { updateOrgSettings, getOrgDetails, getProfessionalContext, updateProfessionalProfile, isHandledApiError } from '@/services/data'
 import { toast } from 'sonner'
 import { useStore } from '@/store/useStore'
 
@@ -93,8 +93,9 @@ export default function SettingsGeneralPage() {
                 toast.success("Ajustes de organización guardados")
             }
         } catch (error: any) {
-            toast.error(error.message || "Error al guardar ajustes")
             console.error(error)
+            if (isHandledApiError(error)) return
+            toast.error(error.message || "Error al guardar ajustes")
         } finally {
             setLoading(false)
         }

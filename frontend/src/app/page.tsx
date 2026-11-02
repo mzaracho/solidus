@@ -2,35 +2,26 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-
-function parseJwt(token: string) {
-  try {
-    const base64Url = token.split('.')[1]
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
-    return JSON.parse(atob(base64))
-  } catch {
-    return null
-  }
-}
+import { ROUTES } from '@/lib/constants'
+import { decodeJwtPayload, readSessionToken } from '@/lib/session'
 
 export default function Home() {
   const router = useRouter()
 
   useEffect(() => {
-    const match = document.cookie.match(/(^| )auth_token=([^;]+)/)
-    const token = match ? match[2] : null
+    const token = readSessionToken()
 
     if (!token) {
-      router.replace('/login')
+      router.replace(ROUTES.LOGIN)
       return
     }
 
-    const payload = parseJwt(token)
+    const payload = decodeJwtPayload(token)
     const orgId = payload?.organizationId
     const orgRole = payload?.orgRole
-    const roles: { code: string }[] = payload?.roles || []
+    const roles = (Array.isArray(payload?.roles) ? payload.roles : []) as { code: string }[]
 
-    if (orgId) {
+    if (typeof orgId === 'string' && orgId) {
       if (orgRole === 'MEMBER') {
         const hasProfessionalRole = roles.some(r => r.code === 'PROFESSIONAL')
         const fallback = hasProfessionalRole
@@ -41,7 +32,8 @@ export default function Home() {
         router.replace(`/${orgId}/dashboard`)
       }
     } else {
-      router.replace('/login')
+      // Sesión válida sin organización: pantalla explicativa en lugar del rebote mudo al login.
+      router.replace(ROUTES.NO_ACCESS)
     }
   }, [router])
 

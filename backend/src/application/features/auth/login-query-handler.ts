@@ -5,7 +5,13 @@ import { LoginResponseDto } from './dtos/login-response-dto';
 import { isProfessionalMode, ROLE_CODE } from '@src/domain/constants/app.constants';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { Prisma } from '@prisma/client';
 
@@ -19,6 +25,20 @@ type UserWithRelations = Prisma.UserGetPayload<{
     memberships: true;
   };
 }>;
+
+// Hash ficticio (se genera una vez, de forma perezosa) para igualar el tiempo de respuesta
+// cuando el usuario no existe: así no se puede enumerar usuarios midiendo la latencia.
+let dummyHash: Promise<string> | null = null;
+const getDummyHash = (): Promise<string> => {
+  dummyHash ??= bcrypt.hash(randomBytes(16).toString('hex'), 10);
+  return dummyHash;
+};
+
+const invalidCredentials = () =>
+  new UnauthorizedException({
+    code: 'unauthorized',
+    message: 'Unauthorized',
+  });
 
 export class LoginQuery implements IRequest {
   constructor(
@@ -46,7 +66,7 @@ export class LoginQueryHandler implements IRequestHandler<
 
   public async execute(query: LoginQuery): Promise<LoginResponseDto> {
     if (!query.user || !query.password) {
-      throw new Error('User and password are required');
+      throw new BadRequestException('User and password are required');
     }
 
     const user = await this.prisma.user.findUnique({
@@ -62,12 +82,13 @@ export class LoginQueryHandler implements IRequestHandler<
     });
 
     if (!user || !user.passwordHash) {
-      throw new UnauthorizedException('Invalid credentials');
+      await bcrypt.compare(query.password, await getDummyHash());
+      throw invalidCredentials();
     }
 
     const isMatch = await bcrypt.compare(query.password, user.passwordHash);
     if (!isMatch) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw invalidCredentials();
     }
 
     // Map roles to simple objects
@@ -90,12 +111,17 @@ export class LoginQueryHandler implements IRequestHandler<
     let professionalId: string | null = null;
     if (organizationId) {
       const pro = await this.prisma.professional.findFirst({
-        where: { userId: user.id, organizationId: organizationId },
+        where: {
+          userId: user.id,
+          organizationId: organizationId,
+          deletedAt: null,
+          status: 'ACTIVE',
+        },
       });
       if (pro) professionalId = pro.id;
     } else {
       const pro = await this.prisma.professional.findFirst({
-        where: { userId: user.id },
+        where: { userId: user.id, deletedAt: null, status: 'ACTIVE' },
       });
       if (pro) {
         professionalId = pro.id;

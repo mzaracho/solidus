@@ -15,7 +15,6 @@ import { IDispatcher } from '@src/infrastructure.bootstrap/config/core/cqrs/inte
 import { GetOrgConfigQuery } from '@src/application/features/config/queries/get-org-config-query';
 import { GetOrganizationQuery } from '@src/application/features/config/queries/get-organization-query';
 import { GetActivityTypesQuery } from '@src/application/features/config/queries/get-activity-types-query';
-import { AuthGuard } from '@src/infrastructure.bootstrap/config/providers/auth-guard-provider';
 import { OrgRoleGuard, RequireOrgRole } from '@src/infrastructure.bootstrap/guards/org-role-guard';
 import { CreateCategoryCommand } from '@src/application/features/config/commands/category-commands';
 import { CreatePresetCommand } from '@src/application/features/config/commands/preset-commands';
@@ -42,7 +41,6 @@ import { UpdateOrganizationCommand } from '@src/application/features/config/comm
 import { BaseController } from '../../base/base-controller';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 
-@UseGuards(AuthGuard)
 @Controller('org')
 export class OrgController extends BaseController {
   constructor(

@@ -1,38 +1,52 @@
 import {
-    Injectable,
-    NestInterceptor,
-    ExecutionContext,
-    CallHandler,
-    Logger,
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+  Logger,
 } from '@nestjs/common';
+import { Request, Response } from 'express';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
+import { safeStringify } from '../config/core/redact';
 
+export interface LoggingInterceptorOptions {
+  /** Solo fuera de producción (ver getRuntimeEnv). */
+  debugEnabled: boolean;
+}
+
+/**
+ * Una línea por request (método, ruta sin query, status y duración).
+ * En debug agrega params, query y body redactados. Nunca loguea headers ni cuerpos de respuesta.
+ */
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
-    private readonly logger = new Logger(LoggingInterceptor.name);
+  private readonly logger = new Logger(LoggingInterceptor.name);
 
-    intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-        const req = context.switchToHttp().getRequest();
-        const method = req.method;
-        const url = req.url;
-        const body = req.body;
-        const query = req.query;
-        const params = req.params;
-        const headers = req.headers;
+  constructor(private readonly options: LoggingInterceptorOptions) {}
 
-        this.logger.log(`Incoming Request: ${method} ${url}`);
-        this.logger.debug(`Headers: ${JSON.stringify(headers)}`);
-        this.logger.debug(`Body: ${JSON.stringify(body)}`);
-        this.logger.debug(`Query: ${JSON.stringify(query)}`);
-        this.logger.debug(`Params: ${JSON.stringify(params)}`);
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const http = context.switchToHttp();
+    const req = http.getRequest<Request>();
+    const res = http.getResponse<Response>();
+    const method = req.method;
+    const path = String(req.originalUrl ?? req.url ?? '').split('?')[0];
 
-        const now = Date.now();
-        return next.handle().pipe(
-            tap((data) => {
-                this.logger.log(`Response Time: ${Date.now() - now}ms`);
-                this.logger.debug(`Response Data: ${JSON.stringify(data)}`);
-            }),
-        );
+    if (this.options.debugEnabled) {
+      this.logger.debug(`Params: ${safeStringify(req.params)}`);
+      this.logger.debug(`Query: ${safeStringify(req.query)}`);
+      this.logger.debug(`Body: ${safeStringify(req.body)}`);
     }
+
+    const now = Date.now();
+    return next.handle().pipe(
+      tap({
+        next: () => {
+          this.logger.log(
+            `${method} ${path} ${res.statusCode} ${Date.now() - now}ms`,
+          );
+        },
+      }),
+    );
+  }
 }

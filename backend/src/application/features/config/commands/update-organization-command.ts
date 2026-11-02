@@ -3,7 +3,7 @@ import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfa
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 export class UpdateOrganizationCommand implements IRequest<boolean> {
   constructor(
@@ -66,7 +66,9 @@ export class UpdateOrganizationCommandHandler implements IRequestHandler<
         },
       });
     } catch (error) {
-      console.error('Error updating organization:', error);
+      new Logger(UpdateOrganizationCommandHandler.name).error(
+        `Error updating organization: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
       throw error;
     }
     return true;

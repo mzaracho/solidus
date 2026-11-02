@@ -137,12 +137,13 @@ function Write-BindExposureNotice {
 }
 
 function Show-Urls {
-    param([string]$FrontendUrl)
+    param([string]$FrontendUrl, [string]$SwaggerUrl)
     Write-Host ''
     Write-Host 'Listo.' -ForegroundColor Green
     Write-Host "  Frontend: $FrontendUrl"
     Write-Host '  API:      http://localhost:8080/api'
-    Write-Host '  Swagger:  http://localhost:8080/'
+    if ([string]::IsNullOrEmpty($SwaggerUrl)) { Write-Host '  Swagger:  deshabilitado (NODE_ENV=production)' }
+    else { Write-Host ('  Swagger:  {0}' -f $SwaggerUrl) }
     Write-Host '  Detener:  .\dev.ps1 -Stop    Probar: .\dev.ps1 -Smoke'
 }
 
@@ -217,7 +218,7 @@ function Invoke-DevMode {
 
     Write-DevStep 'Backend (ventana nueva)'
     [void](Start-DevWindow -RootDir $RootDir -Name 'backend' -Title $script:BackendWindowTitle -WorkDir $BackendDir -NpmScript 'start:dev')
-    if (-not (Wait-Http -Url ('http://{0}:8080/' -f $probeHost) -TimeoutSec 180)) {
+    if (-not (Wait-Http -Url ('http://{0}:8080{1}' -f $probeHost, $script:BackendHealthPath) -TimeoutSec 180)) {
         Stop-Dev -Message 'El backend no respondio en 180 s.' -ExitCode 5 -Hint "Revisa la ventana '$($script:BackendWindowTitle)'. Causas comunes: JWT_SECRET invalido, la base no acepta las credenciales, puerto ocupado."
     }
     Write-DevOk 'Backend responde.'
@@ -229,7 +230,7 @@ function Invoke-DevMode {
     }
     Write-DevOk 'Frontend responde.'
 
-    Show-Urls -FrontendUrl $frontendUrl
+    Show-Urls -FrontendUrl $frontendUrl -SwaggerUrl 'http://localhost:8080/docs'
 }
 
 function Invoke-DockerMode {
@@ -265,7 +266,7 @@ function Invoke-DockerMode {
             }
         }
     }
-    if (-not (Wait-Http -Url ('http://{0}:8080/' -f $probeHost) -TimeoutSec 240 -AbortCheck $abort)) {
+    if (-not (Wait-Http -Url ('http://{0}:8080{1}' -f $probeHost, $script:BackendHealthPath) -TimeoutSec 240 -AbortCheck $abort)) {
         Stop-Dev -Message 'El backend no respondio en 240 s.' -ExitCode 5 -Hint 'Revisa: docker compose logs backend'
     }
     Write-DevOk 'Backend responde.'

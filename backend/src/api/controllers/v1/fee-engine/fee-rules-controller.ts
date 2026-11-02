@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, Inject, Headers, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Inject, Headers } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { IDispatcher } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-dispatcher';
 import {
@@ -6,9 +6,8 @@ import {
   CreateFeeRuleCommand,
 } from '@src/application/features/fee-engine/commands/fee-rule-commands';
 import { BaseController } from '../../base/base-controller';
-import { AuthGuard } from '@src/infrastructure.bootstrap/config/providers/auth-guard-provider';
+import { CurrentUserId } from '@src/infrastructure.bootstrap/config/core/authentication/current-user-decorator';
 
-@UseGuards(AuthGuard)
 @Controller('fee-rules')
 export class FeeRulesController extends BaseController {
   constructor(@Inject(IDispatcher) private readonly dispatcher: IDispatcher) {
@@ -18,7 +17,7 @@ export class FeeRulesController extends BaseController {
   @Get()
   async findAll(
     @Headers('x-org-id') orgId: string,
-    @Headers('x-user-id') userId: string,
+    @CurrentUserId() userId: string,
     @Query() query: FindFeeRulesQuery,
   ) {
     query.organizationId = orgId;

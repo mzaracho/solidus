@@ -6,7 +6,6 @@ import {
   Body,
   Query,
   Param,
-  UseGuards,
   Inject,
   Headers,
   HttpCode,
@@ -14,7 +13,7 @@ import {
 import { CreatePatientDto } from '@src/application/features/patients/dtos/create-patient.dto';
 import { PatientResponseDto } from '@src/application/features/patients/dtos/patient-response.dto';
 import { ApiTags } from '@nestjs/swagger';
-import { AuthGuard } from '@src/infrastructure.bootstrap/config/providers/auth-guard-provider';
+import { CurrentUserId } from '@src/infrastructure.bootstrap/config/core/authentication/current-user-decorator';
 import { BaseController } from '../../base/base-controller';
 import { IDispatcher } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-dispatcher';
 import { ApiOperation, ApiResponse } from '@nestjs/swagger';
@@ -28,9 +27,7 @@ import { GetPatientSummaryQuery } from '@src/application/features/patients/queri
 import { CreatePatientCommand } from '@src/application/features/patients/commands/create-patient-command';
 import { UpdatePatientCommand } from '@src/application/features/patients/commands/update-patient-command';
 import { MergePatientCommand } from '@src/application/features/patients/commands/merge-patient-command';
-import { Public } from '@src/infrastructure.bootstrap/config/core/authentication/public-decorator';
 @ApiTags('Patients')
-@UseGuards(AuthGuard)
 @Controller('v1/patients')
 export class PatientsController extends BaseController {
   constructor(@Inject(IDispatcher) private readonly dispatcher: IDispatcher) {
@@ -45,7 +42,7 @@ export class PatientsController extends BaseController {
   })
   async findAll(
     @Headers('x-org-id') orgId: string,
-    @Headers('x-user-id') userId: string,
+    @CurrentUserId() userId: string,
     @Query('mode') modeQuery: string,
     @Query() query: FindAllPatientsQuery,
   ): Promise<PaginatedArrayDto<PatientResponseDto>> {

@@ -23,11 +23,11 @@ los permisos de los archivos con secretos y activa el hook `pre-commit` (ver má
 ### Flags
 | Comando | Qué hace |
 |---|---|
-| `.\dev.ps1` | Modo desarrollo: Postgres en Docker; backend (http://localhost:8080/api, Swagger en http://localhost:8080/) y frontend (http://localhost:`FRONTEND_PORT`, 3000 por defecto) con hot reload en dos ventanas. Backend y frontend escuchan solo en `127.0.0.1` (ver "Bind en loopback") |
-| `.\dev.ps1 -Docker` | Stack completo con `docker compose up --build -d`; frontend en http://localhost:3001 (puerto fijo). Si existe `.dev/certs/extra-ca.pem` lo usa en los builds (ver "CA extra"). Si hay un modo desarrollo vivo, aborta (código 2): correr `-Stop` antes. Si el build o el arranque fallan, sale con código 9 |
+| `.\dev.ps1` | Modo desarrollo: Postgres en Docker; backend (http://localhost:8080/api, Swagger en http://localhost:8080/docs, solo fuera de producción) y frontend (http://localhost:`FRONTEND_PORT`, 3000 por defecto) con hot reload en dos ventanas. Backend y frontend escuchan solo en `127.0.0.1` (ver "Bind en loopback") |
+| `.\dev.ps1 -Docker` | Stack completo con `docker compose up --build -d`; frontend en http://localhost:3001 (puerto fijo: si otro proceso lo ocupa, falla con código 2; liberarlo). Swagger deshabilitado (`NODE_ENV=production`). Si existe `.dev/certs/extra-ca.pem` lo usa en los builds (ver "CA extra"). Si hay un modo desarrollo vivo, aborta (código 2): correr `-Stop` antes. Si el build o el arranque fallan, sale con código 9 |
 | `.\dev.ps1 -Stop` | Cierra las ventanas que lanzó el script y detiene los contenedores (`docker compose stop`). No usa `down` ni borra volúmenes: los datos se conservan. Solo mata un proceso registrado si su línea de comandos corresponde a una ventana lanzada por `dev.ps1` (no confía solo en `.dev/processes.json`); si el registro no se puede leer, avisa y pide cerrar a mano las ventanas |
 | `.\dev.ps1 -Seed` | Con el modo desarrollo o con `-Docker`: carga los seeds locales (`truncate.sql` → `seed.sql` → `seed_test_users.sql`). Si la base puede tener datos pide confirmación (escribir `BORRAR` si hay un seed destructivo; sin consola interactiva cancela). `seed_activities.sql` y `seed_psicolsa.sql` no se cargan solos |
-| `.\dev.ps1 -Smoke` | Prueba de humo: backend, frontend y login con `SMOKE_USER`/`SMOKE_PASSWORD` del `.env` (si faltan, saltea el login: crearlos con `-CreateSmokeUser`). No escribe en la base |
+| `.\dev.ps1 -Smoke` | Prueba de humo: backend (`GET /health/liveness`, pública y fuera de `/api`; `/` ya da 404), frontend y login con `SMOKE_USER`/`SMOKE_PASSWORD` del `.env` (si faltan, saltea el login: crearlos con `-CreateSmokeUser`). No escribe en la base |
 | `.\dev.ps1 -Init` | Crea o sincroniza los `.env`, corrige permisos, activa el hook `pre-commit` y valida la configuración (incluido el compose con la CA extra, si existe); no levanta nada ni necesita el daemon de Docker |
 | `.\dev.ps1 -ExportCa [-Yes]` | Exporta la CA que intercepta HTTPS a `.dev/certs/extra-ca.pem` (ver "CA extra para builds Docker") |
 | `.\dev.ps1 -CreateSmokeUser` | Crea o actualiza el usuario de humo en la base local (ver "Usuario de humo") |
@@ -79,15 +79,25 @@ pwsh -File .\dev.ps1                                        # PowerShell 7, si e
   siempre en `127.0.0.1`. Debe ser una IP válida (si no, código 1 sin mostrar el valor). En modo Docker solo se
   admite IPv4: una IPv6 se rechaza con código 1 ("en modo Docker usa una IPv4"); el modo desarrollo acepta IPv4 o
   IPv6. Si no es loopback, `dev.ps1` muestra un aviso de exposición en ambos modos.
-  **Aviso:** con `0.0.0.0` la API queda expuesta en la red local con JWT sin verificar (RIESGOS S1) y CORS
-  abierto (`origin: true`). Usarlo solo en redes de confianza, y en ese caso poner la IP de la PC en
+  **Aviso:** con `0.0.0.0` la API queda accesible en la red local (exige JWT y valida la organización, pero sigue
+  abierta el resto de lo listado en RIESGOS). Usarlo solo en redes de confianza; agregar el origen del navegador
+  (por ejemplo `http://192.0.2.10:3000`) a `CORS_EXTRA_ORIGINS`, y en Docker poner la IP de la PC en
   `NEXT_PUBLIC_API_BASE_URL` (se hornea al construir) y correr `.\dev.ps1 -Docker`.
+- `CORS_EXTRA_ORIGINS` — orígenes del navegador adicionales que la API acepta por CORS, separados por comas, con
+  esquema y puerto (`http://host:puerto`), sin comodines ni rutas. Un valor inválido hace terminar a `dev.ps1` con
+  código 1 sin mostrarlo. Se suma a los orígenes locales.
 - `EXTRA_CA_THUMBPRINT` — opcional: huella(s) SHA-1 de 40 hex, separadas por coma, de la CA que `-ExportCa` debe
   exportar en lugar de detectarla (ver "CA extra para builds Docker").
 - `NEXT_PUBLIC_API_BASE_URL` — URL de la API vista desde el navegador en modo Docker (default
   `http://localhost:8080/api`).
 - `SMOKE_USER` / `SMOKE_PASSWORD` — usuario de humo de la base local para `-Smoke`; los genera
   `-CreateSmokeUser` (ver "Usuario de humo").
+
+### CORS y `CORS_ORIGIN`
+- `dev.ps1` genera `CORS_ORIGIN` en `backend/.env` (no editarlo) con `http://localhost:<FRONTEND_PORT>` y
+  `http://127.0.0.1:<FRONTEND_PORT>` más `CORS_EXTRA_ORIGINS`. El compose también la define para el backend.
+- El backend la lee como lista separada por comas, rechaza `*` y entradas con ruta (no arranca), y con
+  `NODE_ENV=production` no arranca si falta. `credentials` es `false` y `x-user-id` no es un header permitido.
 
 ### Bind en loopback
 - **Modo desarrollo:** `next dev` se lanza con `-H <BIND_ADDRESS>` (por defecto `127.0.0.1`) y el backend escucha
@@ -230,6 +240,9 @@ sistema de archivos no admite ACL, avisa y sigue. Se puede comprobar con `icacls
 | `core.hooksPath ya apunta a otra carpeta` (aviso) | El hook `pre-commit` de secretos no está activo. Activarlo con `git config --local core.hooksPath .githooks` |
 | Login rechazado (HTTP 401) en `-Smoke` | El usuario de humo no existe o no coincide con `.env`: `.\dev.ps1 -CreateSmokeUser` |
 | Código 8 | `DOCKER_HOST` o el contexto activo apuntan a un daemon remoto. Usar el Docker Desktop local (`docker context use default`, quitar `DOCKER_HOST`). `-Stop` solo avisa y no toca contenedores |
+| `/docs` da 404 y no hay logs debug en desarrollo | `backend/.env` tiene un `NODE_ENV` heredado distinto de `development`/`test` (por ejemplo `local`): el backend se comporta como producción (falla cerrado). Para desarrollo, `NODE_ENV=development` (no se corrige solo; revisar el archivo generado) |
+| `docker compose build` con el override de la CA falla por permisos de Bake (desde Git Bash) | Correrlo desde PowerShell con `COMPOSE_BAKE=false` |
+| `-Docker` falla con puerto ocupado (código 2) | El modo Docker usa el 3001 fijo; liberar el proceso que lo ocupa |
 | Código 7 en `-Smoke` | No hay nada levantado o el login falló (crear el usuario con `-CreateSmokeUser` o revisar `SMOKE_USER`/`SMOKE_PASSWORD`) |
 
 ### Archivos locales que deja `dev.ps1` (todos ignorados por git)
@@ -320,9 +333,10 @@ npm install
 #   JWT_SECRET=<obligatorio, mínimo 32 caracteres; el backend no arranca sin él>
 #   (POSTGRES_* ya no van en backend/.env: viven solo en el .env de la raíz)
 #   BODY_SIZE_LIMIT (opcional, default 50mb)
-#   CORS_ORIGIN / CORS_METHODS (hoy ignoradas por el código)
+#   CORS_ORIGIN (lista por comas, sin comodines; lo genera dev.ps1; obligatoria con NODE_ENV=production)
+#   CORS_EXTRA_ORIGINS (opcional; vive en el .env raíz). CORS_METHODS no se lee del entorno (los métodos están fijos en `cors-config.ts`).
 
-npm run start:dev     # nest start --watch  -> http://localhost:8080/api ; Swagger en http://localhost:8080/
+npm run start:dev     # nest start --watch  -> http://localhost:8080/api ; Swagger en http://localhost:8080/docs (solo NODE_ENV=development|test)
 npm run build         # tsc --noEmit && nest build  (reescribe dist/)
 npm run start:prod    # node dist/src/api/main.js
 ```
@@ -337,7 +351,7 @@ npm run format                                # prettier --write sobre src/ y te
 
 ### Tests
 ```bash
-npm test              # jest (hoy: solo jwt-config.spec.ts)
+npm test              # jest (13 suites, 141 tests: guards, login, logs, CORS, rutas, etc.)
 npm run test:cov      # cobertura en backend/coverage
 npm run test:e2e      # requiere DB; el único e2e es boilerplate roto
 ```
@@ -366,7 +380,7 @@ $env:NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS = "1"; npm run build
 NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS=1 npm run build
 ```
 
-No hay comando de tests en el frontend.
+Tests: `npm test` (`node --no-warnings --test`; hoy cubre `lib/session`, 7 tests).
 
 ## 5. Stack completo con Docker (raíz)
 ```bash

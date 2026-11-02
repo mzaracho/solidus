@@ -6,6 +6,10 @@ import { Toaster } from 'sonner'
 import { useState, useEffect } from 'react'
 import { useStore } from '@/store/useStore'
 import { jwtDecode } from 'jwt-decode'
+import { toast } from 'sonner'
+import { SESSION_MESSAGES } from '@/lib/constants'
+import { clearSessionCookie } from '@/lib/session'
+import { registerApiForbiddenNotifier } from '@/services/data'
 
 function AuthHydrator() {
     const { setAvailableRoles, setRole, setViewMode, setOrgRole } = useStore()
@@ -20,7 +24,7 @@ function AuthHydrator() {
                 // Check Expiration (exp is in seconds)
                 if (decoded.exp && (decoded.exp * 1000) < Date.now()) {
                     console.warn('Token expired. Clearing session.')
-                    document.cookie = 'auth_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
+                    clearSessionCookie()
                     return
                 }
 
@@ -39,6 +43,18 @@ function AuthHydrator() {
     return null
 }
 
+function ForbiddenNotifier() {
+    // data.ts no importa sonner (también se usa desde el servidor): el toast de 403 se registra acá.
+    useEffect(() => {
+        registerApiForbiddenNotifier(() => {
+            toast.error(SESSION_MESSAGES.forbiddenAction, { id: 'api-forbidden' })
+        })
+        return () => registerApiForbiddenNotifier(null)
+    }, [])
+
+    return null
+}
+
 export function Providers({ children }: { children: React.ReactNode }) {
     const [queryClient] = useState(() => new QueryClient({
         defaultOptions: {
@@ -53,6 +69,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <QueryClientProvider client={queryClient}>
             <TooltipProvider delayDuration={0}>
                 <AuthHydrator />
+                <ForbiddenNotifier />
                 {children}
                 <Toaster />
             </TooltipProvider>

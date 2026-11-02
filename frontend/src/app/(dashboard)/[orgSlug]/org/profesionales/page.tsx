@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { User, Plus, Trash2, Loader2, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { updateStaff, deleteStaff } from '@/services/data'
+import { updateStaff, deleteStaff, isHandledApiError } from '@/services/data'
 import { Switch } from '@/components/ui/switch'
 import {
     Dialog,
@@ -171,6 +171,7 @@ export default function ProfessionalsPage() {
             load()
         } catch (e: any) {
             console.error(e)
+            if (isHandledApiError(e)) return
             if (e.message && (e.message.includes('Foreign key') || e.message.includes('constraint') || e.message.includes('work items'))) {
                 toast.error('No se puede eliminar: El profesional tiene actividades asociadas.')
             } else {
