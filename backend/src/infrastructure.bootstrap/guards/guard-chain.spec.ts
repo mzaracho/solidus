@@ -6,6 +6,7 @@ import { JwtModule, JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import request from 'supertest';
+import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { OrgAccessService } from '@src/infrastructure/features/auth/services/org-access.service';
 import { jwtModuleAsyncOptions } from '../config/app/jwt-config';
 import { configureGlobalPrefix } from '../config/app/global-prefix-config';
@@ -54,6 +55,7 @@ class ChainController {
 describe('Cadena de guards globales (integración)', () => {
   const SECRET = 'k'.repeat(40);
   const userId = randomUUID();
+  const deletedUserId = randomUUID();
   const adminOrg = randomUUID();
   const memberOrg = randomUUID();
   let app: INestApplication;
@@ -69,6 +71,17 @@ describe('Cadena de guards globales (integración)', () => {
       ],
       controllers: [ChainController],
       providers: [
+        {
+          provide: PrismaService,
+          useValue: {
+            user: {
+              findUnique: async ({ where }: any) =>
+                where.id === deletedUserId
+                  ? { id: where.id, deletedAt: new Date() }
+                  : { id: where.id, deletedAt: null },
+            },
+          },
+        },
         {
           provide: OrgAccessService,
           useValue: {
@@ -165,6 +178,22 @@ describe('Cadena de guards globales (integración)', () => {
     );
     expect(res.status).toBe(200);
     expect(res.body.userId).toBe(userId);
+  });
+
+  it('token vigente de un usuario dado de baja da 401, también en @OrgOptional', async () => {
+    const deletedToken = jwt.sign({ sub: deletedUserId });
+    const secure = await get('/api/v1/chain/secure')
+      .set('Authorization', `Bearer ${deletedToken}`)
+      .set('x-org-id', adminOrg);
+    const optional = await get('/api/v1/chain/optional').set(
+      'Authorization',
+      `Bearer ${deletedToken}`,
+    );
+    for (const res of [secure, optional]) {
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('unauthorized');
+      expect(res.body.errors).toEqual([{ message: 'Unauthorized' }]);
+    }
   });
 
   it('rol: ADMIN pasa y MEMBER recibe 403 forbidden', async () => {

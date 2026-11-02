@@ -235,10 +235,15 @@ describe('OrgAccessService', () => {
     const args = findFirst.mock.calls[0][0];
     expect(args.where.id).toBe(orgId);
     expect(args.where.OR).toEqual([
-      { members: { some: { userId } } },
+      { members: { some: { userId, user: { deletedAt: null } } } },
       {
         professionals: {
-          some: { userId, deletedAt: null, status: 'ACTIVE' },
+          some: {
+            userId,
+            deletedAt: null,
+            status: 'ACTIVE',
+            user: { deletedAt: null },
+          },
         },
       },
     ]);

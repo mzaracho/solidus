@@ -70,13 +70,21 @@ describe('AuthenticationGuard', () => {
   let jwt: JwtService;
   let guard: AuthenticationGuard;
   const userId = randomUUID();
+  const findUnique = jest.fn();
+
+  beforeEach(() => {
+    findUnique.mockReset();
+    findUnique.mockResolvedValue({ id: userId, deletedAt: null });
+  });
 
   beforeAll(() => {
     const options = (jwtModuleAsyncOptions().useFactory as any)({
       get: () => SECRET,
     });
     jwt = new JwtService(options);
-    guard = new AuthenticationGuard(new Reflector(), jwt);
+    guard = new AuthenticationGuard(new Reflector(), jwt, {
+      user: { findUnique },
+    } as any);
   });
 
   const validClaims = () => {
@@ -206,6 +214,7 @@ describe('AuthenticationGuard', () => {
       },
     );
     await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(findUnique).not.toHaveBeenCalled();
   });
 
   it('ruta @Public en la clase pasa sin token', async () => {
@@ -217,6 +226,35 @@ describe('AuthenticationGuard', () => {
       },
     );
     await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
+  it('token válido de un usuario dado de baja da 401 genérico', async () => {
+    findUnique.mockResolvedValue({ id: userId, deletedAt: new Date() });
+    await expect401({ authorization: `Bearer ${jwt.sign({ sub: userId })}` });
+  });
+
+  it('token válido de un usuario inexistente da 401 genérico', async () => {
+    findUnique.mockResolvedValue(null);
+    await expect401({ authorization: `Bearer ${jwt.sign({ sub: userId })}` });
+  });
+
+  it('consulta por clave primaria con select mínimo, en cada request (sin cache)', async () => {
+    const token = jwt.sign({ sub: userId });
+    for (let i = 0; i < 2; i++) {
+      const { context } = makeContext({ authorization: `Bearer ${token}` });
+      await guard.canActivate(context);
+    }
+    expect(findUnique).toHaveBeenCalledTimes(2);
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { id: userId },
+      select: { id: true, deletedAt: true },
+    });
+  });
+
+  it('un token inválido no llega a la base', async () => {
+    await expect401({ authorization: 'Bearer abc.def.ghi' });
+    expect(findUnique).not.toHaveBeenCalled();
   });
 
   it('token válido deja request.auth y pisa x-user-id con sub', async () => {

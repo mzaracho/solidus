@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
+import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import {
   JWT_ALGORITHM,
   JWT_AUDIENCE,
@@ -31,7 +32,7 @@ const unauthorized = () =>
 
 /**
  * Guard global (APP_GUARD): toda ruta exige un JWT válido salvo las marcadas con @Public().
- * Verifica firma, expiración, algoritmo, issuer y audience. Cualquier fallo responde 401
+ * Verifica firma, expiración, algoritmo, issuer y audience, y que el usuario exista y no esté dado de baja. Cualquier fallo responde 401
  * genérico, sin detalles del error de verificación ni el token.
  */
 @Injectable()
@@ -39,6 +40,7 @@ export class AuthenticationGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly jwtService: JwtService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -75,6 +77,14 @@ export class AuthenticationGuard implements CanActivate {
     ) {
       throw unauthorized();
     }
+
+    // Baja inmediata: el token no basta, el usuario debe existir y no estar dado de baja.
+    // Consulta por clave primaria en cada request, sin cache entre requests.
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, deletedAt: true },
+    });
+    if (!user || user.deletedAt !== null) throw unauthorized();
 
     request.auth = { userId: payload.sub, claims: payload };
     // Defensa en profundidad: quien lea el header obtiene la identidad verificada.

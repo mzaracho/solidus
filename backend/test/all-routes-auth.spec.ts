@@ -45,6 +45,7 @@ const join = (...parts: string[]) =>
 describe('Todas las rutas del AppModule real (sin base de datos)', () => {
   let app: INestApplication;
   let jwt: JwtService;
+  const deletedUserId = randomUUID();
   const routes: Route[] = [];
 
   beforeAll(async () => {
@@ -59,6 +60,14 @@ describe('Todas las rutas del AppModule real (sin base de datos)', () => {
           if (prop === '$transaction')
             return async (fn: any) =>
               typeof fn === 'function' ? fn(prismaMock) : [];
+          // El guard de autenticación consulta al usuario: activo salvo el id "baja".
+          if (prop === 'user')
+            return {
+              findUnique: async ({ where }: any) => ({
+                id: where.id,
+                deletedAt: where.id === deletedUserId ? new Date() : null,
+              }),
+            };
           return new Proxy(() => undefined, {
             get: () => async () => null,
             apply: async () => null,
@@ -178,6 +187,20 @@ describe('Todas las rutas del AppModule real (sin base de datos)', () => {
         .set('Authorization', `Bearer ${token}`)
         .send({});
       if (res.status !== 403) bad.push(`${r.label} -> ${res.status}`);
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('token vigente de un usuario dado de baja: 401 en TODA ruta no pública (incluidas @OrgOptional)', async () => {
+    const token = jwt.sign({ sub: deletedUserId });
+    const bad: string[] = [];
+    for (const r of routes.filter((x) => !x.isPublic)) {
+      const res = await (request(app.getHttpServer()) as any)
+        [r.method](r.path)
+        .set('Authorization', `Bearer ${token}`)
+        .set('x-org-id', randomUUID())
+        .send({});
+      if (res.status !== 401) bad.push(`${r.label} -> ${res.status}`);
     }
     expect(bad).toEqual([]);
   });

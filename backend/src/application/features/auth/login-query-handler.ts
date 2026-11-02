@@ -81,7 +81,8 @@ export class LoginQueryHandler implements IRequestHandler<
       },
     });
 
-    if (!user || !user.passwordHash) {
+    // Un usuario dado de baja se trata como inexistente: mismo camino, mismo 401 y mismo costo.
+    if (!user || user.deletedAt !== null || !user.passwordHash) {
       await bcrypt.compare(query.password, await getDummyHash());
       throw invalidCredentials();
     }

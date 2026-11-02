@@ -24,6 +24,8 @@ export interface FakeUser {
   id: string;
   email: string;
   password: string;
+  /** Fecha de baja; null/ausente = usuario activo. */
+  deletedAt?: Date | null;
 }
 
 /** Usuario y contraseña ficticios generados en el test (bcrypt cost 4 para que sea rápido). */
@@ -39,9 +41,10 @@ export const makePrismaMock = (user: FakeUser) => {
   return {
     user: {
       findUnique: jest.fn(async ({ where }: any) =>
-        where.email === user.email
+        where.email === user.email || where.id === user.id
           ? {
               id: user.id,
+              deletedAt: user.deletedAt ?? null,
               name: 'Usuario Ficticio',
               email: user.email,
               passwordHash,

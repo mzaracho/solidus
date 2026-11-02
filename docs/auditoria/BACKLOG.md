@@ -23,7 +23,7 @@ Origen: `docs/features/005-seguridad-backend/06-seguridad.md`. Ver los residuale
 
 | # | Ítem | Riesgo | Esfuerzo |
 |---|---|---|---|
-| 34 | Usuarios con `User.deletedAt`: mismo 401 genérico en el login y chequeo en `OrgAccessService`/guard | M-1 | S |
+| 34 | **RESUELTO (feature 006).** Usuarios con `User.deletedAt`: mismo 401 genérico en el login y chequeo en `OrgAccessService`/guard | M-1 | S |
 | 35 | Upgrade a Nest 11 o superior (15 vulnerabilidades de `npm audit` en el backend, entre ellas `proxy-addr`) | H-2 | L |
 | 36 | `npm audit fix` en el frontend (`source-map-js`) | H-3 | S |
 | 37 | Loguear requests fallidos (método, ruta, status, duración), incluidos los 401 y 403 de los guards, sin datos sensibles | B-3 | S |

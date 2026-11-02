@@ -88,6 +88,37 @@ describe('POST /api/v1/auth/login', () => {
     expect(unknownUser.body.code).toBe('unauthorized');
   });
 
+  it('401: usuario dado de baja, con contraseña correcta o errónea, da el mismo cuerpo que un inexistente y compara con bcrypt', async () => {
+    const deleted = { ...makeFakeUser(), deletedAt: new Date() };
+    const deletedApp = await createLoginApp(makePrismaMock(deleted));
+    try {
+      const post = (body: unknown) =>
+        request(deletedApp.getHttpServer())
+          .post('/api/v1/auth/login')
+          .send(body as any);
+      const unknown = await login({
+        user: 'nadie@example.test',
+        password: 'x',
+      });
+      compareSpy.mockClear();
+      const good = await post({
+        user: deleted.email,
+        password: deleted.password,
+      });
+      expect(compareSpy).toHaveBeenCalledTimes(1);
+      const bad = await post({ user: deleted.email, password: 'incorrecta' });
+      expect(compareSpy).toHaveBeenCalledTimes(2);
+      for (const res of [good, bad]) {
+        expect(res.status).toBe(401);
+        expect(res.body).toEqual(unknown.body);
+      }
+      expect(good.body.code).toBe('unauthorized');
+      expect(good.body.token).toBeUndefined();
+    } finally {
+      await deletedApp.close();
+    }
+  });
+
   it('200: devuelve un token HS256 con iss, aud y 8 h de vida', async () => {
     const res = await login({ user: user.email, password: user.password });
     expect(res.status).toBe(201);

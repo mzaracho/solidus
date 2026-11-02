@@ -135,7 +135,8 @@ Seeds (archivos locales, no versionados): `.\dev.ps1 -Seed`; manual con `docker 
 4. Seguridad (estado actual, ver `docs/auditoria/RIESGOS.md`): los JWT se verifican (guard global,
    HS256, issuer/audience); la identidad sale de `sub` (`@CurrentUserId()`; `x-user-id` no se lee) y la
    organización (`x-org-id`, `organizationId`/`orgId` de query o body) se valida contra `OrganizationMember` o
-   `Professional` activo, con 403 si no hay vínculo. Siguen abiertos: pertenencia del recurso por `:id`
+   `Professional` activo, con 403 si no hay vínculo. El guard global responde 401 a usuarios inexistentes o
+   dados de baja (`User.deletedAt`) con una consulta por PK en cada request. Siguen abiertos: pertenencia del recurso por `:id`
    (IDOR), modo derivado del rol (`x-mode` aún lo manda el cliente), ADMIN en `ConfigController`, cookie de
    sesión sin HttpOnly y rate limiting del login. Todo endpoint nuevo o modificado debe:
    - estar autenticado (por defecto lo está; `@Public()` solo con justificación),

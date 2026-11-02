@@ -10,7 +10,7 @@ export interface OrgAccessResult {
 
 /**
  * Consulta de pertenencia a una organización: membresía (OrganizationMember) o
- * Professional ACTIVE y no eliminado. Sin cache entre requests, para que las bajas
+ * Professional ACTIVE y no eliminado, siempre que el usuario no esté dado de baja. Sin cache entre requests, para que las bajas
  * se apliquen de inmediato.
  */
 @Injectable()
@@ -22,10 +22,15 @@ export class OrgAccessService {
       where: {
         id: orgId,
         OR: [
-          { members: { some: { userId } } },
+          { members: { some: { userId, user: { deletedAt: null } } } },
           {
             professionals: {
-              some: { userId, deletedAt: null, status: 'ACTIVE' },
+              some: {
+                userId,
+                deletedAt: null,
+                status: 'ACTIVE',
+                user: { deletedAt: null },
+              },
             },
           },
         ],

@@ -1,6 +1,6 @@
 # Estado del feature 005 (traspaso entre sesiones)
 
-Última actualización: 2026-11-02, por el PO. **Feature cerrado (09-cierre.md). Falta el commit y push.**
+Última actualización: 2026-11-02, por el PO. **Feature cerrado (09-cierre.md), commit `314fe63` pusheado a `main`.**
 
 ## Etapas
 | Etapa | Archivo | Estado |
@@ -17,10 +17,11 @@
 
 Vueltas de corrección usadas: 0 de 3.
 
-## Próximo paso
-- Commit y push (autorizados por el usuario, sin force). Excluir los archivos que lista 09-cierre ("Para el
-  commit"). Consultar con el usuario si hace antes la prueba en el navegador.
-- Pendientes: ver 09-cierre ("Pendiente").
+## Después del cierre
+- Commit `314fe63` en `main`, pusheado sin force. Quedaron fuera los archivos que solo cambiaron de fin de
+  línea, `.claude/settings.json`, `.vscode/` y `frontend/AGENTS.md`.
+- Pendientes: ver 09-cierre ("Pendiente"). El orden de los features siguientes está en
+  `docs/features/PLAN-pendientes.md`.
 
 ## Decisiones del PO sobre el diseño (2026-10-29)
 El PO acepta las 6 aclaraciones del arquitecto (03, final). Prevalecen sobre la letra de la spec:
@@ -48,6 +49,8 @@ Además se acepta:
 - **Commit y push:** autorizados al aprobarse, sin force.
 - **coach-claudio (pm2, puerto 3000):** no se toca; `FRONTEND_PORT=3002`.
 - **2026-11-02:** el usuario pidió relanzar al desarrollador para continuar.
+- **2026-11-02:** el usuario pidió hacer todos los pendientes de a uno, con commit y push al terminar cada
+  uno (ver `docs/features/PLAN-pendientes.md`).
 
 ## Pendientes de otros features
 - **Acción del usuario:** activar push protection o secret scanning en GitHub.
