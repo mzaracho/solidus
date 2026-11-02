@@ -7,13 +7,13 @@ export default async function WorkItemsPage({ params }: { params: Promise<{ orgS
     // Fetch data server-side
     // Mode 'ORGANIZATION' is assumed for this view, or we could fetch user context.
     // Defaulting to ORGANIZATION based on URL structure.
-    const items = await withServerSession(`/${orgSlug}/work-items`, (token) =>
+    const result = await withServerSession(`/${orgSlug}/work-items`, (token) =>
         getWorkItems(orgSlug, 'ORGANIZATION', undefined, 1, 20, { token }),
     )
 
     return (
         <div className="container mx-auto py-6">
-            <WorkloadTable data={items} />
+            <WorkloadTable items={result?.items ?? []} total={result?.total ?? 0} />
         </div>
     )
 }

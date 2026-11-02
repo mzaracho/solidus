@@ -87,3 +87,13 @@ export function readSessionToken(): string | null {
   const match = document.cookie.match(new RegExp(`(?:^|; ?)${AUTH_COOKIE_NAME}=([^;]+)`))
   return match ? match[1] : null
 }
+
+/** Usuario y Professional propio según el token de la cookie (solo presentación; el backend decide los permisos). */
+export function readSessionIdentity(): { userId: string | null; professionalId: string | null } {
+  const token = readSessionToken()
+  const payload = token ? decodeJwtPayload(token) : null
+  return {
+    userId: typeof payload?.sub === 'string' ? payload.sub : null,
+    professionalId: typeof payload?.professionalId === 'string' ? payload.professionalId : null,
+  }
+}

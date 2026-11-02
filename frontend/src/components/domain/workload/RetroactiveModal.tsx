@@ -28,8 +28,8 @@ export function RetroactiveModal({ item, open, onOpenChange, onConfirm }: Retroa
 
     useEffect(() => {
         if (item) {
-            setAmount(item.amount)
-            setPayer(item.payer)
+            setAmount(item.grossAmount ?? 0)
+            setPayer(item.payerName)
 
             // Check 30 days lock
             const daysDiff = differenceInDays(new Date(), item.date)
@@ -57,8 +57,8 @@ export function RetroactiveModal({ item, open, onOpenChange, onConfirm }: Retroa
 
         onConfirm({
             ...item,
-            amount,
-            payer
+            grossAmount: amount,
+            payerName: payer,
         })
         onOpenChange(false)
     }

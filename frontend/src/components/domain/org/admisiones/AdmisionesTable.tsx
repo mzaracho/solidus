@@ -16,9 +16,9 @@ import { format } from 'date-fns'
 import { formatCurrency } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { jwtDecode } from 'jwt-decode'
 import { useStore } from '@/store/useStore'
-import { readSessionToken } from '@/lib/session'
+import { readSessionIdentity } from '@/lib/session'
+import { canDeleteActivity } from '@/lib/activity-permissions'
 import {
     Select,
     SelectContent,
@@ -40,18 +40,6 @@ function StatusBadge({ status }: { status: string }) {
     return <Badge variant="secondary">Pendiente</Badge>
 }
 
-/** Usuario y Professional propio según el token (solo presentación; el backend decide los permisos). */
-function readIdentity(): { userId: string | null; professionalId: string | null } {
-    const token = typeof window === 'undefined' ? null : readSessionToken()
-    if (!token) return { userId: null, professionalId: null }
-    try {
-        const d = jwtDecode<{ sub?: string; professionalId?: string | null }>(token)
-        return { userId: d.sub ?? null, professionalId: d.professionalId ?? null }
-    } catch {
-        return { userId: null, professionalId: null } // token ilegible: sin identidad
-    }
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function AdmisionesTable() {
@@ -61,7 +49,7 @@ export function AdmisionesTable() {
 
     // Usuario y Professional propio (del token) para decidir qué botón Eliminar se muestra.
     // Es solo presentación: el backend decide quién puede borrar (403 si no corresponde).
-    const { userId: currentUserId, professionalId: currentProfessionalId } = readIdentity()
+    const { userId: currentUserId, professionalId: currentProfessionalId } = readSessionIdentity()
 
     // ── Data ──────────────────────────────────────────────────────────────────
     const [loading, setLoading] = useState(true)
@@ -280,10 +268,7 @@ export function AdmisionesTable() {
                 const item = row.original
                 const paid = isPaidStatus(item.paymentStatus)
                 // MEMBER: solo borra lo propio (o, sin autor registrado, lo de su Professional). ADMIN: todo.
-                const canDelete = orgRole !== 'MEMBER'
-                    || (item.createdByUserId
-                        ? item.createdByUserId === currentUserId
-                        : !!item.professionalId && item.professionalId === currentProfessionalId)
+                const canDelete = canDeleteActivity(orgRole, item, { userId: currentUserId, professionalId: currentProfessionalId })
                 return (
                     <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary"

@@ -73,6 +73,8 @@ salvo que el usuario lo pida.
   `src/components/domain/<área>`.
 - Refrescar datos con `router.refresh()`, no `window.location.reload()`.
 - Alias `@/*` → `src/*`.
+- Permisos de UI de atenciones: `canDeleteActivity` en `src/lib/activity-permissions.ts` e identidad con
+  `readSessionIdentity()` en `src/lib/session.ts`; solo presentación (el backend es la autoridad).
 
 ## Comandos
 Arranque rápido (raíz, Windows PowerShell 5.1 o 7): `.\dev.ps1`. Primera vez crea el `.env` de la raíz

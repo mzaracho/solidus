@@ -18,6 +18,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { formatCurrency } from '@/lib/utils'
 import { PAYMENT_STATUS } from '@/lib/constants'
+import { canDeleteActivity } from '@/lib/activity-permissions'
+import { readSessionIdentity } from '@/lib/session'
+import { useStore } from '@/store/useStore'
 import { RetroactiveModal } from './RetroactiveModal'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { updateWorkItem, deleteWorkItem, isHandledApiError } from '@/services/data'
@@ -56,6 +59,7 @@ const ActionsCell = ({ row }: { row: any }) => {
     const [showConfirmDelete, setShowConfirmDelete] = useState(false)
     const { orgSlug } = useParams() as { orgSlug: string }
     const router = useRouter()
+    const { orgRole } = useStore()
 
     const alreadyPaid = isPaidStatus(payment.status)
 
@@ -71,6 +75,14 @@ const ActionsCell = ({ row }: { row: any }) => {
     }
 
     const isRestrictedForDelete = alreadyPaid && !!payment.paymentDate
+    // MEMBER: solo borra lo propio (política del 007). Solo presentación: el backend responde 403 si no corresponde.
+    const canDelete = canDeleteActivity(orgRole, payment, readSessionIdentity())
+    const deleteDisabled = isRestrictedForDelete || !canDelete
+    const deleteTitle = !canDelete
+        ? 'Solo podés eliminar tus propias atenciones'
+        : isRestrictedForDelete
+            ? 'No se puede eliminar una actividad ya cobrada con fecha de pago'
+            : undefined
 
     const handleDelete = async () => {
         try {
@@ -115,9 +127,10 @@ const ActionsCell = ({ row }: { row: any }) => {
                     )}
 
                     <DropdownMenuItem
-                        className={isRestrictedForDelete ? "text-muted-foreground cursor-not-allowed" : "text-red-600"}
-                        onClick={() => !isRestrictedForDelete && setShowConfirmDelete(true)}
-                        title={isRestrictedForDelete ? "No se puede eliminar una actividad ya cobrada con fecha de pago" : undefined}
+                        className={deleteDisabled ? "text-muted-foreground cursor-not-allowed" : "text-red-600"}
+                        disabled={deleteDisabled}
+                        onClick={() => !deleteDisabled && setShowConfirmDelete(true)}
+                        title={deleteTitle}
                     >
                         Eliminar
                     </DropdownMenuItem>
@@ -140,7 +153,8 @@ const ActionsCell = ({ row }: { row: any }) => {
                 onOpenChange={setShowRetroactive}
                 onConfirm={async (updated) => {
                     try {
-                        await updateWorkItem(orgSlug, payment.id, updated)
+                        // El backend (PUT /activity/:id) hoy no persiste monto ni pagador: ver 04-implementacion.md
+                        await updateWorkItem(orgSlug, payment.id, { grossAmount: updated.grossAmount, payerName: updated.payerName })
                         toast.success('Actualizado correctamente')
                         setShowRetroactive(false)
                         router.refresh()
@@ -156,11 +170,13 @@ const ActionsCell = ({ row }: { row: any }) => {
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 
+const EMPTY = <span className="text-muted-foreground">—</span>
+
 export const columns: ColumnDef<WorkItem>[] = [
     {
         accessorKey: 'date',
         header: 'Fecha',
-        cell: ({ row }) => format(new Date(row.getValue('date')), 'dd-MM-yyyy'),
+        cell: ({ row }) => format(row.original.date, 'dd-MM-yyyy'),
     },
     {
         accessorKey: 'professionalName',
@@ -173,38 +189,32 @@ export const columns: ColumnDef<WorkItem>[] = [
     {
         accessorKey: 'serviceType',
         header: 'Práctica',
-        cell: ({ row }) => {
-            const val = (row.getValue('serviceType') ?? row.original?.service ?? '') as string
-            return <span className="capitalize">{val}</span>
-        },
+        cell: ({ row }) => <span className="capitalize">{row.original.serviceType}</span>,
     },
     {
         accessorKey: 'payerName',
         header: 'Pagador',
-        cell: ({ row }) => {
-            const payer = (row.getValue('payerName') ?? row.original?.payer ?? '') as string
-            return <span className="font-medium">{payer}</span>
-        },
+        cell: ({ row }) => <span className="font-medium">{row.original.payerName}</span>,
     },
     {
         accessorKey: 'status',
         header: 'Estado',
-        cell: ({ row }) => <StatusBadge status={row.getValue('status') as string} />,
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
     },
     {
         accessorKey: 'grossAmount',
         header: 'Monto Total',
         cell: ({ row }) => {
-            const val = (row.getValue('grossAmount') ?? row.original?.amount ?? 0) as number
-            return <div className="font-medium">{formatCurrency(val)}</div>
+            const val = row.original.grossAmount
+            return val === null ? EMPTY : <div className="font-medium">{formatCurrency(val)}</div>
         },
     },
     {
         accessorKey: 'netAmount',
         header: 'Neto Prof.',
         cell: ({ row }) => {
-            const val = (row.getValue('netAmount') ?? row.original?.splitProfessional ?? 0) as number
-            return <div className="text-green-600 font-medium">{formatCurrency(val)}</div>
+            const val = row.original.netAmount
+            return val === null ? EMPTY : <div className="text-green-600 font-medium">{formatCurrency(val)}</div>
         },
     },
     {

@@ -85,3 +85,41 @@ test('buildLoginPath codifica / como %2F y descarta from inseguro', () => {
   assert.equal(buildLoginPath({ from: '/org-1/work-items' }), '/login?from=%2Forg-1%2Fwork-items')
   assert.equal(buildLoginPath({ reason: 'otra-cosa', from: '//ejemplo.com' }), '/login')
 })
+
+// readSessionIdentity (feature 008): lee la cookie del navegador; se simula `document`.
+import { readSessionIdentity } from './session.ts'
+
+const withCookie = (cookie: string | undefined, fn: () => void) => {
+  const g = globalThis as unknown as { document?: { cookie: string } }
+  const prev = g.document
+  if (cookie === undefined) delete g.document
+  else g.document = { cookie }
+  try {
+    fn()
+  } finally {
+    if (prev === undefined) delete g.document
+    else g.document = prev
+  }
+}
+
+test('readSessionIdentity devuelve sub y professionalId de la cookie', () => {
+  const t = fakeToken({ sub: 'u1', professionalId: 'p1' })
+  withCookie(`otra=1; auth_token=${t}`, () => {
+    assert.deepEqual(readSessionIdentity(), { userId: 'u1', professionalId: 'p1' })
+  })
+})
+
+test('readSessionIdentity sin professionalId o con tipos inválidos da null', () => {
+  withCookie(`auth_token=${fakeToken({ sub: 'u1' })}`, () => {
+    assert.deepEqual(readSessionIdentity(), { userId: 'u1', professionalId: null })
+  })
+  withCookie(`auth_token=${fakeToken({ sub: 5, professionalId: { a: 1 } })}`, () => {
+    assert.deepEqual(readSessionIdentity(), { userId: null, professionalId: null })
+  })
+})
+
+test('readSessionIdentity sin cookie, token basura o sin document da null', () => {
+  withCookie('', () => assert.deepEqual(readSessionIdentity(), { userId: null, professionalId: null }))
+  withCookie('auth_token=basura', () => assert.deepEqual(readSessionIdentity(), { userId: null, professionalId: null }))
+  withCookie(undefined, () => assert.deepEqual(readSessionIdentity(), { userId: null, professionalId: null }))
+})
