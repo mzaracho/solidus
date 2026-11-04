@@ -31,8 +31,9 @@ Origen: `docs/features/005-seguridad-backend/06-seguridad.md`. Ver los residuale
 | 39 | **RESUELTO (feature 011).** `ProductionController` y `ReportingController` (no registrados, tomaban `userId` de la query) borrados junto con sus queries; también se eliminó `PUT /api/profile` (`ProfileController`, mock no registrado; el front usa `PUT /pro/profile`). Guardia estructural: el test `(a2)` de `test/org-isolation.spec.ts` falla si un `@Controller` de `src/` no está registrado en un módulo | B-1 | S |
 
 Notas del feature 010 (`docs/features/010-logs-y-limites/06-seguridad.md`):
-- I-4: un error del parser con otro status o sin `type` cae en el manejador por defecto de Express (fuera de producción
-  puede mostrar el stack). Agregar un manejador final genérico; relacionado con #13.
+- I-4: **resuelto (feature 013).** Se creyó que un error con otro status o sin `type` caía en el manejador por defecto
+  de Express; en realidad los errores de `next(err)` los toman los filtros de Nest. Igual se agregó `finalErrorHandler`
+  (`filters/final-error-handler.ts`) como defensa en profundidad.
 - I-2: los UUID de recursos quedan en la ruta del log de acceso. Considerarlo en una política de retención de logs.
 - El compose no pasa `BODY_SIZE_LIMIT` al contenedor (queda en 1mb): declararlo en el compose si hace falta hacerlo configurable.
 
@@ -44,7 +45,7 @@ Origen: `docs/features/007-aislamiento-organizaciones/` (06-seguridad, 05-revisi
 |---|---|---|---|
 | 40 | Motor de honorarios: unificar la forma de `splits` entre la UI (`{role, percentage, beneficiaryType}`) y `FeeResolutionService` (`{beneficiary, type, value}`) y acotar los montos `FIXED` al bruto de la atención (`computeAmounts`: limitar a `grossAmount - totalAllocated`, mínimo 0) | MEDIA-2 (007) | M |
 | 41 | **RESUELTO (feature 009).** `settlements/calculate`: usar `@CurrentOrgId()` en lugar de `organizationId` de la query y sumar el controlador al invariante de `security-invariants.spec.ts`; evaluar `@RequireOrgRole('ADMIN')` en `settlements/calculate` y acceso por rol en el dashboard en modo organización | MENOR-1 e INFO-1 (007) | S |
-| 42 | Mensajes de error 404 en español y sin JSON crudo en los toasts del front (`updateWorkItem`/`deleteWorkItem` en `data.ts`, `AtencionesTable`, `AdmisionesTable`, `WorkItemForm`) | m-4 (re-revisión 1) | S |
+| 42 | **RESUELTO (feature 013).** Mensajes de error 404 en español y sin JSON crudo en los toasts del front (`updateWorkItem`/`deleteWorkItem` en `data.ts`, `AtencionesTable`, `AdmisionesTable`, `WorkItemForm`) | m-4 (re-revisión 1) | S |
 | 43 | DTOs con class-validator en los comandos de update (`UpdatePatientCommand`, `UpdateActivityCommand`, `UpdateStaffCommand`: enums de pago, email, fechas) para evitar 500 de Prisma. Relacionado con #12 | S-2 / BAJA-2 resto | M |
 | 44 | **RESUELTO (feature 008).** Ocultar "Eliminar" al MEMBER también en `workload/columns.tsx`: `canDeleteActivity` (`src/lib/activity-permissions.ts`) compartida con `AdmisionesTable`; ítem deshabilitado con tooltip. El bug de la tabla de work-items vacía ("No results", O-3 del 005) también quedó resuelto por el 008 | 007 §8.1 | S |
 | 45 | Editar atención: `PUT /activity/:id` ignora monto (`grossAmount`) y pagador (solo persiste `date`, `paymentStatus`, `paymentMethod`, `paymentDate`, `attendance`), pero `workload/RetroactiveModal` y otros formularios permiten cambiarlos y la UI informa éxito. Además el pagador faltante se muestra "—" y se reenvía como valor (M2). Definir si se pueden editar (recalcular splits) o deshabilitarlos en la UI. Relacionado con #17 y #40 (motor de honorarios) | 008 (M1, M2) | M |
@@ -62,7 +63,7 @@ Origen: `docs/features/009-modo-desde-rol/` (decisiones del PO en `00-estado.md`
 | 50 | Listado de pacientes en pro: el orden de deudores (`debtorWhere`) mira deuda de otros profesionales; permite inferir deuda ajena por la posición, sin montos. Acotar con `ownProfessionalsFilter` en organizaciones sin membresía | MENOR-7 (revisión 009) | S |
 | 51 | El `MEMBER` ve comisión y montos por atención en org (decisión 1 del 009, aceptada): feature que oculte montos por rol | BAJA-1 (seguridad 009) | M |
 | 52 | El modo se valida contra la organización del header y `POST /activity` puede apuntar a otra en el body (documentado). Quitar `organizationId` del body o rechazarlo si difiere del header; mientras tanto el front no lo manda | BAJA-2 (seguridad 009) | S |
-| 53 | `new Error(...)` en la regla de primera carga de `activity.service.ts` responde 500: pasar a `BadRequestException`/`ForbiddenException`. Relacionado con #13 | INFO-2 (seguridad 009) | S |
+| 53 | **RESUELTO (feature 013): `BadRequestException` 400 `first-load-required`.** `new Error(...)` en la regla de primera carga de `activity.service.ts` responde 500: pasar a `BadRequestException`/`ForbiddenException`. Relacionado con #13 | INFO-2 (seguridad 009) | S |
 | 54 | Mover `ownProfessionalsFilter` de `application/features/patients/patient-read-access.ts` a `domain/features/patients/` (hoy `patients.service.ts` de infraestructura importa de `application/`) | MENOR-6 (revisión) / INFO-8 (seguridad) 009 | S |
 
 Nota para #12 (whitelist): con `forbidNonWhitelisted` el `?mode=` que manda el front en dashboard, work-items y pacientes daría 400
@@ -86,6 +87,21 @@ Origen: `docs/features/012-rate-limiting-login/06-seguridad.md` y `05-revision.m
 | 57 | Almacén lleno (10.000 claves): ~480 IPv4 (cada una crea hasta 21 claves por ventana) o un /48 IPv6 bloquean los logins de IPs nuevas durante la ventana (denegación, sin bypass). Agregar `Logger.warn` con frecuencia limitada en los rechazos por almacén lleno (sin IPs ni emails), tope configurable o almacén compartido antes de exponer el servicio. Incluye N1 del revisor: la IPv6 mapeada en hexadecimal o `0:0:0:0:0:ffff:a.b.c.d` cae en el /64 de ceros en vez de tratarse como IPv4 (Node informa la forma con puntos, no se da en la práctica) | N-1 (seguridad 012) / N1 (revisión 012) | S |
 | 58 | Bajos del rate limit: ráfaga doble en el borde de la ventana fija (B-1; ventana deslizante o backoff), sin límite por usuario independiente de la IP, lo que permite fuerza bruta distribuida (B-2; captcha, bloqueo de cuenta o 2FA) y máximos configurables altos que permiten debilitar el límite por error (I-5; advertir si se superan 100) | B-1, B-2, I-5 (seguridad 012) | M |
 
+## Candidatos surgidos del feature 013
+
+Origen: `docs/features/013-errores-sin-details/` (00-estado, 05-revision, 06-seguridad).
+
+| # | Ítem | Origen | Esfuerzo |
+|---|---|---|---|
+| 59 | Errores únicos (P2002) y de clave foránea (P2003) de Prisma como 409 en lugar de 500 genérico; requiere analizar la enumeración por campos únicos | decisión 5 (013) | M |
+| 60 | El 403 de "atención ya cobrada" pasarlo a 409 (hoy el cliente recibe el 403 genérico) | decisión 2 (013) | S |
+| 61 | Quitar `axios` y `@nestjs/axios` sin uso de `package.json` (puede ir al 020, audit-fix) | decisión 7 (013) | S |
+| 62 | El CUIT de organización en `payer-commands.ts` enumera entre organizaciones (el mensaje distingue si existe en otra) | B-2 (seguridad 013) | S |
+| 63 | Log de `error.message` de errores no Prisma en producción (hoy recortado a 200 y saneado): evaluar registrar solo la clase | B-3 (seguridad 013) | S |
+| 64 | Test del orden `app.init()` / `app.use(finalErrorHandler)` / `listen` contra el bootstrap real (hoy se prueba con la misma secuencia en un spec) | M-4 (revisión 013) | S |
+| 65 | Acoplamiento `body-parser-config.ts` ↔ `error-contract.ts` (textos y códigos genéricos): unificar la fuente | M-5 (revisión 013) | S |
+| 66 | Mensajes de validación de class-validator salen en inglés (el front muestra un genérico en español): traducirlos o devolver un detalle por campo | decisión 4 (013) | M |
+
 ## P1 — Endurecimiento y consistencia
 
 | # | Ítem | Esfuerzo |
@@ -94,7 +110,7 @@ Origen: `docs/features/012-rate-limiting-login/06-seguridad.md` y `05-revision.m
 | 10 | Sesión en cookie `HttpOnly; Secure; SameSite=Lax` emitida por el backend (o route handler de Next); eliminar `'mock_token'`; middleware que valide expiración | M |
 | 11 | **RESUELTO (features 005 y 012):** el 400 por campos faltantes es del 005; el rate limiting del login es del 012 (implementación propia sin `@nestjs/throttler`: 5 por IP + usuario y 20 por IP en 15 min, 429 con `Retry-After`; residuales en #56 a #58) | S |
 | 12 | `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true })`; DTOs explícitos para fee rules y settings de organización | M |
-| 13 | Filtros de error sin `details` hacia el cliente; mapear errores de negocio a 400/403/404/409 (`BadRequestException`, etc.) en lugar de `Error` | S |
+| 13 | **RESUELTO (feature 013): contrato `{ code, errors }` sin `details`, `X-Error-Id` en 5xx, `axios-filter` borrado.** Filtros de error sin `details` hacia el cliente; mapear errores de negocio a 400/403/404/409 (`BadRequestException`, etc.) en lugar de `Error` | S |
 | 14 | **RESUELTO (Swagger en el 005; `NODE_TLS_REJECT_UNAUTHORIZED` y body limit en el 010).** Swagger solo fuera de producción (hecho en el 005, en `/docs`); quitar `NODE_TLS_REJECT_UNAUTHORIZED=0`; bajar body limit a ~1 MB | S |
 | 15 | Eliminar `/test-suite` del build de producción | S |
 | 16 | Transacciones Prisma (`$transaction`) en `createActivity`, `MergePatientCommand` y borrado de staff; revisar que borrar staff no afecte membresías de otras orgs | M |

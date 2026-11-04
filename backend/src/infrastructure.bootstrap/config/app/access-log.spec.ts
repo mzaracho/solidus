@@ -176,6 +176,7 @@ describe('Línea de acceso (middleware)', () => {
       .send({ relleno: 'x'.repeat(4096) });
     expect(res.status).toBe(413);
     expect(res.body.code).toBe('payload-too-large');
+    expect(Object.keys(res.body).sort()).toEqual(['code', 'errors']);
     expect(Array.isArray(res.body.errors)).toBe(true);
     const text = JSON.stringify(res.body);
     expect(text).not.toMatch(/stack|node_modules|limit|length/i);
@@ -191,6 +192,7 @@ describe('Línea de acceso (middleware)', () => {
       .send('{"roto":');
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('bad-request');
+    expect(Object.keys(res.body).sort()).toEqual(['code', 'errors']);
     expect(JSON.stringify(res.body)).not.toMatch(/Unexpected|position|stack/i);
     expect(only().message).toMatch(/^POST \/api\/v1\/probe\/echo 400 \d+ms$/);
   });
@@ -203,6 +205,7 @@ describe('Línea de acceso (middleware)', () => {
       .send('{"a":1}');
     expect(res.status).toBe(415);
     expect(res.body.code).toBe('unsupported-media-type');
+    expect(Object.keys(res.body).sort()).toEqual(['code', 'errors']);
     expect(Array.isArray(res.body.errors)).toBe(true);
     expect(JSON.stringify(res.body)).not.toMatch(/stack|node_modules|foo/i);
     const line = only();
@@ -227,6 +230,8 @@ describe('Línea de acceso (middleware)', () => {
       .set('Authorization', `Bearer ${token()}`)
       .set('x-org-id', adminOrg);
     expect(res.status).toBe(500);
+    expect(Object.keys(res.body).sort()).toEqual(['code', 'errors']);
+    expect(res.body.code).toBe('unhandled-exception');
     const line = only();
     expect(line.level).toBe('warn');
     expect(line.message).toMatch(/^GET \/api\/v1\/probe\/boom 500 \d+ms$/);

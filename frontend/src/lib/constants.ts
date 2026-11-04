@@ -85,6 +85,22 @@ export const API_ERROR_CODE = {
     UNAUTHORIZED: 'unauthorized',
     ORG_ACCESS_DENIED: 'org-access-denied',
     FORBIDDEN: 'forbidden',
+    NOT_FOUND: 'not-found',
+    VALIDATION_FAILED: 'validation-failed',
+    INTERNAL: 'unhandled-exception',
+} as const
+
+// Mensajes genericos (en espanol) para los errores de la API cuando el backend no manda uno de negocio
+// (feature 013). Los usa src/lib/api-errors.ts.
+export const API_ERROR_MESSAGES = {
+    badRequest: 'No pudimos procesar la solicitud. Revisá los datos e intentá de nuevo.',
+    validation: 'Hay datos incompletos o con formato inválido. Revisalos e intentá de nuevo.',
+    notFound: 'No encontramos el registro. Puede que se haya eliminado.',
+    conflict: 'No se pudo completar la operación por un conflicto con datos existentes.',
+    payloadTooLarge: 'La información enviada es demasiado grande.',
+    tooManyRequests: 'Hiciste demasiados intentos. Esperá unos minutos y probá de nuevo.',
+    server: 'Ocurrió un problema de nuestro lado. Probá de nuevo en unos minutos.',
+    generic: 'No pudimos completar la operación. Probá de nuevo.',
 } as const
 
 export const SESSION_MESSAGES = {

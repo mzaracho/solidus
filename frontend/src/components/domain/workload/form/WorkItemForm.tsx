@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { User, Coins, Clock, Layers } from 'lucide-react'
 import { toast } from 'sonner'
+import { errorMessageOf } from '@/lib/api-errors'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -453,7 +454,7 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
             // Only show if parent didn't already show it
             // Un 403 ya se avisó con el toast de acceso (UX 3.4): no se duplica con otro mensaje.
             if (isHandledApiError(error)) return
-            const msg = error?.message || 'Error al guardar la actividad'
+            const msg = errorMessageOf(error, 'Error al guardar la actividad')
             toast.error(msg)
             // Don't close the modal on error
         }

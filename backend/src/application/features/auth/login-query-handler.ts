@@ -66,7 +66,10 @@ export class LoginQueryHandler implements IRequestHandler<
 
   public async execute(query: LoginQuery): Promise<LoginResponseDto> {
     if (!query.user || !query.password) {
-      throw new BadRequestException('User and password are required');
+      throw new BadRequestException({
+        code: 'bad-request',
+        message: 'Ingresá tu usuario y tu contraseña.',
+      });
     }
 
     const user = await this.prisma.user.findUnique({

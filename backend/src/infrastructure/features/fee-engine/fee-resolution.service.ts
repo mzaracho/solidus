@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { BeneficiaryType, OrgType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../Prisma/prisma.service';
 
@@ -54,7 +54,10 @@ export class FeeResolutionService {
     });
 
     if (!org) {
-      throw new Error(`Organization ${context.organizationId} not found`);
+      // Estado que no debería ocurrir (quien llama ya verificó la organización): 500 genérico, sin el id.
+      throw new InternalServerErrorException(
+        'Organización no encontrada al calcular la distribución',
+      );
     }
 
     // Fetch potential rules

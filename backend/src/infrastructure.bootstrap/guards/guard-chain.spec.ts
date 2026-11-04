@@ -197,7 +197,7 @@ describe('Cadena de guards globales (integración)', () => {
     for (const res of [secure, optional]) {
       expect(res.status).toBe(401);
       expect(res.body.code).toBe('unauthorized');
-      expect(res.body.errors).toEqual([{ message: 'Unauthorized' }]);
+      expect(res.body.errors).toEqual([{ message: 'No autorizado.' }]);
     }
   });
 

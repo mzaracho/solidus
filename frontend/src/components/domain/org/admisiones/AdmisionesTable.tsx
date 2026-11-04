@@ -16,6 +16,7 @@ import { format } from 'date-fns'
 import { formatCurrency } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
+import { errorMessageOf } from '@/lib/api-errors'
 import { useStore } from '@/store/useStore'
 import { readSessionIdentity } from '@/lib/session'
 import { canDeleteActivity } from '@/lib/activity-permissions'
@@ -179,10 +180,7 @@ export function AdmisionesTable() {
         } catch (e: any) {
             // Un 403 ya se avisó con el toast de acceso: no se duplica
             if (isHandledApiError(e)) return
-            const msg = e?.response?.data?.errors?.[0]?.message
-                || e?.message
-                || 'Error al eliminar el registro'
-            toast.error(msg)
+            toast.error(errorMessageOf(e, 'Error al eliminar el registro'))
         }
     }
 

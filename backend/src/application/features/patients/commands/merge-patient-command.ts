@@ -23,13 +23,19 @@ export class MergePatientCommandHandler implements IRequestHandler<MergePatientC
   async execute(command: MergePatientCommand, ctx: RequestContext): Promise<void> {
     const scope = requireOrgScope(ctx);
     if (typeof command.targetId !== 'string' || command.targetId === '') {
-      throw new BadRequestException('Invalid request');
+      throw new BadRequestException({
+        code: 'bad-request',
+        message: 'La solicitud no es válida.',
+      });
     }
     const sourceId = requireId(command.sourceId);
     const targetId = requireId(command.targetId);
 
     if (sourceId === targetId) {
-      throw new BadRequestException('Source and target patients must be different');
+      throw new BadRequestException({
+        code: 'bad-request',
+        message: 'Elegí dos pacientes distintos para combinar.',
+      });
     }
 
     // Verificación (sin escribir): los dos pacientes en el scope y de la misma organización

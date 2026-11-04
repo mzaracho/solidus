@@ -13,6 +13,7 @@ import {
     GitMerge,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { errorMessageOf } from '@/lib/api-errors'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -162,7 +163,7 @@ export function PatientDirectory() {
             loadPatients()
         } catch (e) {
             if (isHandledApiError(e)) return
-            toast.error('Error al combinar pacientes')
+            toast.error(errorMessageOf(e, 'Error al combinar pacientes'))
         } finally {
             setMergeLoading(false)
         }

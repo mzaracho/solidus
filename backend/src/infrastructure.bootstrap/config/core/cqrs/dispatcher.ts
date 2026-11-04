@@ -1,4 +1,3 @@
-import { Logger } from '@nestjs/common';
 import { IDispatcher } from './interfaces/i-dispatcher';
 import { ContextIdFactory, ModuleRef } from '@nestjs/core';
 import { Reflector } from '@nestjs/core';
@@ -26,9 +25,6 @@ export class Dispatcher implements IDispatcher {
     );
 
     if (!handlerType) {
-      new Logger(Dispatcher.name).error(
-        `Handler not found for ${requestType.name}`,
-      );
       throw new Error(`Handler not found for ${requestType.name}`);
     }
 

@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Save, Loader2 } from 'lucide-react'
 import { updateOrgSettings, getOrgDetails, getProfessionalContext, updateProfessionalProfile, isHandledApiError } from '@/services/data'
 import { toast } from 'sonner'
+import { errorMessageOf } from '@/lib/api-errors'
 import { useStore } from '@/store/useStore'
 
 export default function SettingsGeneralPage() {
@@ -95,7 +96,7 @@ export default function SettingsGeneralPage() {
         } catch (error: any) {
             console.error(error)
             if (isHandledApiError(error)) return
-            toast.error(error.message || "Error al guardar ajustes")
+            toast.error(errorMessageOf(error, "Error al guardar ajustes"))
         } finally {
             setLoading(false)
         }

@@ -161,9 +161,11 @@ export class CreatePayerCommandHandler implements IRequestHandler<
     if (command.cuit) {
       const existingOrg = await this.prisma.organization.findFirst({ where: { cuit: command.cuit } });
       if (existingOrg) {
-        throw new BadRequestException(
-          'Ese CUIT pertenece a una organización registrada: la asociación se gestiona con ella directamente.'
-        );
+        throw new BadRequestException({
+          code: 'bad-request',
+          message:
+            'Ese CUIT pertenece a una organización registrada: la asociación se gestiona con ella directamente.',
+        });
       }
     }
 

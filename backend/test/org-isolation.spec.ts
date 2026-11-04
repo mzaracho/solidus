@@ -703,7 +703,7 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
   beforeEach(() => fake.reset());
 
   const tokenOf = (userId: string) => jwt.sign({ sub: userId });
-  const call = (
+  const call = async (
     userId: string,
     method: string,
     path: string,
@@ -714,9 +714,18 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
       .set('Authorization', `Bearer ${tokenOf(userId)}`)
       .set('x-org-id', opts.org ?? orgA);
     if (opts.mode) req = req.set('x-mode', opts.mode);
-    return method === 'get' || method === 'delete'
-      ? req.send(opts.body)
-      : req.send(opts.body ?? {});
+    const res =
+      method === 'get' || method === 'delete'
+        ? await req.send(opts.body)
+        : await req.send(opts.body ?? {});
+    // Contrato de error único (013): toda respuesta >= 400 es { code, errors: [{ message }] }, sin details.
+    if (res.status >= 400) {
+      expect(Object.keys(res.body).sort()).toEqual(['code', 'errors']);
+      expect(typeof res.body.code).toBe('string');
+      expect(Array.isArray(res.body.errors)).toBe(true);
+      expect(typeof res.body.errors[0].message).toBe('string');
+    }
+    return res;
   };
   const swap = (text: string, ids: string[]) =>
     ids.reduce((acc, from) => acc.split(from).join(id()), text);
@@ -802,7 +811,7 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
             status: 404,
           });
           expect(res.body.code).toBe('not-found');
-          expect(res.body.errors).toEqual([{ message: 'Not Found' }]);
+          expect(res.body.errors).toEqual([{ message: 'No se encontró el recurso.' }]);
           expect(fake.writeCount()).toBe(before);
 
           // inexistente: mismo cuerpo, byte a byte

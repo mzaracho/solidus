@@ -1,6 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/unbound-method, @typescript-eslint/require-await */
 import { randomUUID } from 'crypto';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   errorOf,
   FORBIDDEN_BODY,
@@ -406,7 +410,34 @@ describe('ActivityService.createActivity', () => {
         s.scopeOf('ADMIN'),
       ),
     );
-    expect(e).toBeDefined();
+    // Antes un Error común (500): ahora 400 explícito, y la transacción hace rollback.
+    expect(e).toBeInstanceOf(BadRequestException);
+    expect((e as BadRequestException).getResponse()).toEqual({
+      code: 'bad-request',
+      message: 'Falta el profesional de la atención.',
+    });
     expect(s.writes.workItemCreate).not.toHaveBeenCalled();
+  });
+
+  it('regla de primera carga (#53): 400 first-load-required y no abre la transacción', async () => {
+    const s = setup({
+      professional: {
+        // sin canLoadActivities en la organización: profesional externo
+        findFirst: jest
+          .fn()
+          .mockImplementation(async (a: any) =>
+            a.where.canLoadActivities ? null : { id: a.where.id ?? 'pr' },
+          ),
+      },
+      workItem: { count: jest.fn().mockResolvedValue(0) },
+    });
+    const e = await errorOf(() =>
+      s.service.createActivity(dto(), 'pro', s.scopeOf('ADMIN')),
+    );
+    expect(e).toBeInstanceOf(BadRequestException);
+    expect((e as BadRequestException).getResponse()).toMatchObject({
+      code: 'first-load-required',
+    });
+    noWrites(s);
   });
 });

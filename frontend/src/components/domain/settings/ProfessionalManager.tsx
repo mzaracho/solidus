@@ -33,6 +33,7 @@ import { Label } from "@/components/ui/label"
 import { Plus } from "lucide-react"
 import { getOrgConfig, assignStaffCategory, createStaff, updateStaff, isHandledApiError } from '@/services/data'
 import { toast } from 'sonner'
+import { errorMessageOf } from '@/lib/api-errors'
 
 interface Professional {
     id: string
@@ -86,7 +87,7 @@ export function ProfessionalManager() {
         try {
             await createStaff(orgSlug, newPro)
         } catch (e) {
-            if (!isHandledApiError(e)) toast.error('Error al guardar profesional')
+            if (!isHandledApiError(e)) toast.error(errorMessageOf(e, 'Error al guardar profesional'))
             return
         }
         setIsDialogOpen(false)

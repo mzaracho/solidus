@@ -44,7 +44,10 @@ export class DeleteActivityCommandHandler implements IRequestHandler<
 
     // Financial safeguard: prevent deletion of paid activities with a payment date
     if (existing.paymentStatus === PaymentStatus.PAID && existing.paymentDate) {
-      throw new ForbiddenException('No se puede eliminar una actividad ya cobrada con fecha de pago.');
+      throw new ForbiddenException({
+        code: 'forbidden',
+        message: 'No se puede eliminar una actividad ya cobrada con fecha de pago.',
+      });
     }
 
     return this.prisma.workItem.delete({ where: { id } });

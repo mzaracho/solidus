@@ -142,9 +142,7 @@ export function AtencionesTable({ canLoadActivities = false, currentUserId }: Pr
             setRefreshKey(k => k + 1)
             router.refresh()
         } catch (error: any) {
-            const msg = error?.message || 'Error al guardar la actividad'
-            if (!isHandledApiError(error)) toast.error(msg)
-            // Re-throw so WorkItemForm can also react if needed
+            // WorkItemForm muestra el aviso de error: acá solo se relanza para no duplicar el toast
             throw error
         }
     }

@@ -9,7 +9,7 @@ const bad = (splits: unknown) => {
     validateFeeRuleSplits(splits);
   } catch (e: any) {
     expect(e).toBeInstanceOf(BadRequestException);
-    expect(e.getResponse().message).toBe('Invalid splits definition');
+    expect(e.getResponse().message).toBe('La distribución de honorarios no es válida.');
     return;
   }
   throw new Error('no lanzó');

@@ -1,5 +1,6 @@
 import { format } from 'date-fns'
 import { API_ERROR_CODE, ROUTES, SESSION_MESSAGES } from '@/lib/constants'
+import { toApiError } from '@/lib/api-errors'
 import {
     SESSION_EXPIRED_REASON,
     buildLoginPath,
@@ -233,7 +234,7 @@ export async function getDashboardStats(
             apiFetch(`${API_BASE_URL}/dashboard/payers?mode=${mode}&startDate=${startDate}&endDate=${endDate}`, { headers, cache: 'no-store' })
         ]);
 
-        if (!kpiRes.ok || !chartRes.ok) throw new Error('Failed to fetch dashboard stats');
+        if (!kpiRes.ok || !chartRes.ok) throw await toApiError(kpiRes.ok ? chartRes : kpiRes);
 
         const kpis = await kpiRes.json();
         const chart = await chartRes.json();
@@ -300,7 +301,7 @@ export async function getWorkItems(slug: string, mode: 'ORGANIZATION' | 'PROFESS
             cache: 'no-store'
         });
 
-        if (!res.ok) throw new Error('Failed to fetch work items');
+        if (!res.ok) throw await toApiError(res);
         const data = await res.json();
 
         // Handle both legacy array and new paginated object
@@ -333,7 +334,7 @@ export async function getPatients(slug: string, search?: string, page: number = 
             headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
-        if (!res.ok) throw new Error('Failed to fetch patients');
+        if (!res.ok) throw await toApiError(res);
         const data = await res.json();
 
         if (Array.isArray(data)) {
@@ -361,7 +362,7 @@ export async function getFeeRules(slug: string, ctx?: ApiContext) {
             headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
-        if (!res.ok) throw new Error('Failed to fetch fee rules');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -392,27 +393,7 @@ export async function createWorkItem(slug: string, data: any, ctx?: ApiContext) 
             body: JSON.stringify(body)
         });
 
-        if (!res.ok) {
-            let errorMessage = 'Error al guardar la actividad';
-            // Un 404 (recurso de otra organización o inexistente) no lleva detalle: se usa el texto por defecto
-            if (res.status !== 404) {
-              try {
-                const errBody = await res.json();
-                // Try to extract the most useful message from the backend error shape
-                if (errBody?.errors?.[0]?.message) {
-                    errorMessage = errBody.errors[0].message;
-                } else if (errBody?.message) {
-                    errorMessage = errBody.message;
-                } else if (typeof errBody?.details === 'string') {
-                    try {
-                        const details = JSON.parse(errBody.details);
-                        if (details?.message) errorMessage = details.message;
-                    } catch { /* ignore */ }
-                }
-              } catch { /* ignore JSON parse error */ }
-            }
-            throw new Error(errorMessage);
-        }
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -431,7 +412,7 @@ export async function getOrgConfig(slug: string, ctx?: ApiContext) {
             headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
-        if (!res.ok) throw new Error('Failed to fetch org config');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -450,7 +431,7 @@ export async function assignStaffCategory(slug: string, staffId: string, categor
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify({ categoryId })
         });
-        if (!res.ok) throw new Error('Failed to assign category');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -469,7 +450,7 @@ export async function getPayers(slug: string, page: number = 1, limit: number = 
             headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
-        if (!res.ok) throw new Error('Failed to fetch payers');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -535,10 +516,7 @@ export async function updateProfessionalProfile(slug: string, data: any, ctx?: A
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
-        if (!res.ok) {
-            const err = await res.text();
-            throw new Error(`Failed to update professional profile: ${err}`);
-        }
+        if (!res.ok) throw await toApiError(res)
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -557,10 +535,7 @@ export async function createPayer(slug: string, name: string, retentionPercentag
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify({ name, retentionPercentage, ...(cuit ? { cuit } : {}) })
         });
-        if (!res.ok) {
-            const err = await res.text();
-            throw new Error(`Failed to create payer: ${err}`);
-        }
+        if (!res.ok) throw await toApiError(res)
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -579,7 +554,7 @@ export async function createStaff(slug: string, data: any, ctx?: ApiContext) {
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
-        if (!res.ok) throw new Error('Failed to create staff');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -598,7 +573,7 @@ export async function updateStaff(slug: string, id: string, data: any, ctx?: Api
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
-        if (!res.ok) throw new Error('Failed to update staff');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -616,10 +591,7 @@ export async function deleteStaff(slug: string, id: string, ctx?: ApiContext) {
             method: 'DELETE',
             headers: getHeaders(slug, ctx?.token)
         });
-        if (!res.ok) {
-            const err = await res.text();
-            throw new Error(`Failed to delete staff: ${err}`);
-        }
+        if (!res.ok) throw await toApiError(res)
         return true;
     } catch (error) {
         rethrowServerAuthError(error);
@@ -640,7 +612,7 @@ export async function getPatientSummary(slug: string, patientId: string, ctx?: A
             headers: getHeaders(slug, ctx?.token),
             cache: 'no-store',
         });
-        if (!res.ok) throw new Error('Failed to fetch patient summary');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -659,7 +631,7 @@ export async function createPatient(slug: string, data: any, ctx?: ApiContext) {
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
-        if (!res.ok) throw new Error('Failed to create patient');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -679,7 +651,7 @@ export async function mergePatient(slug: string, sourceId: string, targetId: str
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify({ targetId }),
         });
-        if (!res.ok) throw new Error('Failed to merge patients');
+        if (!res.ok) throw await toApiError(res);
         return true;
     } catch (error) {
         rethrowServerAuthError(error);
@@ -698,7 +670,7 @@ export async function updatePatient(slug: string, id: string, data: any, ctx?: A
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
-        if (!res.ok) throw new Error('Failed to update patient');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -718,10 +690,7 @@ export async function updateWorkItem(slug: string, id: string, data: any, ctx?: 
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
-        if (!res.ok) {
-            const err = await res.text();
-            throw new Error(`Failed to update work item: ${err}`);
-        }
+        if (!res.ok) throw await toApiError(res)
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -739,7 +708,7 @@ export async function getWorkItemById(slug: string, id: string, ctx?: ApiContext
             headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
-        if (!res.ok) throw new Error('Failed to fetch work item');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -757,10 +726,7 @@ export async function deleteWorkItem(slug: string, id: string, ctx?: ApiContext)
             method: 'DELETE',
             headers: getHeaders(slug, ctx?.token)
         });
-        if (!res.ok) {
-            const err = await res.text();
-            throw new Error(`Failed to delete work item: ${err}`);
-        }
+        if (!res.ok) throw await toApiError(res)
         return true;
     } catch (error) {
         rethrowServerAuthError(error);
@@ -783,23 +749,7 @@ export async function updateOrgSettings(slug: string, data: any, ctx?: ApiContex
             body: JSON.stringify(data)
         });
 
-        if (!res.ok) {
-            let errorMessage = 'Failed to update settings';
-            console.error("data.ts: Request failed", { status: res.status, statusText: res.statusText });
-            try {
-                const errorData = await res.json();
-                if (errorData.code === 'unhandled-exception') {
-                    throw new Error("Error en el sistema. Reintente, sino ponganse en contacto");
-                }
-                errorMessage = errorData.message || JSON.stringify(errorData);
-            } catch (e) {
-                if (e instanceof Error && e.message === "Error en el sistema. Reintente, sino ponganse en contacto") {
-                    throw e;
-                }
-                errorMessage = await res.text();
-            }
-            throw new Error(errorMessage);
-        }
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -810,7 +760,7 @@ export async function updateOrgSettings(slug: string, data: any, ctx?: ApiContex
 
 /**
  * GET /org
- * Fetches Organization details (name, CUIT, settings)
+ * Fetches the Organization record (name, CUIT, settings)
  */
 export async function getOrgDetails(slug: string, ctx?: ApiContext) {
     try {
@@ -818,7 +768,7 @@ export async function getOrgDetails(slug: string, ctx?: ApiContext) {
             headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
-        if (!res.ok) throw new Error('Failed to fetch org details');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -837,7 +787,7 @@ export async function createCategory(slug: string, name: string, percentage?: nu
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify({ name, percentage }),
         });
-        if (!res.ok) throw new Error('Failed to create category');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -856,7 +806,7 @@ export async function updateCategory(slug: string, id: string, name: string, per
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify({ name, percentage }),
         });
-        if (!res.ok) throw new Error('Failed to update category');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -874,7 +824,7 @@ export async function deleteCategory(slug: string, id: string, ctx?: ApiContext)
             method: 'DELETE',
             headers: getHeaders(slug, ctx?.token),
         });
-        if (!res.ok) throw new Error('Failed to delete category');
+        if (!res.ok) throw await toApiError(res);
         return true;
     } catch (error) {
         rethrowServerAuthError(error);
@@ -893,7 +843,7 @@ export async function createFeeRule(slug: string, data: any, ctx?: ApiContext) {
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
-        if (!res.ok) throw new Error('Failed to create fee rule');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -914,7 +864,7 @@ export async function createOrgPreset(slug: string, data: any, ctx?: ApiContext)
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
-        if (!res.ok) throw new Error('Failed to create preset');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -932,7 +882,7 @@ export async function deleteOrgPreset(slug: string, id: string, ctx?: ApiContext
             method: 'DELETE',
             headers: getHeaders(slug, ctx?.token)
         });
-        if (!res.ok) throw new Error('Failed to delete preset');
+        if (!res.ok) throw await toApiError(res);
         return true;
     } catch (error) {
         rethrowServerAuthError(error);
@@ -951,7 +901,7 @@ export async function updateOrgPreset(slug: string, id: string, data: any, ctx?:
             headers: getHeaders(slug, ctx?.token),
             body: JSON.stringify(data)
         });
-        if (!res.ok) throw new Error('Failed to update preset');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -971,7 +921,7 @@ export async function calculateSettlements(slug: string, month: string, ctx?: Ap
             cache: 'no-store'
         });
 
-        if (!res.ok) throw new Error('Failed to calculate settlements');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -989,7 +939,7 @@ export async function getActivityTypes(slug: string, ctx?: ApiContext) {
             headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
-        if (!res.ok) throw new Error('Failed to fetch activity types');
+        if (!res.ok) throw await toApiError(res);
         return await res.json();
     } catch (error) {
         rethrowServerAuthError(error);
@@ -1013,10 +963,7 @@ export async function createActivityType(slug: string, data: {
         headers: getHeaders(slug, ctx?.token),
         body: JSON.stringify(data),
     });
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || 'Error al crear prestación');
-    }
+    if (!res.ok) throw await toApiError(res);
     return res.json();
 }
 
@@ -1034,10 +981,7 @@ export async function updateActivityType(slug: string, id: string, data: {
         headers: getHeaders(slug, ctx?.token),
         body: JSON.stringify(data),
     });
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || 'Error al actualizar prestación');
-    }
+    if (!res.ok) throw await toApiError(res);
     return res.json();
 }
 
@@ -1049,9 +993,6 @@ export async function deleteActivityType(slug: string, id: string, ctx?: ApiCont
         method: 'DELETE',
         headers: getHeaders(slug, ctx?.token),
     });
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || 'Error al eliminar prestación');
-    }
+    if (!res.ok) throw await toApiError(res);
     return res.json();
 }

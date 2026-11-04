@@ -114,6 +114,8 @@ describe('LoggingInterceptor', () => {
     expect(out).toContain('"accessToken":"[REDACTED]"');
     // Nunca se vuelcan cuerpos de respuesta.
     expect(out).not.toContain('unhandled-exception"');
+    expect(out).not.toContain('"errors":');
+    expect(out).not.toContain('"code":');
   });
 
   it('con debug desactivado (producción) no hay líneas de params, query ni body', async () => {

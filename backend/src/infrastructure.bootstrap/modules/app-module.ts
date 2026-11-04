@@ -11,7 +11,6 @@ import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { jwtModuleAsyncOptions } from '../config/app/jwt-config';
 import {
-  AxiosFilterProvider,
   GlobalFilterProvider,
   HttpFilterProvider,
 } from '../config/providers/filter-provider';
@@ -45,7 +44,6 @@ import { ConfigModule as FeatureConfigModule } from '../config/config-module';
   ],
   providers: [
     GlobalFilterProvider,
-    AxiosFilterProvider,
     HttpFilterProvider,
     OrgAccessService,
     // El orden es el de ejecución: autenticación, pertenencia y vista (modo) efectiva.

@@ -25,7 +25,10 @@ const ENGINE_KEYS = new Set(['beneficiary', 'type', 'value', 'roleLabel']);
 const UI_BENEFICIARIES = new Set(['PROFESSIONAL', 'ORGANIZATION', 'ORG']);
 const ENGINE_BENEFICIARIES = new Set(['PROFESSIONAL', 'ORG']);
 
-const invalid = () => new BadRequestException('Invalid splits definition');
+const invalid = () => new BadRequestException({
+    code: 'bad-request',
+    message: 'La distribución de honorarios no es válida.',
+  });
 
 const isFiniteNumber = (v: unknown): v is number =>
   typeof v === 'number' && Number.isFinite(v);

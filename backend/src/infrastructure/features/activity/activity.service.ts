@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../Prisma/prisma.service';
 import { Prisma, PaymentStatus, BeneficiaryType } from '@prisma/client';
 import { FEE_STRATEGY, FeeStrategy } from '@src/domain/constants/app.constants';
@@ -172,7 +172,10 @@ export class ActivityService {
             },
           });
           if (previousActivitiesCount === 0) {
-            throw new Error('No puedes cargar una actividad para un paciente que no has atendido previamente. La primera carga debe realizarla la organización.');
+            throw new BadRequestException({
+              code: 'first-load-required',
+              message: 'No podés cargar una actividad para un paciente que no atendiste antes. La primera carga debe realizarla la organización.',
+            });
           }
         }
       }
@@ -254,7 +257,10 @@ export class ActivityService {
       }
 
       if (!professionalId) {
-        throw new Error('Professional ID is required');
+        throw new BadRequestException({
+          code: 'bad-request',
+          message: 'Falta el profesional de la atención.',
+        });
       }
       const resolvedProfessionalId: string = professionalId;
       const resolvedPayerId: string = payerId;

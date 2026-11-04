@@ -15,6 +15,7 @@ import {
   getRuntimeEnv,
 } from './config/app/runtime-env';
 import { createAccessLogMiddleware } from './config/app/access-log';
+import { finalErrorHandler } from './filters/final-error-handler';
 
 export async function bootstrap() {
   assertTlsVerificationEnabled();
@@ -35,6 +36,10 @@ export async function bootstrap() {
   configureNestInternalLogger(app, config);
   configureCors(app, config);
   configureSwagger(app, config);
+
+  // init() registra rutas, el 404 y el handler de error de Nest; el manejador final queda último en Express.
+  await app.init();
+  app.use(finalErrorHandler);
 
   await app.listen(config.get('PORT') ?? 8080, getListenHost(config));
 }

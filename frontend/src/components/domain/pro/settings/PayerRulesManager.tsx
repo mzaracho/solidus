@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Slider } from "@/components/ui/slider"
 import { AlertCircle, Plus, Check, Lock } from 'lucide-react'
 import { toast } from 'sonner'
+import { errorMessageOf } from '@/lib/api-errors'
 import { getPayers, getFeeRules, createPayer, createFeeRule, getProfessionalMemberships, isHandledApiError } from '@/services/data'
 import {
     Dialog,
@@ -134,7 +135,7 @@ export function PayerRulesManager() {
             // No se creó nada: se vuelve a mostrar el listado y el diálogo sigue abierto
             setLoading(false)
             if (isHandledApiError(e)) return
-            toast.error("Error al crear pagador")
+            toast.error(errorMessageOf(e, "Error al crear pagador"))
             return
         }
 

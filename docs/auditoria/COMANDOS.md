@@ -391,6 +391,9 @@ Variables opcionales, que se definen en `backend/.env` (ver `backend/.env.exampl
   Los caracteres no ASCII imprimibles de la ruta se reemplazan por `?` y la ruta se acota a 200 caracteres.
 - Un body mayor al límite responde 413 (`payload-too-large`), un JSON inválido 400 (`bad-request`) y una codificación o
   charset no soportado 415 (`unsupported-media-type`), con el formato genérico de error (sin stack ni detalles).
+- Formato único de error: `{ "code": "...", "errors": [{ "message": "..." }] }`, sin `details`. Un 500 devuelve texto genérico y
+  el header `X-Error-Id` (UUID); para buscarlo en el log del backend: `error id=<uuid> METHOD ruta 500 ...`
+  (con `docker compose logs backend | grep <uuid>` en modo Docker). Los errores de Prisma se registran solo con clase y código.
 
 ## 4. Frontend (`frontend/`)
 ```bash

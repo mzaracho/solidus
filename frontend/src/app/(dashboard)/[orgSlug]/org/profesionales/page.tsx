@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { User, Plus, Trash2, Loader2, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
+import { errorMessageOf } from '@/lib/api-errors'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { updateStaff, deleteStaff, isHandledApiError } from '@/services/data'
 import { Switch } from '@/components/ui/switch'
@@ -135,7 +136,7 @@ export default function ProfessionalsPage() {
         } catch (e) {
             console.error(e)
             if (isHandledApiError(e)) return
-            toast.error('Error al guardar profesional')
+            toast.error(errorMessageOf(e, 'Error al guardar profesional'))
         } finally {
             setCreating(false)
         }
@@ -189,11 +190,7 @@ export default function ProfessionalsPage() {
         } catch (e: any) {
             console.error(e)
             if (isHandledApiError(e)) return
-            if (e.message && (e.message.includes('Foreign key') || e.message.includes('constraint') || e.message.includes('work items'))) {
-                toast.error('No se puede eliminar: El profesional tiene actividades asociadas.')
-            } else {
-                toast.error('Error al eliminar profesional: ' + e.message)
-            }
+            toast.error(errorMessageOf(e, 'Error al eliminar profesional'))
         }
     }
 

@@ -2,7 +2,7 @@ import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfa
 import { CreateStaffDto } from '../Dtos/create-staff.dto';
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { Professional } from '@prisma/client';
 import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
@@ -80,7 +80,10 @@ export class CreateStaffCommandHandler implements IRequestHandler<
         where: { organizationId: orgId, cuit: command.cuit, deletedAt: null },
       });
       if (existing) {
-        throw new Error('Ya existe un profesional con ese CUIT en esta organizacion.');
+        throw new ConflictException({
+          code: 'conflict',
+          message: 'Ya existe un profesional con ese CUIT en esta organización.',
+        });
       }
     }
 

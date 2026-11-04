@@ -1,7 +1,7 @@
 import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request';
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { ActivityType } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -74,14 +74,20 @@ export class CreateActivityTypeCommandHandler implements IRequestHandler<CreateA
     const scope = requireOrgScope(ctx);
     // Validate roles count (max MAX_ROLES_PER_ACTIVITY_TYPE)
     if (command.roles && command.roles.length > MAX_ROLES_PER_ACTIVITY_TYPE) {
-      throw new BadRequestException(`An activity type can have at most ${MAX_ROLES_PER_ACTIVITY_TYPE} roles.`);
+      throw new BadRequestException({
+        code: 'bad-request',
+        message: `Una prestación puede tener como máximo ${MAX_ROLES_PER_ACTIVITY_TYPE} roles.`,
+      });
     }
 
     // Validate FIXED roles have a percentage
     if (command.roles) {
       for (const role of command.roles) {
         if (role.feeStrategy === FEE_STRATEGY.FIXED && (role.fixedPercentage === undefined || role.fixedPercentage === null)) {
-          throw new BadRequestException(`Role "${role.roleLabel}" uses FIXED strategy but has no fixedPercentage.`);
+          throw new BadRequestException({
+            code: 'bad-request',
+            message: 'Un rol con porcentaje fijo no tiene porcentaje definido.',
+          });
         }
       }
     }
@@ -143,7 +149,10 @@ export class UpdateActivityTypeCommandHandler implements IRequestHandler<UpdateA
       }),
     );
     if (command.roles && command.roles.length > MAX_ROLES_PER_ACTIVITY_TYPE) {
-      throw new BadRequestException(`An activity type can have at most ${MAX_ROLES_PER_ACTIVITY_TYPE} roles.`);
+      throw new BadRequestException({
+        code: 'bad-request',
+        message: `Una prestación puede tener como máximo ${MAX_ROLES_PER_ACTIVITY_TYPE} roles.`,
+      });
     }
 
     const data: any = {};
@@ -187,9 +196,10 @@ export class DeleteActivityTypeCommandHandler implements IRequestHandler<DeleteA
     });
 
     if (usageCount > 0) {
-      throw new BadRequestException(
-        `No se puede eliminar esta actividad porque tiene ${usageCount} registro(s) asociado(s).`
-      );
+      throw new ConflictException({
+        code: 'conflict',
+        message: `No se puede eliminar esta actividad porque tiene ${usageCount} registro(s) asociado(s).`,
+      });
     }
 
     return this.prisma.activityType.delete({ where: { id } });

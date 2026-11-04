@@ -51,8 +51,12 @@ salvo que el usuario lo pida.
 - Dinero: columnas `Decimal(10,2)`; preferir `Prisma.Decimal` en cálculos nuevos.
 - Constantes de dominio en `src/domain/constants/app.constants.ts`; usar `isProfessionalMode()`
   (acepta `PROFESSIONAL` y `pro`).
-- Errores de negocio con excepciones HTTP de Nest (`BadRequestException`, `ForbiddenException`,
-  `NotFoundException`), no `throw new Error`.
+- Errores: contrato único `{ code, errors: [{ message }] }`, sin `details` (`infrastructure.bootstrap/filters/error-contract.ts`;
+  `FilterBase` y `finalErrorHandler` lo aplican). Errores de negocio con excepciones de Nest con `{ code, message }` en
+  español (`BadRequestException`, `ForbiddenException`, `NotFoundException`, `ConflictException`); nunca string suelto ni
+  `throw new Error` (solo arranque/config, lista blanca de `security-invariants.spec.ts`). 401/403/404 siempre con texto
+  genérico; 400 de validación = `validation-failed`; 5xx genérico (`unhandled-exception`) con header `X-Error-Id` que
+  correlaciona con el log. Prisma se loguea solo por clase y código (sin `meta` ni valores).
 - Endpoint nuevo con datos de una organización: usar `@CurrentUserId()` / `@CurrentOrgId()`, `requireOrgScope(ctx)`
   y `foundOr404` / `inScope` / `inOrg` (`infrastructure.bootstrap/config/core/authentication/org-resource.ts`);
   agregar el caso a `ID_ROUTE_CASES` de `test/org-isolation.spec.ts` (el test estructural falla si falta una ruta con
@@ -74,6 +78,8 @@ salvo que el usuario lo pida.
   no hardcodear literales.
 - UI con componentes de `src/components/ui` (shadcn); componentes de negocio en
   `src/components/domain/<área>`.
+- Errores de la API: `toApiError` / `errorMessageOf` de `src/lib/api-errors.ts`, textos en `API_ERROR_MESSAGES`
+  (`constants.ts`); nunca mostrar el cuerpo crudo de la respuesta ni `res.text()`.
 - Refrescar datos con `router.refresh()`, no `window.location.reload()`.
 - Alias `@/*` → `src/*`.
 - Modo org/pro (009): `src/lib/view-mode.ts` (`allowedViewModes`, `pickViewMode`, `canSeeRestrictedLinks`) decide
@@ -132,12 +138,12 @@ Backend (`cd backend`):
 - `npx tsc --noEmit` — type-check
 - `npx eslint "{src,apps,libs,test}/**/*.ts"` — lint sin modificar archivos
 - `npm run lint` — ATENCIÓN: aplica `--fix` y reescribe archivos
-- `npm test` — Jest (35 suites)
+- `npm test` — Jest (39 suites, 682 tests)
 - `npm run build` — reescribe `dist/`
 
 Frontend (`cd frontend`):
 - `npm install` · `npm run dev` (http://localhost:3000; con `dev.ps1`, el puerto de `FRONTEND_PORT`)
-- `npx tsc --noEmit` · `npm run lint` · `npm test` (`node --test`)
+- `npx tsc --noEmit` · `npm run lint` · `npm test` (`node --test`, 53 tests)
 - `npm run build` — si falla la descarga de Google Fonts por TLS:
   `NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS=1 npm run build`
 - El build Docker (`apk`, `npm`, Prisma, Google Fonts) falla por TLS detrás de un antivirus/proxy que inspecciona

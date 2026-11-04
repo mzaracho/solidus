@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/unbound-method, @typescript-eslint/require-await */
 import { randomUUID } from 'crypto';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import {
   errorOf,
   FORBIDDEN_BODY,
@@ -252,7 +252,10 @@ describe('tipos de actividad', () => {
         admin,
       ),
     );
-    expect(e).toBeInstanceOf(BadRequestException);
+    expect(e).toBeInstanceOf(ConflictException);
+    expect((e as ConflictException).getResponse()).toMatchObject({
+      code: 'conflict',
+    });
     expect(prisma.activityType.delete).not.toHaveBeenCalled();
   });
 });
@@ -409,6 +412,25 @@ describe('staff', () => {
       }),
       admin,
     );
+
+  it('CreateStaff con CUIT duplicado en la organización: 409 conflict y sin create', async () => {
+    const prisma: any = {
+      professionalCategory: { findFirst: jest.fn() },
+      professional: {
+        findFirst: jest.fn().mockResolvedValue({ id: randomUUID() }),
+        create: jest.fn(),
+      },
+      user: { findUnique: jest.fn() },
+    };
+    const e = await errorOf(() => createStaff(prisma, {}));
+    expect(e).toBeInstanceOf(ConflictException);
+    expect(e.getStatus()).toBe(409);
+    expect(e.getResponse()).toEqual({
+      code: 'conflict',
+      message: 'Ya existe un profesional con ese CUIT en esta organización.',
+    });
+    expect(prisma.professional.create).not.toHaveBeenCalled();
+  });
 
   it('CreateStaff con categoryId ajeno: 404 y sin create', async () => {
     const prisma: any = {

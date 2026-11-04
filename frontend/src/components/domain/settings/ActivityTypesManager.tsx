@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useParams } from 'next/navigation'
 import { toast } from 'sonner'
+import { errorMessageOf } from '@/lib/api-errors'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
     Select,
@@ -205,7 +206,7 @@ export function ActivityTypesManager() {
             await load()
         } catch (e: any) {
             if (isHandledApiError(e)) return
-            toast.error(e.message || 'Error al guardar')
+            toast.error(errorMessageOf(e, 'Error al guardar'))
         } finally {
             setSaving(false)
         }
@@ -222,7 +223,7 @@ export function ActivityTypesManager() {
             await load()
         } catch (e: any) {
             if (isHandledApiError(e)) return
-            toast.error(e.message || 'Error al eliminar')
+            toast.error(errorMessageOf(e, 'Error al eliminar'))
         }
     }
 

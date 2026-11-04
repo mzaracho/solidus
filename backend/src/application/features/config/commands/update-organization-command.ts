@@ -3,7 +3,7 @@ import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfa
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 
 export class UpdateOrganizationCommand implements IRequest<boolean> {
   constructor(
@@ -55,22 +55,15 @@ export class UpdateOrganizationCommandHandler implements IRequestHandler<
       emailNotifs: command.settings?.emailNotifs
     };
 
-    try {
-      await this.prisma.organization.update({
-        where: { id: command.id },
-        data: {
-          name: command.name,
-          cuit: command.cuit,
-          address: command.address,
-          settings: finalSettings,
-        },
-      });
-    } catch (error) {
-      new Logger(UpdateOrganizationCommandHandler.name).error(
-        `Error updating organization: ${error instanceof Error ? error.message : 'unknown error'}`,
-      );
-      throw error;
-    }
+    await this.prisma.organization.update({
+      where: { id: command.id },
+      data: {
+        name: command.name,
+        cuit: command.cuit,
+        address: command.address,
+        settings: finalSettings,
+      },
+    });
     return true;
   }
 }

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/unbound-method, @typescript-eslint/require-await */
 import * as fs from 'fs';
 import * as path from 'path';
+import { ErrorResponse } from '@src/domain/seed-work/error-response';
 
 // Invariantes estáticos de seguridad del feature 005: se leen los fuentes (sin *.spec.ts).
 const SRC = __dirname;
@@ -426,5 +427,50 @@ describe('invariantes de seguridad', () => {
       const text = sources.find((s) => s.file === file)!.text;
       expect(text).not.toMatch(/command\.orgId/);
     }
+  });
+});
+
+describe('invariantes del feature 013 (errores sin details)', () => {
+  it('new Error( solo en arranque/configuración y en el dispatcher (lista blanca)', () => {
+    expect(filesMatching(/new Error\(/)).toEqual([
+      // BODY_SIZE_LIMIT inválido al arrancar
+      'infrastructure.bootstrap/config/app/body-parser-config.ts',
+      // CORS_ORIGIN inválido o ausente en producción
+      'infrastructure.bootstrap/config/app/cors-config.ts',
+      // JWT_SECRET ausente o corto
+      'infrastructure.bootstrap/config/app/jwt-config.ts',
+      // variables LOGIN_RATE_LIMIT_* inválidas (012)
+      'infrastructure.bootstrap/config/app/login-rate-limit-config.ts',
+      // TLS desactivado
+      'infrastructure.bootstrap/config/app/runtime-env.ts',
+      // handler no registrado: error de programación, da 500 genérico
+      'infrastructure.bootstrap/config/core/cqrs/dispatcher.ts',
+      // APP_NAME o NODE_ENV inválidos
+      'infrastructure.bootstrap/config/core/logger.ts',
+    ]);
+  });
+
+  it('ninguna excepción 400/409/422 con string suelto (el mensaje no llegaría al cliente)', () => {
+    const re =
+      /new (BadRequest|Conflict|UnprocessableEntity)Exception\(\s*['"`]/;
+    const offenders = sources
+      .filter((s) => /^(application|infrastructure|api)\//.test(s.file))
+      .filter((s) => re.test(s.text))
+      .map((s) => s.file);
+    expect(offenders).toEqual([]);
+  });
+
+  it('ningún filtro ni handler serializa la excepción', () => {
+    expect(filesMatching(/JSON\.stringify\(\s*exception/)).toEqual([]);
+    expect(filesMatching(/details\s*:\s*JSON\.stringify/)).toEqual([]);
+  });
+
+  it('no existe el filtro de axios', () => {
+    expect(files.map(rel).filter((f) => /axios-filter/.test(f))).toEqual([]);
+    expect(filesMatching(/AxiosFilter/)).toEqual([]);
+  });
+
+  it('ErrorResponse tiene solo code y errors', () => {
+    expect(Object.keys(new ErrorResponse('x', []))).toEqual(['code', 'errors']);
   });
 });
