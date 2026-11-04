@@ -237,6 +237,7 @@ sistema de archivos no admite ACL, avisa y sigue. Se puede comprobar con `icacls
 | `docker compose up --build` falla en `apk add`, `npm` o `next build` por TLS ("TLS: server certificate not trusted", "unable to verify the first certificate", "TLS-related") (código 9) | Red o antivirus con inspección TLS. Correr `.\dev.ps1 -ExportCa` (confirmar sujeto y huella) y repetir `.\dev.ps1 -Docker`: ver "CA extra para builds Docker". Si ya existe `.dev/certs/extra-ca.pem` y sigue fallando, volver a exportarla o indicar la huella correcta con `EXTRA_CA_THUMBPRINT` |
 | Código 9 sin error de certificados | Falló el build o algún contenedor no arrancó. Revisar la salida del build y `docker compose logs` |
 | `NODE_TLS_REJECT_UNAUTHORIZED` en `backend/.env` o en el entorno (el backend no arranca y el mensaje remite a `-ExportCa`) | La verificación TLS no se puede desactivar. `.\dev.ps1 -Init` quita la clave de `backend/.env` y avisa una sola vez (no muestra el valor); si viene del entorno del sistema, quitarla ahí. Ante problemas de TLS por antivirus o proxy, usar `.\dev.ps1 -ExportCa` |
+| Login responde 429 `too-many-requests` en desarrollo | Se superó el límite de intentos (5 por IP + usuario o 20 por IP en 15 min). Esperar `Retry-After` o reiniciar el backend (vacía los contadores); ver "Rate limiting del login" |
 | Código 10 | Una rotación quedó a medias. Ver "Rotaciones" para recuperar |
 | `core.hooksPath ya apunta a otra carpeta` (aviso) | El hook `pre-commit` de secretos no está activo. Activarlo con `git config --local core.hooksPath .githooks` |
 | Login rechazado (HTTP 401) en `-Smoke` | El usuario de humo no existe o no coincide con `.env`: `.\dev.ps1 -CreateSmokeUser` |
@@ -335,6 +336,7 @@ npm install
 #   (POSTGRES_* ya no van en backend/.env: viven solo en el .env de la raíz)
 #   BODY_SIZE_LIMIT (opcional; default 1mb, máximo 10mb; formato <número>[b|kb|mb], p. ej. 500kb, 2mb; un valor
 #     inválido hace que el backend no arranque). En modo Docker no se pasa al contenedor: queda en 1mb
+#   LOGIN_RATE_LIMIT_IP / LOGIN_RATE_LIMIT_USER / LOGIN_RATE_LIMIT_WINDOW (opcionales; ver "Rate limiting del login")
 #   NODE_TLS_REJECT_UNAUTHORIZED=0 está prohibida: el backend no arranca si vale 0 y `dev.ps1 -Init` la quita de backend/.env
 #   CORS_ORIGIN (lista por comas, sin comodines; lo genera dev.ps1; obligatoria con NODE_ENV=production)
 #   CORS_EXTRA_ORIGINS (opcional; vive en el .env raíz). CORS_METHODS no se lee del entorno (los métodos están fijos en `cors-config.ts`).
@@ -354,10 +356,34 @@ npm run format                                # prettier --write sobre src/ y te
 
 ### Tests
 ```bash
-npm test              # jest (32 suites, 567 tests: guards, login, logs, log de acceso, body limit, CORS, rutas, etc.)
+npm test              # jest (35 suites, 616 tests: guards, login, logs, log de acceso, body limit, CORS, rutas, etc.)
 npm run test:cov      # cobertura en backend/coverage
 npm run test:e2e      # requiere DB; el único e2e es boilerplate roto
 ```
+
+### Rate limiting del login (feature 012)
+Variables opcionales, que se definen en `backend/.env` (ver `backend/.env.example`):
+- `LOGIN_RATE_LIMIT_IP` — intentos de login por IP en la ventana. Default 20, entero entre 1 y 100000.
+- `LOGIN_RATE_LIMIT_USER` — intentos por IP + usuario (email en minúsculas y sin espacios). Default 5, entre 1 y 10000.
+- `LOGIN_RATE_LIMIT_WINDOW` — duración de la ventana en segundos. Default 900 (15 min), entre 1 y 86400.
+- Formato: solo dígitos (`^\d+$`). Vacía o ausente = default. Un valor inválido hace que el backend no arranque; el
+  mensaje nombra la variable y no imprime el valor. Si `LOGIN_RATE_LIMIT_USER` > `LOGIN_RATE_LIMIT_IP` se registra un
+  warning al arrancar (el límite por usuario sería ineficaz); no impide arrancar.
+- `dev.ps1` **no** las propaga (igual que `BODY_SIZE_LIMIT`): hay que escribirlas a mano en `backend/.env` y reiniciar
+  el backend (`.\dev.ps1 -Init` sincroniza ese archivo desde el `.env` raíz: revisar que sigan ahí). En modo Docker el
+  compose no las pasa: rigen los defaults.
+- Al superar un límite el login responde 429 `too-many-requests` (cuerpo genérico, igual exista o no el usuario) con la
+  cabecera `Retry-After` (segundos). El rechazo se decide antes de bcrypt y de la base y no cuenta como intento. Los
+  errores 400 de validación no consumen intentos.
+- Cada intento cuenta al llegar, sea fallido o exitoso, para el límite por IP: una clínica con muchos usuarios detrás
+  de una misma IP (NAT) puede necesitar subir `LOGIN_RATE_LIMIT_IP`. Un login exitoso solo reinicia el contador de esa
+  combinación IP + usuario.
+- IP: se usa la dirección de la conexión (`X-Forwarded-For` se ignora). IPv4 por dirección completa; IPv6 agrupada por
+  prefijo /64. Detrás de Docker Desktop, NAT o un proxy, todos los clientes pueden verse con la misma IP (la del
+  gateway): ver BACKLOG 56.
+- Los contadores viven en la memoria del proceso: **reiniciar el backend los vacía** (es la salida si el desarrollador
+  se bloquea a sí mismo en desarrollo) y varias instancias no los comparten. Tope de 10.000 claves: con el almacén
+  lleno, los logins de IPs nuevas reciben 429 hasta que venzan entradas (BACKLOG 57).
 
 ### Log de acceso y errores del body
 - Cada request deja una línea `Access`: `METHOD ruta STATUS Nms`, sin query, headers, body, tokens ni datos de usuario.

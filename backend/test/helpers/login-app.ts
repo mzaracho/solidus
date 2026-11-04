@@ -15,6 +15,7 @@ import { DispatcherProvider } from '@src/infrastructure.bootstrap/config/core/cq
 import { ILogger } from '@src/infrastructure.bootstrap/config/core/i-logger';
 import { HttpFilter } from '@src/infrastructure.bootstrap/filters/http-filter';
 import { AuthenticationGuard } from '@src/infrastructure.bootstrap/guards/authentication-guard';
+import { LoginRateLimiterProvider } from '@src/infrastructure.bootstrap/config/app/login-rate-limit-config';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 
 /** Secreto ficticio armado en ejecución (no se lee ningún .env). */
@@ -73,6 +74,7 @@ export async function createLoginApp(
     providers: [
       DispatcherProvider,
       LoginQueryHandler,
+      LoginRateLimiterProvider,
       { provide: PrismaService, useValue: prisma },
       { provide: ILogger, useValue: noopLogger },
       { provide: APP_FILTER, useClass: HttpFilter },

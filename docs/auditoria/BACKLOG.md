@@ -76,13 +76,23 @@ Origen: `docs/features/011-controladores-huerfanos/06-seguridad.md`.
 |---|---|---|---|
 | 55 | `LogoutCommandHandler` (`auth/logout-command-handler.ts`) no lleva `@RequestHandler` ni está registrado: el endpoint de logout probablemente responde "Handler not found". Preexistente; resolver en el feature 017 (cookie `HttpOnly`, ítem 10 de P1), que rehace el logout | MENOR-3 (seguridad 011) | S |
 
+## Candidatos surgidos del feature 012
+
+Origen: `docs/features/012-rate-limiting-login/06-seguridad.md` y `05-revision.md`.
+
+| # | Ítem | Origen | Esfuerzo |
+|---|---|---|---|
+| 56 | Detrás de Docker Desktop, NAT o proxy todos los clientes comparten IP (la del gateway): 20 peticiones agotan el límite por IP de todos y 5 intentos con un email lo bloquean para todos. Configurar `trust proxy` con la lista exacta de proxies de confianza y tomar la IP real antes de exponer el servicio. Relacionado con #19 (docker-hardening) | M-2 (seguridad 012) | M |
+| 57 | Almacén lleno (10.000 claves): ~480 IPv4 (cada una crea hasta 21 claves por ventana) o un /48 IPv6 bloquean los logins de IPs nuevas durante la ventana (denegación, sin bypass). Agregar `Logger.warn` con frecuencia limitada en los rechazos por almacén lleno (sin IPs ni emails), tope configurable o almacén compartido antes de exponer el servicio. Incluye N1 del revisor: la IPv6 mapeada en hexadecimal o `0:0:0:0:0:ffff:a.b.c.d` cae en el /64 de ceros en vez de tratarse como IPv4 (Node informa la forma con puntos, no se da en la práctica) | N-1 (seguridad 012) / N1 (revisión 012) | S |
+| 58 | Bajos del rate limit: ráfaga doble en el borde de la ventana fija (B-1; ventana deslizante o backoff), sin límite por usuario independiente de la IP, lo que permite fuerza bruta distribuida (B-2; captcha, bloqueo de cuenta o 2FA) y máximos configurables altos que permiten debilitar el límite por error (I-5; advertir si se superan 100) | B-1, B-2, I-5 (seguridad 012) | M |
+
 ## P1 — Endurecimiento y consistencia
 
 | # | Ítem | Esfuerzo |
 |---|---|---|
 | 9 | **RESUELTO (feature 005).** CORS desde `CORS_ORIGIN` (lista blanca), sin `origin: true` | S |
 | 10 | Sesión en cookie `HttpOnly; Secure; SameSite=Lax` emitida por el backend (o route handler de Next); eliminar `'mock_token'`; middleware que valide expiración | M |
-| 11 | **PARCIAL (feature 005):** el 400 por campos faltantes está hecho; falta el rate limiting. Rate limiting en login (`@nestjs/throttler`) y respuesta 400 si faltan campos | S |
+| 11 | **RESUELTO (features 005 y 012):** el 400 por campos faltantes es del 005; el rate limiting del login es del 012 (implementación propia sin `@nestjs/throttler`: 5 por IP + usuario y 20 por IP en 15 min, 429 con `Retry-After`; residuales en #56 a #58) | S |
 | 12 | `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true })`; DTOs explícitos para fee rules y settings de organización | M |
 | 13 | Filtros de error sin `details` hacia el cliente; mapear errores de negocio a 400/403/404/409 (`BadRequestException`, etc.) en lugar de `Error` | S |
 | 14 | **RESUELTO (Swagger en el 005; `NODE_TLS_REJECT_UNAUTHORIZED` y body limit en el 010).** Swagger solo fuera de producción (hecho en el 005, en `/docs`); quitar `NODE_TLS_REJECT_UNAUTHORIZED=0`; bajar body limit a ~1 MB | S |

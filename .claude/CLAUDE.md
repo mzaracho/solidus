@@ -110,6 +110,9 @@ mano. Detalle, códigos de salida y errores comunes: `docs/auditoria/COMANDOS.md
 - `BODY_SIZE_LIMIT` (opcional, `<número>[b|kb|mb]`, default 1mb, máx 10mb; inválido = el backend no arranca; en Docker queda en 1mb).
   `NODE_TLS_REJECT_UNAUTHORIZED=0` está prohibida: el backend no arranca y `-Init` la quita de `backend/.env`; ante
   TLS de antivirus/proxy usar `-ExportCa`. Todo request deja una línea de acceso `METHOD ruta STATUS Nms` (sin query ni datos).
+- Rate limit del login (012): `LOGIN_RATE_LIMIT_IP` (20), `LOGIN_RATE_LIMIT_USER` (5), `LOGIN_RATE_LIMIT_WINDOW` (900 s), opcionales;
+  se ponen a mano en `backend/.env` (`dev.ps1` no las propaga; Docker usa los defaults). Superado: 429 `too-many-requests` + `Retry-After`.
+  Reiniciar el backend vacía los contadores (en memoria, una sola instancia). Detalle en COMANDOS.md.
 - Swagger en http://localhost:8080/docs solo con `NODE_ENV` `development` o `test` (otro valor cuenta como
   producción). Salud pública sin auth: `GET /health/liveness` (fuera de `/api`).
 - Variables opcionales del `.env` raíz: `FRONTEND_PORT` (puerto del frontend en desarrollo, default 3000;
@@ -129,7 +132,7 @@ Backend (`cd backend`):
 - `npx tsc --noEmit` — type-check
 - `npx eslint "{src,apps,libs,test}/**/*.ts"` — lint sin modificar archivos
 - `npm run lint` — ATENCIÓN: aplica `--fix` y reescribe archivos
-- `npm test` — Jest (32 suites)
+- `npm test` — Jest (35 suites)
 - `npm run build` — reescribe `dist/`
 
 Frontend (`cd frontend`):
@@ -164,7 +167,7 @@ Seeds (archivos locales, no versionados): `.\dev.ps1 -Seed`; manual con `docker 
      `@UsesViewMode()` y sus handlers usan `requireViewScope(ctx)` (sin decorador: 403). El modo es una preferencia: si
      el pedido no corresponde a los vínculos del usuario, 403 sin degradar a otro modo; valor inválido: 400
      `invalid-mode`. Los datos financieros de la organización (dashboard en org, `settlements/calculate`) son solo ADMIN.
-   Pendiente (ver BACKLOG): cookie `HttpOnly`, rate limiting en login.
+   Pendiente (ver BACKLOG): cookie `HttpOnly`; el rate limit del login (012) tiene residuales (IP real tras proxy/Docker, almacén lleno).
 5. Operaciones que escriben varias tablas van dentro de `prisma.$transaction`.
 6. Cambios de schema: migración Prisma + `prisma generate` + mencionar en la spec del feature.
 7. Antes de dar por terminado un cambio: `npx tsc --noEmit` en el repo afectado sin errores,

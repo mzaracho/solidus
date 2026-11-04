@@ -22,6 +22,8 @@ export const CORS_ALLOWED_HEADERS = [
   'x-org-id',
   'x-mode',
 ];
+/** Headers de respuesta legibles desde el navegador (el 429 del login informa Retry-After; feature 012). */
+export const CORS_EXPOSED_HEADERS = ['Retry-After'];
 export const CORS_MAX_AGE_SECONDS = 600;
 
 /**
@@ -60,6 +62,7 @@ export function buildCorsOptions(config: ConfigService): CorsOptions {
     origin: origins,
     methods: CORS_METHODS,
     allowedHeaders: CORS_ALLOWED_HEADERS,
+    exposedHeaders: CORS_EXPOSED_HEADERS,
     credentials: false,
     maxAge: CORS_MAX_AGE_SECONDS,
   };

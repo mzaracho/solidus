@@ -97,3 +97,36 @@ export function readSessionIdentity(): { userId: string | null; professionalId: 
     professionalId: typeof payload?.professionalId === 'string' ? payload.professionalId : null,
   }
 }
+
+/** Tope razonable para `Retry-After` en el login (24 h); valores fuera de rango se descartan. */
+const MAX_RETRY_AFTER_SECONDS = 86400
+
+/** `Retry-After` en segundos enteros (formato de la API); null si falta, no es un entero o está fuera de rango. */
+export function parseRetryAfterSeconds(raw: string | null | undefined): number | null {
+  if (typeof raw !== 'string' || !/^\d{1,6}$/.test(raw.trim())) return null
+  const seconds = Number(raw.trim())
+  return seconds >= 1 && seconds <= MAX_RETRY_AFTER_SECONDS ? seconds : null
+}
+
+/** Minutos aproximados (hacia arriba, mínimo 1) para mostrar al usuario. */
+export function retryAfterMinutes(seconds: number): number {
+  return Math.max(1, Math.ceil(seconds / 60))
+}
+
+/** Resultado de un login que NO fue exitoso (según el status HTTP). */
+export type LoginFailure =
+  | { status: 'invalid' | 'bad-request' | 'server' | 'other' }
+  | { status: 'rate-limited'; retryAfter: number | null }
+
+/**
+ * Mapea el status HTTP de POST /v1/auth/login a un fallo, o `null` si es un 2xx (hay que leer el cuerpo).
+ * 429 lleva `retryAfter` en segundos si `Retry-After` es válido. Función pura: se prueba con `node --test`.
+ */
+export function mapLoginFailure(status: number, retryAfterHeader: string | null | undefined): LoginFailure | null {
+  if (status === 401) return { status: 'invalid' }
+  if (status === 400) return { status: 'bad-request' }
+  if (status === 429) return { status: 'rate-limited', retryAfter: parseRetryAfterSeconds(retryAfterHeader) }
+  if (status >= 500) return { status: 'server' }
+  if (status < 200 || status >= 300) return { status: 'other' }
+  return null
+}

@@ -78,6 +78,13 @@ describe('buildCorsOptions', () => {
     expect(options.allowedHeaders).not.toContain('x-user-id');
     expect(options.maxAge).toBe(600);
   });
+
+  it('expone Retry-After para que el navegador lo lea en el 429 del login', () => {
+    const options = buildCorsOptions(
+      cfg({ NODE_ENV: 'production', CORS_ORIGIN: 'http://localhost:3002' }),
+    );
+    expect(options.exposedHeaders).toEqual(['Retry-After']);
+  });
 });
 
 describe('CORS (integración)', () => {
@@ -109,6 +116,7 @@ describe('CORS (integración)', () => {
     );
     expect(res.headers['vary']).toMatch(/Origin/i);
     expect(res.headers['access-control-allow-credentials']).toBeUndefined();
+    expect(res.headers['access-control-expose-headers']).toBe('Retry-After');
   });
 
   it('origen no permitido no recibe ACAO', async () => {

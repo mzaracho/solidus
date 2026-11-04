@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { SESSION_MESSAGES } from '@/lib/constants'
-import { AUTH_COOKIE_NAME, clearSessionCookie, sanitizeFrom } from '@/lib/session'
+import { AUTH_COOKIE_NAME, clearSessionCookie, retryAfterMinutes, sanitizeFrom } from '@/lib/session'
 import { login, type LoginResult } from '@/services/data'
 
 type LoginFailure = Exclude<LoginResult['status'], 'ok'>
@@ -15,6 +15,17 @@ const FAILURE_MESSAGES: Record<LoginFailure, string> = {
     server: SESSION_MESSAGES.server,
     unexpected: SESSION_MESSAGES.unexpected,
     other: SESSION_MESSAGES.other,
+    'rate-limited': SESSION_MESSAGES.rateLimited,
+}
+
+/** Texto del 429: el aviso fijo y, si el servidor informó Retry-After, el tiempo aproximado. */
+function rateLimitedMessage(retryAfter: number | null): string {
+    if (retryAfter === null) return SESSION_MESSAGES.rateLimited
+    const minutes = retryAfterMinutes(retryAfter)
+    const retry = minutes === 1
+        ? SESSION_MESSAGES.retryInMinute
+        : SESSION_MESSAGES.retryInMinutes.replace('{n}', String(minutes))
+    return `${SESSION_MESSAGES.rateLimited} ${retry}`
 }
 
 const INPUT_CLASSES =
@@ -30,7 +41,7 @@ interface LoginFormProps {
 export function LoginForm({ showSessionNotice, from }: LoginFormProps) {
     const [loading, setLoading] = useState(false)
     const [notice, setNotice] = useState(showSessionNotice)
-    const [failure, setFailure] = useState<{ kind: LoginFailure; attempt: number } | null>(null)
+    const [failure, setFailure] = useState<{ kind: LoginFailure; attempt: number; retryAfter: number | null } | null>(null)
     const submittingRef = useRef(false)
     const userRef = useRef<HTMLInputElement>(null)
     const passwordRef = useRef<HTMLInputElement>(null)
@@ -41,7 +52,7 @@ export function LoginForm({ showSessionNotice, from }: LoginFormProps) {
         if (showSessionNotice) clearSessionCookie()
     }, [showSessionNotice])
 
-    // Foco tras un fallo (UX 1.2): 401 a Contraseña; 400 al primer campo vacío; el resto al botón.
+    // Foco tras un fallo (UX 1.2): 401 a Contraseña; 400 al primer campo vacío; el resto (incluido el 429) al botón.
     useEffect(() => {
         if (!failure) return
         if (failure.kind === 'invalid') {
@@ -80,10 +91,15 @@ export function LoginForm({ showSessionNotice, from }: LoginFormProps) {
         if (result.status === 'invalid' && passwordRef.current) passwordRef.current.value = ''
         submittingRef.current = false
         setLoading(false)
-        setFailure((prev) => ({ kind: result.status, attempt: (prev?.attempt ?? 0) + 1 }))
+        const retryAfter = result.status === 'rate-limited' ? result.retryAfter : null
+        setFailure((prev) => ({ kind: result.status, attempt: (prev?.attempt ?? 0) + 1, retryAfter }))
     }
 
-    const message = failure ? FAILURE_MESSAGES[failure.kind] : ''
+    const message = !failure
+        ? ''
+        : failure.kind === 'rate-limited'
+            ? rateLimitedMessage(failure.retryAfter)
+            : FAILURE_MESSAGES[failure.kind]
     const invalidCredentials = failure?.kind === 'invalid'
 
     return (

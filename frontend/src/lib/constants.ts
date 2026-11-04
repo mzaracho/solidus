@@ -97,6 +97,10 @@ export const SESSION_MESSAGES = {
     server: 'No pudimos iniciar tu sesión por un problema de nuestro lado. Probá de nuevo en unos minutos.',
     unexpected: 'Recibimos una respuesta inesperada del servidor. Probá de nuevo y, si sigue pasando, avisale a soporte.',
     other: 'No pudimos iniciar tu sesión. Probá de nuevo en unos minutos.',
+    // 429 del login (feature 012). `{n}` se reemplaza por los minutos aproximados.
+    rateLimited: 'Demasiados intentos. Esperá unos minutos antes de volver a intentar.',
+    retryInMinute: 'Probá de nuevo en 1 minuto.',
+    retryInMinutes: 'Probá de nuevo en {n} minutos.',
     submitIdle: 'Ingresar',
     submitBusy: 'Ingresando…',
     // Sin acceso

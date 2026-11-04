@@ -5,6 +5,7 @@ import {
     buildLoginPath,
     clearSessionCookie,
     getCookieMaxAgeSeconds,
+    mapLoginFailure,
     readSessionToken,
 } from '@/lib/session'
 
@@ -135,7 +136,9 @@ function rethrowServerAuthError(error: unknown) {
 
 export type LoginResult =
     | { status: 'ok'; token: string; maxAge: number }
-    | { status: 'invalid' | 'bad-request' | 'server' | 'network' | 'unexpected' | 'other' };
+    | { status: 'invalid' | 'bad-request' | 'server' | 'network' | 'unexpected' | 'other' }
+    /** 429: demasiados intentos; `retryAfter` en segundos si el servidor lo informó (y el navegador pudo leerlo). */
+    | { status: 'rate-limited'; retryAfter: number | null };
 
 /**
  * POST /v1/auth/login. No usa apiFetch: su 401 es de credenciales, no de sesion.
@@ -152,10 +155,8 @@ export async function login(user: string, password: string): Promise<LoginResult
     } catch {
         return { status: 'network' };
     }
-    if (res.status === 401) return { status: 'invalid' };
-    if (res.status === 400) return { status: 'bad-request' };
-    if (res.status >= 500) return { status: 'server' };
-    if (!res.ok) return { status: 'other' };
+    const failure = mapLoginFailure(res.status, res.headers.get('Retry-After'));
+    if (failure) return failure;
 
     try {
         const data = await res.json();

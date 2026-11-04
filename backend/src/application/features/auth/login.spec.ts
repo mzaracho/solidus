@@ -10,6 +10,7 @@ import {
   makePrismaMock,
   TEST_JWT_SECRET,
 } from '../../../../test/helpers/login-app';
+import { LoginRateLimiter } from '@src/infrastructure/features/auth/services/login-rate-limiter';
 import {
   JWT_AUDIENCE,
   JWT_ISSUER,
@@ -34,6 +35,8 @@ describe('POST /api/v1/auth/login', () => {
   });
 
   beforeEach(() => {
+    // Los casos comparten IP: se reinicia el limitador (012) sin debilitar ninguna aserción.
+    app.get(LoginRateLimiter).reset();
     compareSpy.mockClear();
     prisma.user.findUnique.mockClear();
   });
