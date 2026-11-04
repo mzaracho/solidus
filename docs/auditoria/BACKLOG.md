@@ -112,7 +112,7 @@ Origen: `docs/features/013-errores-sin-details/` (00-estado, 05-revision, 06-seg
 | 13 | **RESUELTO (feature 013): contrato `{ code, errors }` sin `details`, `X-Error-Id` en 5xx, `axios-filter` borrado.** Filtros de error sin `details` hacia el cliente; mapear errores de negocio a 400/403/404/409 (`BadRequestException`, etc.) en lugar de `Error` | S |
 | 14 | **RESUELTO (Swagger en el 005; `NODE_TLS_REJECT_UNAUTHORIZED` y body limit en el 010).** Swagger solo fuera de producción (hecho en el 005, en `/docs`); quitar `NODE_TLS_REJECT_UNAUTHORIZED=0`; bajar body limit a ~1 MB | S |
 | 15 | Eliminar `/test-suite` del build de producción | S |
-| 16 | Transacciones Prisma (`$transaction`) en `createActivity`, `MergePatientCommand` y borrado de staff; revisar que borrar staff no afecte membresías de otras orgs | M |
+| 16 | **RESUELTO (features 007 y 015):** `createActivity`, la fusión de pacientes y el borrado de staff van en `$transaction` interactiva (el 007 las introdujo y el 015 agregó la guardia estática `transactions-invariants.spec.ts`, tests de atomicidad y el cierre de dos carreras). Transacciones Prisma en `createActivity`, `MergePatientCommand` y borrado de staff; revisar que borrar staff no afecte membresías de otras orgs | M |
 | 17 | Dinero con `Prisma.Decimal` de punta a punta en splits, KPIs y liquidaciones | M |
 | 18 | ~~Arreglar estructura del repo raíz (`.gitmodules`, gitlinks, remoto)~~ **RESUELTO (features 001/002):** hay un único repo (remoto `github.com/mzaracho/solidus`, rama `main`) con `backend/` y `frontend/` como carpetas; sin gitlinks. Pendiente fuera de este ítem: confirmar el remoto antes del push (ver `docs/features/002-sin-credenciales-en-repo/06-seguridad.md`, M-1) | S |
 | 19 | Docker: secretos por `.env`/secrets, Postgres no publicado o ligado a `127.0.0.1`, usuario no-root, `NEXT_PUBLIC_API_BASE_URL` parametrizable | S |
@@ -150,6 +150,20 @@ Origen: `docs/features/014-validation-whitelist/` (00-estado decisiones 2, 3 y 7
 | 67 | `PacientesTable` es un mock que manda un array a `POST activity` y recibe 400 (igual que antes del 014): conectarlo a un body válido o retirarlo | decisión 2 (014) | S |
 | 68 | `PUT org` reemplaza el JSON de `settings` en vez de fusionarlo con lo guardado: fusionar claves | decisión 3 (014) | S |
 | 69 | `paymentMethod` y otros textos libres (`serviceType`, `linkedType`, `code`, `role`, `professionalCategory`) hoy solo con tipo y largo máximo: convertir `paymentMethod` en enum y evaluar el resto | decisión 7 (014) | M |
-| 70 | Menores del 014 que se resuelven en el feature 015: M-1 (seguridad: `UpdateStaffCommand.canLoadActivities` con `null` da 500; usar `@IsOptionalNotNull()`), M-2 (seguridad: test de `null` dentro de `roles`), N1 (revisor: comentarios y Swagger desactualizados en `ActivityTypeRoleDto`) y N3 (revisor: prettier en dos imports) | M-1, M-2 (seguridad 014) / N1, N3 (revisión 014) | S |
+| 70 | **RESUELTO (feature 015):** M-1 (`@IsOptionalNotNull()` en `canLoadActivities`), M-2 (tests de `null` en `roles`, ya daban 400), N1 y N3. Menores del 014 que se resuelven en el feature 015: M-1 (seguridad: `UpdateStaffCommand.canLoadActivities` con `null` da 500; usar `@IsOptionalNotNull()`), M-2 (seguridad: test de `null` dentro de `roles`), N1 (revisor: comentarios y Swagger desactualizados en `ActivityTypeRoleDto`) y N3 (revisor: prettier en dos imports) | M-1, M-2 (seguridad 014) / N1, N3 (revisión 014) | S |
 
 `RetroactiveModal` (descarta `grossAmount` y `payerName` en el builder) ya está cubierto por #45.
+
+## Candidatos surgidos del feature 015
+
+Origen: `docs/features/015-transacciones/` (03-diseno-tecnico, 04-implementacion, 05-revision, 06-seguridad, 07-testing).
+
+| # | Ítem | Origen | Esfuerzo |
+|---|---|---|---|
+| 71 | Limitaciones del detector `test/helpers/prisma-writes.ts`: alias de `this.prisma`, `$executeRaw` como plantilla, servicios fuera de `this.<x>Service`, arrow en propiedades de clase, una escritura dentro y otra fuera de la transacción (puede ir al 025) | 04/05 (015) | S |
+| 72 | Deadlock en fusiones cruzadas de pacientes (A→B y B→A a la vez): hoy responde 500; reintentar o responder 409 | diseño/seguridad (015) | S |
+| 73 | Restricciones únicas faltantes (pagador por defecto, fee rule por pagador y categoría, CUIT del profesional) y `onDelete: Restrict` en `WorkItem.activityType` y `WorkItem.patient` | hallazgos del arquitecto (015) | M |
+| 74 | Ventana residual: durante la fusión de pacientes aún puede crearse una atención para el paciente origen | seguridad (015) | S |
+| 75 | Borrar un pagador con fee rules → reglas globales: decisión provisional 409; se resuelve en el feature 017 | 015 | S |
+| 76 | Borrado físico de un staff que es participante de atenciones (500) o beneficiario de splits: se resuelve en el feature 017 | 015 | S |
+| 77 | Dockerfile del backend: `migrate deploy; start:prod` con `;` (arranca aunque falle la migración); usar `&&` (al feature 020) | 015 | S |

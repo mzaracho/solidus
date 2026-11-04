@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/require-await */
 import { randomUUID } from 'crypto';
+import { Prisma } from '@prisma/client';
 
 type Row = Record<string, any>;
 
@@ -11,7 +12,11 @@ type Row = Record<string, any>;
  *    relaciones `many` y `{ rel: {...} }` en las de un solo registro (009).
  *  - relaciones declaradas en RELATIONS para include/select.
  *  - toda escritura queda registrada en `writes` y se aplica sobre las tablas.
- *  - $transaction(fn) llama a fn con el mismo cliente.
+ *  - $transaction(fn) (015): toma una instantánea de las tablas y de `writes`; si fn lanza, restaura todo y
+ *    relanza el error, como el rollback de Postgres. fn recibe un cliente que marca sus escrituras con
+ *    `inTx: true`; una escritura con el cliente raíz mientras hay una transacción abierta queda con `inTx: false`.
+ *  - failOn({ model, op, nth, error }) hace fallar la enésima escritura que coincide, antes de aplicarla.
+ *  - update/delete sobre una fila inexistente lanzan PrismaClientKnownRequestError P2025, como Prisma.
  */
 const RELATIONS: Record<
   string,
@@ -141,13 +146,41 @@ const makeMatcher = (table: Table) => {
 export interface FakeWrite {
   model: string;
   op: string;
+  /** true si la escritura se hizo con el cliente del callback de $transaction. */
+  inTx: boolean;
 }
+
+export interface FakeTransaction {
+  status: 'committed' | 'rolledBack';
+  writes: FakeWrite[];
+}
+
+export interface FailOnSpec {
+  model: string;
+  op: string;
+  /** Enésima llamada que coincide (por defecto la primera). */
+  nth?: number;
+  error?: Error;
+}
+
+const p2025 = (model: string, op: string) =>
+  new Prisma.PrismaClientKnownRequestError(
+    `fake-prisma: ${op} sobre fila inexistente (${model})`,
+    { code: 'P2025', clientVersion: 'fake' },
+  );
 
 export function createFakePrisma(seed: Record<string, Row[]>) {
   let tables: Record<string, Row[]> = {};
   const writes: FakeWrite[] = [];
+  const transactions: FakeTransaction[] = [];
+  let failures: { spec: FailOnSpec; seen: number }[] = [];
+  /** Transacción abierta (si la hay): sus escrituras con inTx. */
+  let openTx: FakeTransaction | null = null;
 
   const reset = () => {
+    transactions.length = 0;
+    failures = [];
+    openTx = null;
     tables = {};
     for (const [model, rows] of Object.entries(seed)) {
       tables[model] = rows.map((r) => ({ ...r }));
@@ -189,7 +222,27 @@ export function createFakePrisma(seed: Record<string, Row[]>) {
     return out;
   };
 
-  const modelApi = (model: string) => {
+  /** Registra una escritura; si coincide con un failOn pendiente, lanza antes de aplicarla. */
+  const record = (model: string, op: string, inTx: boolean) => {
+    for (const f of failures) {
+      if (f.spec.model !== model || f.spec.op !== op) continue;
+      f.seen += 1;
+      if (f.seen === (f.spec.nth ?? 1)) {
+        throw (
+          f.spec.error ??
+          new Prisma.PrismaClientKnownRequestError(
+            'fake-prisma: fallo inyectado',
+            { code: 'P2034', clientVersion: 'fake' },
+          )
+        );
+      }
+    }
+    const w: FakeWrite = { model, op, inTx };
+    writes.push(w);
+    if (inTx) openTx?.writes.push(w);
+  };
+
+  const modelApi = (model: string, inTx: boolean) => {
     const api: Record<string, (args?: any) => Promise<any>> = {
       findFirst: async (args) =>
         shape(
@@ -230,45 +283,39 @@ export function createFakePrisma(seed: Record<string, Row[]>) {
       count: async (args) =>
         table(model).filter((r) => matches(r, args?.where, model)).length,
       create: async (args) => {
-        writes.push({ model, op: 'create' });
+        record(model, 'create', inTx);
         const row = { id: randomUUID(), ...flattenConnects(args.data) };
         table(model).push(row);
         return { ...row };
       },
       createMany: async (args) => {
-        writes.push({ model, op: 'createMany' });
+        record(model, 'createMany', inTx);
         for (const d of args.data)
           table(model).push({ id: randomUUID(), ...d });
         return { count: args.data.length };
       },
       update: async (args) => {
-        writes.push({ model, op: 'update' });
+        record(model, 'update', inTx);
         const row = table(model).find((r) => matches(r, args.where, model));
-        if (!row)
-          throw new Error(
-            `fake-prisma: update sobre fila inexistente (${model})`,
-          );
+        if (!row) throw p2025(model, 'update');
         Object.assign(row, args.data);
         return { ...row };
       },
       updateMany: async (args) => {
-        writes.push({ model, op: 'updateMany' });
+        record(model, 'updateMany', inTx);
         const rows = table(model).filter((r) => matches(r, args.where, model));
         rows.forEach((r) => Object.assign(r, args.data));
         return { count: rows.length };
       },
       delete: async (args) => {
-        writes.push({ model, op: 'delete' });
+        record(model, 'delete', inTx);
         const idx = table(model).findIndex((r) => matches(r, args.where, model));
-        if (idx < 0)
-          throw new Error(
-            `fake-prisma: delete sobre fila inexistente (${model})`,
-          );
+        if (idx < 0) throw p2025(model, 'delete');
         const [row] = table(model).splice(idx, 1);
         return row;
       },
       deleteMany: async (args) => {
-        writes.push({ model, op: 'deleteMany' });
+        record(model, 'deleteMany', inTx);
         const before = table(model).length;
         tables[model] = table(model).filter((r) => !matches(r, args?.where, model));
         return { count: before - tables[model].length };
@@ -277,24 +324,55 @@ export function createFakePrisma(seed: Record<string, Row[]>) {
     return api;
   };
 
-  const client: any = new Proxy(
-    {},
-    {
-      get: (_t, prop) => {
-        if (typeof prop !== 'string' || prop === 'then') return undefined;
-        if (prop === '$transaction') {
-          return async (arg: any) =>
-            typeof arg === 'function' ? arg(client) : Promise.all(arg);
-        }
-        if (prop.startsWith('$') || prop.startsWith('_')) return undefined;
-        return modelApi(prop);
+  const makeClient = (inTx: boolean): any =>
+    new Proxy(
+      {},
+      {
+        get: (_t, prop) => {
+          if (typeof prop !== 'string' || prop === 'then') return undefined;
+          if (prop === '$transaction') {
+            return async (arg: any) => {
+              if (typeof arg !== 'function') return Promise.all(arg);
+              // anidada: sin otra instantánea
+              if (openTx) return arg(txClient);
+              const snapshot: Record<string, Row[]> = {};
+              for (const [m, rows] of Object.entries(tables))
+                snapshot[m] = rows.map((r) => ({ ...r }));
+              const writesBefore = writes.length;
+              const tx: FakeTransaction = { status: 'committed', writes: [] };
+              openTx = tx;
+              try {
+                const result = await arg(txClient);
+                transactions.push(tx);
+                return result;
+              } catch (err) {
+                tables = snapshot;
+                writes.length = writesBefore;
+                tx.status = 'rolledBack';
+                transactions.push(tx);
+                throw err;
+              } finally {
+                openTx = null;
+              }
+            };
+          }
+          if (prop.startsWith('$') || prop.startsWith('_')) return undefined;
+          return modelApi(prop, inTx);
+        },
       },
-    },
-  );
+    );
+  const txClient: any = makeClient(true);
+  const client: any = makeClient(false);
 
   return {
     client,
     writes,
+    /** Transacciones cerradas desde el último reset, con su estado final. */
+    transactions,
+    /** Hace fallar la enésima escritura que coincide (antes de aplicarla). reset() las borra. */
+    failOn: (spec: FailOnSpec) => {
+      failures.push({ spec, seen: 0 });
+    },
     reset,
     /** Cantidad de escrituras registradas desde el último reset. */
     writeCount: () => writes.length,

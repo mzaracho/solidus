@@ -356,7 +356,7 @@ npm run format                                # prettier --write sobre src/ y te
 
 ### Tests
 ```bash
-npm test              # jest (35 suites, 616 tests: guards, login, logs, log de acceso, body limit, CORS, rutas, etc.)
+npm test              # jest (45 suites, 815 tests: guards, login, logs, log de acceso, body limit, CORS, rutas, etc.)
 npm run test:cov      # cobertura en backend/coverage
 npm run test:e2e      # requiere DB; el único e2e es boilerplate roto
 ```

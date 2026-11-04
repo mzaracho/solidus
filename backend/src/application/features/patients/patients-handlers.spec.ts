@@ -342,7 +342,10 @@ describe('MergePatientCommandHandler', () => {
   const setup = (rows: Record<string, any>) => {
     const tx = {
       workItem: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) },
-      patient: { delete: jest.fn().mockResolvedValue({}) },
+      patient: {
+        updateMany: jest.fn().mockResolvedValue({ count: 2 }),
+        delete: jest.fn().mockResolvedValue({}),
+      },
     };
     const prisma: any = {
       patient: {
@@ -380,11 +383,31 @@ describe('MergePatientCommandHandler', () => {
     });
     await handler.execute(cmd(s, t), ctx);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    // bloquea y vuelve a verificar los dos pacientes de la organización antes de escribir
+    expect(tx.patient.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: [s, t] }, organizationId: orgA },
+      data: { updatedAt: expect.any(Date) },
+    });
     expect(tx.workItem.updateMany).toHaveBeenCalledWith({
       where: { patientId: s },
       data: { patientId: t },
     });
     expect(tx.patient.delete).toHaveBeenCalledWith({ where: { id: s } });
+  });
+
+  it('re-verificación con count 1 (otra fusión borró uno): 404 sin mover atenciones ni borrar', async () => {
+    const s = randomUUID();
+    const t = randomUUID();
+    const { tx, handler } = setup({
+      [s]: { id: s, organizationId: orgA },
+      [t]: { id: t, organizationId: orgA },
+    });
+    tx.patient.updateMany.mockResolvedValue({ count: 1 });
+    const e = await errorOf(() => handler.execute(cmd(s, t), ctx));
+    expect(e).toBeInstanceOf(NotFoundException);
+    expect(e.getResponse()).toEqual(NOT_FOUND_BODY);
+    expect(tx.workItem.updateMany).not.toHaveBeenCalled();
+    expect(tx.patient.delete).not.toHaveBeenCalled();
   });
 
   it('destino de otra organización (no está en el scope): 404 y sin escrituras', async () => {

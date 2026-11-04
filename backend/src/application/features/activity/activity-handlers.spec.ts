@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/unbound-method, @typescript-eslint/require-await */
 import { randomUUID } from 'crypto';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import {
   errorOf,
   FORBIDDEN_BODY,
@@ -391,5 +392,71 @@ describe('Update y Delete de atenciones', () => {
       ),
     );
     expect(e2.getResponse()).toEqual(FORBIDDEN_BODY);
+  });
+
+  describe('delete: salvaguarda en el where (carrera con un cobro, 015)', () => {
+    const p2025 = () =>
+      new Prisma.PrismaClientKnownRequestError('no existe', {
+        code: 'P2025',
+        clientVersion: 'test',
+      });
+    const run = (setupResult: ReturnType<typeof setup>) =>
+      errorOf(() =>
+        setupResult.del.execute(
+          new DeleteActivityCommand(randomUUID()),
+          ctxOf('ADMIN'),
+        ),
+      );
+
+    it('el where del delete incluye la condición NOT de cobrada con fecha de pago', async () => {
+      const s = setup(baseItem({ createdByUserId: me }));
+      const id = randomUUID();
+      await s.del.execute(new DeleteActivityCommand(id), ctxOf('ADMIN'));
+      expect(s.prisma.workItem.delete).toHaveBeenCalledWith({
+        where: {
+          id,
+          NOT: { paymentStatus: 'PAID', paymentDate: { not: null } },
+        },
+      });
+    });
+
+    it('P2025 y la fila sigue en el scope (la cobraron en el medio): 403 con el mensaje de hoy', async () => {
+      const s = setup(baseItem({ createdByUserId: me }));
+      s.prisma.workItem.delete.mockRejectedValue(p2025());
+      s.prisma.workItem.findFirst
+        .mockResolvedValueOnce(baseItem({ createdByUserId: me }))
+        .mockResolvedValueOnce({ id: 'w1' });
+      const e = await run(s);
+      expect(e).toBeInstanceOf(ForbiddenException);
+      expect(e.getResponse()).toEqual({
+        code: 'forbidden',
+        message:
+          'No se puede eliminar una actividad ya cobrada con fecha de pago.',
+      });
+      // la segunda lectura filtra por el scope
+      expect(
+        s.prisma.workItem.findFirst.mock.calls[1][0].where.organizationId,
+      ).toEqual({ in: [orgA] });
+    });
+
+    it('P2025 y la fila ya no existe: 404 genérico', async () => {
+      const s = setup(baseItem({ createdByUserId: me }));
+      s.prisma.workItem.delete.mockRejectedValue(p2025());
+      s.prisma.workItem.findFirst
+        .mockResolvedValueOnce(baseItem({ createdByUserId: me }))
+        .mockResolvedValueOnce(null);
+      const e = await run(s);
+      expect(e).toBeInstanceOf(NotFoundException);
+      expect(e.getResponse()).toEqual(NOT_FOUND_BODY);
+    });
+
+    it('otro error se propaga tal cual y sin segunda lectura', async () => {
+      const s = setup(baseItem({ createdByUserId: me }));
+      const boom = new Error('boom');
+      s.prisma.workItem.delete.mockRejectedValue(boom);
+      const e = await run(s);
+      expect(e).toBe(boom);
+      expect(s.prisma.workItem.findFirst).toHaveBeenCalledTimes(1);
+    });
   });
 });

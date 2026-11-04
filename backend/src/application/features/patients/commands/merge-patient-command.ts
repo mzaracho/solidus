@@ -56,6 +56,17 @@ export class MergePatientCommandHandler implements IRequestHandler<MergePatientC
     if (source.organizationId !== target.organizationId) throw resourceNotFound();
 
     await this.prisma.$transaction(async (tx) => {
+      // Bloquea los dos pacientes hasta el final de la transacción y los vuelve a verificar: una fusión
+      // concurrente que comparta un paciente espera acá y, si ya borró alguno, responde 404 sin escribir.
+      const locked = await tx.patient.updateMany({
+        where: {
+          id: { in: [sourceId, targetId] },
+          organizationId: source.organizationId,
+        },
+        data: { updatedAt: new Date() },
+      });
+      if (locked.count !== 2) throw resourceNotFound();
+
       // Reassign all workItems from source to target
       await tx.workItem.updateMany({
         where: { patientId: sourceId },

@@ -148,7 +148,7 @@ Backend (`cd backend`):
 - `npx tsc --noEmit` — type-check
 - `npx eslint "{src,apps,libs,test}/**/*.ts"` — lint sin modificar archivos
 - `npm run lint` — ATENCIÓN: aplica `--fix` y reescribe archivos
-- `npm test` — Jest (42 suites, 773 tests)
+- `npm test` — Jest (45 suites, 815 tests)
 - `npm run build` — reescribe `dist/`
 
 Frontend (`cd frontend`):
@@ -184,7 +184,10 @@ Seeds (archivos locales, no versionados): `.\dev.ps1 -Seed`; manual con `docker 
      el pedido no corresponde a los vínculos del usuario, 403 sin degradar a otro modo; valor inválido: 400
      `invalid-mode`. Los datos financieros de la organización (dashboard en org, `settlements/calculate`) son solo ADMIN.
    Pendiente (ver BACKLOG): cookie `HttpOnly`; el rate limit del login (012) tiene residuales (IP real tras proxy/Docker, almacén lleno).
-5. Operaciones que escriben varias tablas van dentro de `prisma.$transaction`.
+5. Toda operación con 2 o más escrituras va en `prisma.$transaction(async (tx) => …)` (forma interactiva; la de arreglo
+   `$transaction([...])` está prohibida). Dentro usar `tx`, nunca `this.prisma`; los servicios auxiliares reciben
+   `db: Prisma.TransactionClient = this.prisma`. Lo vigila `src/transactions-invariants.spec.ts` (analizador
+   `test/helpers/prisma-writes.ts`).
 6. Cambios de schema: migración Prisma + `prisma generate` + mencionar en la spec del feature.
 7. Antes de dar por terminado un cambio: `npx tsc --noEmit` en el repo afectado sin errores,
    lint sin errores nuevos en los archivos tocados, y tests del área (agregar tests si no existen).

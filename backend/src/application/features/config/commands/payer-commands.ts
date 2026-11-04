@@ -45,7 +45,10 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { MAX_PAGE_NUMBER, MAX_PAGE_SIZE } from '@src/domain/constants/app.constants';
+import {
+  MAX_PAGE_NUMBER,
+  MAX_PAGE_SIZE,
+} from '@src/domain/constants/app.constants';
 import { IsPercentage } from '@src/infrastructure.bootstrap/config/core/validation/dto-validators';
 import { Type } from 'class-transformer';
 

@@ -3,10 +3,16 @@ import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
-import { WorkItem, PaymentStatus } from '@prisma/client';
+import { Prisma, WorkItem, PaymentStatus } from '@prisma/client';
 import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
-import { foundOr404, forbiddenAction, inScope, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
+import { foundOr404, forbiddenAction, inScope, requireId, resourceNotFound } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 import { canModifyActivity } from '../activity-ownership';
+
+const paidActivityForbidden = () =>
+  new ForbiddenException({
+    code: 'forbidden',
+    message: 'No se puede eliminar una actividad ya cobrada con fecha de pago.',
+  });
 
 export class DeleteActivityCommand implements IRequest<WorkItem> {
   constructor(public readonly id: string) {}
@@ -44,12 +50,31 @@ export class DeleteActivityCommandHandler implements IRequestHandler<
 
     // Financial safeguard: prevent deletion of paid activities with a payment date
     if (existing.paymentStatus === PaymentStatus.PAID && existing.paymentDate) {
-      throw new ForbiddenException({
-        code: 'forbidden',
-        message: 'No se puede eliminar una actividad ya cobrada con fecha de pago.',
-      });
+      throw paidActivityForbidden();
     }
 
-    return this.prisma.workItem.delete({ where: { id } });
+    // La salvaguarda también va en el where: si otra sesión la cobró entre la lectura y el borrado, el delete
+    // no encuentra la fila (P2025) y se responde igual que arriba (403), o 404 si ya no existe.
+    try {
+      return await this.prisma.workItem.delete({
+        where: {
+          id,
+          NOT: { paymentStatus: PaymentStatus.PAID, paymentDate: { not: null } },
+        },
+      });
+    } catch (error) {
+      if (
+        !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+        error.code !== 'P2025'
+      ) {
+        throw error;
+      }
+      const current = await this.prisma.workItem.findFirst({
+        where: { id, ...inScope(scope) },
+        select: { id: true },
+      });
+      if (!current) throw resourceNotFound();
+      throw paidActivityForbidden();
+    }
   }
 }

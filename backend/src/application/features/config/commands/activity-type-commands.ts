@@ -24,14 +24,18 @@ export class ActivityTypeRoleDto {
   @MaxLength(100)
   roleLabel: string;
 
-  /** Roles guardados antes del 014 pueden no traerlo: si falta, el handler guarda `false`. */
-  @ApiPropertyOptional({ description: 'Whether this role is required when loading an activity (default false)' })
+  /** Roles guardados antes del 014 pueden no traerlo: si falta, el handler guarda `true`. */
+  @ApiPropertyOptional({ description: 'Whether this role is required when loading an activity (default true)' })
   @IsOptional()
   @IsBoolean()
   isRequired?: boolean;
 
-  /** Si falta, el handler guarda CATEGORY (el valor por defecto de la UI). */
-  @ApiPropertyOptional({ enum: Object.values(FEE_STRATEGY) })
+  /** Si falta, el handler guarda el rol SIN la clave (ActivityService calcula honorario 0 en ese caso). */
+  @ApiPropertyOptional({
+    enum: Object.values(FEE_STRATEGY),
+    description:
+      'Fee strategy of the role; if omitted it is stored without the key (fee 0)',
+  })
   @IsOptional()
   @IsEnum(FEE_STRATEGY)
   feeStrategy?: FeeStrategy;

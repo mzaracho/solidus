@@ -2200,7 +2200,14 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
           ['categoryId', (b) => (b.categoryId = I.catA)],
           ['userId', (b) => (b.userId = U.stranger)],
         ],
-        wrong: [['email sin formato', (b) => (b.email = 'no-mail')]],
+        wrong: [
+          ['email sin formato', (b) => (b.email = 'no-mail')],
+          [
+            'canLoadActivities null (M-1 del 014)',
+            (b) => (b.canLoadActivities = null),
+          ],
+          ['canLoadActivities string', (b) => (b.canLoadActivities = 'true')],
+        ],
       },
       {
         route: 'PUT org/staff/:id/category',
@@ -2245,6 +2252,9 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
             (b) => (b.roles = Array.from({ length: 21 }, role)),
           ],
           ['roles[0].roleLabel ausente', (b) => delete b.roles[0].roleLabel],
+          ['roles [null] (M-2 del 014)', (b) => (b.roles = [null])],
+          ['roles [1] (M-2 del 014)', (b) => (b.roles = [1])],
+          ['roles ["x"] (M-2 del 014)', (b) => (b.roles = ['x'])],
         ],
       },
       {
@@ -2274,6 +2284,9 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
             'roles con más de 20 elementos (B-2)',
             (b) => (b.roles = Array.from({ length: 21 }, role)),
           ],
+          ['roles [null] (M-2 del 014)', (b) => (b.roles = [null])],
+          ['roles [1] (M-2 del 014)', (b) => (b.roles = [1])],
+          ['roles ["x"] (M-2 del 014)', (b) => (b.roles = ['x'])],
         ],
       },
       {

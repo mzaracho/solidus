@@ -19,6 +19,7 @@ import {
 import {
   IsEntityId,
   IsOptionalEntityId,
+  IsOptionalNotNull,
 } from '@src/infrastructure.bootstrap/config/core/validation/dto-validators';
 
 // Create
@@ -152,8 +153,9 @@ export class UpdateStaffCommand implements IRequest<Professional> {
   @MaxLength(50)
   phone?: string;
 
+  /** Columna no nulable: `null` es 400 (antes llegaba a Prisma y daba 500). */
   @ApiPropertyOptional()
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsBoolean()
   canLoadActivities?: boolean;
 }

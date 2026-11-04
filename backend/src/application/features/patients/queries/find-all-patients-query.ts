@@ -1,6 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { MAX_PAGE_NUMBER, MAX_PAGE_SIZE } from '@src/domain/constants/app.constants';
+import {
+  MAX_PAGE_NUMBER,
+  MAX_PAGE_SIZE,
+} from '@src/domain/constants/app.constants';
 import { PaginatedArrayDto } from '@src/domain/seed-work/paginated-array';
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
