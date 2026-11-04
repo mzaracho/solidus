@@ -1,4 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request';
 import { CreatePatientDto } from '../dtos/create-patient.dto';
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
@@ -7,33 +8,29 @@ import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/r
 import { Injectable } from '@nestjs/common';
 
 export class CreatePatientCommand implements IRequest<CreatePatientDto> {
-  constructor(
-    organizationId: string,
-    firstName: string,
-    lastName: string,
-    email?: string,
-    phone?: string,
-  ) {
-    this.organizationId = organizationId;
-    this.firstName = firstName;
-    this.lastName = lastName;
-    this.email = email;
-    this.phone = phone;
-  }
-
-  @ApiProperty({ description: 'Organization ID', type: String })
-  organizationId!: string;
+  /** La asigna el controlador desde @CurrentOrgId(); el cliente no la manda (400). */
+  declare organizationId: string;
 
   @ApiProperty({ description: 'First name', type: String })
+  @IsString()
+  @MaxLength(100)
   firstName!: string;
 
   @ApiProperty({ description: 'Last name', type: String })
+  @IsString()
+  @MaxLength(100)
   lastName!: string;
 
-  @ApiProperty({ description: 'Email', type: String })
+  @ApiPropertyOptional({ description: 'Email', type: String })
+  @IsOptional()
+  @IsString()
+  @MaxLength(254)
   email?: string;
 
-  @ApiProperty({ description: 'Phone', type: String })
+  @ApiPropertyOptional({ description: 'Phone', type: String })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
   phone?: string;
 }
 

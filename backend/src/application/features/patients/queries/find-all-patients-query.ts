@@ -1,10 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ApiProperty, ApiPropertyOptional, ApiHideProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { MAX_PAGE_NUMBER, MAX_PAGE_SIZE } from '@src/domain/constants/app.constants';
 import { PaginatedArrayDto } from '@src/domain/seed-work/paginated-array';
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
-import { Transform, Type } from 'class-transformer';
-import { IsNumber, IsString, IsOptional } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsInt, IsString, IsOptional, Max, MaxLength, Min } from 'class-validator';
 import { PatientResponseDto } from '../dtos/patient-response.dto';
 import { IPatientService } from '@src/domain/features/patients/service/i-patient-service';
 import {
@@ -18,29 +19,29 @@ import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfa
 export class FindAllPatientsQuery implements IRequest<
   PaginatedArrayDto<PatientResponseDto>
 > {
-  @IsString()
-  @IsOptional()
-  organizationId!: string;
-
-  @ApiHideProperty()
-  @IsOptional()
-  @IsString()
-  userId?: string;
+  /** Lo asignan el controlador (@CurrentOrgId() / @CurrentUserId()); la query del cliente no los pisa. */
+  declare organizationId: string;
+  declare userId?: string;
 
   @ApiPropertyOptional({ description: 'Search term', type: String })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
   search?: string;
 
   @ApiProperty({ type: Number })
-  @Transform(({ value }) => (value ? Number(value) : 1))
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PAGE_NUMBER)
   @IsOptional()
   page: number = 1;
 
   @ApiProperty({ type: Number })
-  @Transform(({ value }) => (value ? Number(value) : 10))
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PAGE_SIZE)
   @IsOptional()
   limit: number = 10;
 }

@@ -11,30 +11,32 @@ import {
 } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 
 import { ApiProperty } from '@nestjs/swagger';
-import { IsDateString, IsString, IsOptional } from 'class-validator';
+import { IsDateString, IsEnum, IsOptional } from 'class-validator';
+import {
+  DASHBOARD_BASIS,
+  DASHBOARD_VALUE_TYPE,
+} from '@src/domain/constants/app.constants';
 
 export class GetDashboardKpisQuery implements IRequest<DashboardKpisResponseDto> {
-  @ApiProperty()
-  @IsString()
-  @IsOptional()
-  organizationId: string;
+  /** La asigna el controlador desde @CurrentOrgId(); la query del cliente no la pisa. */
+  declare organizationId: string;
 
   @ApiProperty()
-  @IsString()
+  @IsDateString({ strict: true })
   startDate: string;
 
   @ApiProperty()
-  @IsString()
+  @IsDateString({ strict: true })
   endDate: string;
 
-  @ApiProperty()
+  @ApiProperty({ enum: Object.values(DASHBOARD_BASIS), required: false })
   @IsOptional()
-  @IsString()
+  @IsEnum(DASHBOARD_BASIS)
   basis?: 'ACCRUED' | 'CASH';
 
-  @ApiProperty()
+  @ApiProperty({ enum: Object.values(DASHBOARD_VALUE_TYPE), required: false })
   @IsOptional()
-  @IsString()
+  @IsEnum(DASHBOARD_VALUE_TYPE)
   valueType?: 'NET' | 'GROSS';
 }
 

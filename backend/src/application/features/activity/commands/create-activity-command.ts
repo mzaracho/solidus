@@ -8,110 +8,133 @@ import { ActivityService } from '@src/infrastructure/features/activity/activity.
 import { WorkItem } from '@src/domain/features/activity/WorkItem.entity';
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsDateString, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+import { AttendanceStatus, PaymentStatus } from '@prisma/client';
+import { MAX_ACTIVITY_PARTICIPANTS } from '@src/domain/constants/app.constants';
+import {
+  IsEntityId,
+  IsMoney,
+  IsOptionalDateString,
+  IsOptionalEntityId,
+} from '@src/infrastructure.bootstrap/config/core/validation/dto-validators';
 import { Type } from 'class-transformer';
 
 export class CreateActivityCommand implements IRequest<WorkItem> {
+  /** Organización destino (verificada contra el scope en ActivityService). Si falta, la del request. */
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalEntityId()
   organizationId: string;
 
   @ApiProperty()
-  @IsDateString()
+  @IsDateString({ strict: true })
   date: string;
 
   @ApiProperty()
-  @IsString()
+  @IsEntityId()
   patientId: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalEntityId()
   professionalId?: string;
 
   @ApiPropertyOptional({ type: [ActivityParticipantDto] })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(MAX_ACTIVITY_PARTICIPANTS)
   @ValidateNested({ each: true })
   @Type(() => ActivityParticipantDto)
   participants?: ActivityParticipantDto[];
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalEntityId()
   activityTypeId?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalEntityId()
   presetId?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalEntityId()
   payerId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   role?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   serviceType?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  @Max(1000)
   hours?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(1)
+  @Max(1000)
   quantity?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: PaymentStatus })
   @IsOptional()
-  @IsString()
-  paymentStatus?: string;
+  @IsEnum(PaymentStatus)
+  paymentStatus?: PaymentStatus;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   paymentMethod?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalDateString()
   paymentDate?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsMoney()
   amount?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsMoney()
   gross?: number; // Alias enviado desde algunos frontends
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsMoney()
   amountBase?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsMoney()
   amountCard?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: AttendanceStatus })
   @IsOptional()
-  @IsString()
-  attendance?: string;
-
+  @IsEnum(AttendanceStatus)
+  attendance?: AttendanceStatus;
 }
 
 @RequestHandler(CreateActivityCommand)

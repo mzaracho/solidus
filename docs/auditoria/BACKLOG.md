@@ -46,7 +46,7 @@ Origen: `docs/features/007-aislamiento-organizaciones/` (06-seguridad, 05-revisi
 | 40 | Motor de honorarios: unificar la forma de `splits` entre la UI (`{role, percentage, beneficiaryType}`) y `FeeResolutionService` (`{beneficiary, type, value}`) y acotar los montos `FIXED` al bruto de la atención (`computeAmounts`: limitar a `grossAmount - totalAllocated`, mínimo 0) | MEDIA-2 (007) | M |
 | 41 | **RESUELTO (feature 009).** `settlements/calculate`: usar `@CurrentOrgId()` en lugar de `organizationId` de la query y sumar el controlador al invariante de `security-invariants.spec.ts`; evaluar `@RequireOrgRole('ADMIN')` en `settlements/calculate` y acceso por rol en el dashboard en modo organización | MENOR-1 e INFO-1 (007) | S |
 | 42 | **RESUELTO (feature 013).** Mensajes de error 404 en español y sin JSON crudo en los toasts del front (`updateWorkItem`/`deleteWorkItem` en `data.ts`, `AtencionesTable`, `AdmisionesTable`, `WorkItemForm`) | m-4 (re-revisión 1) | S |
-| 43 | DTOs con class-validator en los comandos de update (`UpdatePatientCommand`, `UpdateActivityCommand`, `UpdateStaffCommand`: enums de pago, email, fechas) para evitar 500 de Prisma. Relacionado con #12 | S-2 / BAJA-2 resto | M |
+| 43 | **RESUELTO (feature 014): todos los comandos de update tienen DTO validado (enums, email, fechas, topes); restos en #67 y #70.** DTOs con class-validator en los comandos de update (`UpdatePatientCommand`, `UpdateActivityCommand`, `UpdateStaffCommand`: enums de pago, email, fechas) para evitar 500 de Prisma. Relacionado con #12 | S-2 / BAJA-2 resto | M |
 | 44 | **RESUELTO (feature 008).** Ocultar "Eliminar" al MEMBER también en `workload/columns.tsx`: `canDeleteActivity` (`src/lib/activity-permissions.ts`) compartida con `AdmisionesTable`; ítem deshabilitado con tooltip. El bug de la tabla de work-items vacía ("No results", O-3 del 005) también quedó resuelto por el 008 | 007 §8.1 | S |
 | 45 | Editar atención: `PUT /activity/:id` ignora monto (`grossAmount`) y pagador (solo persiste `date`, `paymentStatus`, `paymentMethod`, `paymentDate`, `attendance`), pero `workload/RetroactiveModal` y otros formularios permiten cambiarlos y la UI informa éxito. Además el pagador faltante se muestra "—" y se reenvía como valor (M2). Definir si se pueden editar (recalcular splits) o deshabilitarlos en la UI. Relacionado con #17 y #40 (motor de honorarios) | 008 (M1, M2) | M |
 | 46 | UX menor en `workload/columns.tsx`: el tooltip (`title`) del ítem "Eliminar" deshabilitado no se ve (`data-[disabled]:pointer-events-none` del `DropdownMenuItem`; envolver en `<span title>` o `Tooltip`) y "Eliminar" aparece habilitado hasta hidratar el rol (`orgRole` null; el backend responde 403; tratar `null` como no habilitado). Mismo patrón en `pro/atenciones/columns.tsx` y `AdmisionesTable` | 008 (M3, M4) | S |
@@ -66,8 +66,7 @@ Origen: `docs/features/009-modo-desde-rol/` (decisiones del PO en `00-estado.md`
 | 53 | **RESUELTO (feature 013): `BadRequestException` 400 `first-load-required`.** `new Error(...)` en la regla de primera carga de `activity.service.ts` responde 500: pasar a `BadRequestException`/`ForbiddenException`. Relacionado con #13 | INFO-2 (seguridad 009) | S |
 | 54 | Mover `ownProfessionalsFilter` de `application/features/patients/patient-read-access.ts` a `domain/features/patients/` (hoy `patients.service.ts` de infraestructura importa de `application/`) | MENOR-6 (revisión) / INFO-8 (seguridad) 009 | S |
 
-Nota para #12 (whitelist): con `forbidNonWhitelisted` el `?mode=` que manda el front en dashboard, work-items y pacientes daría 400
-(INFO-1 de seguridad del 009); declarar el campo en los DTOs de esas queries antes de activarlo.
+Nota sobre #12: resuelto en el 014; el `?mode=` que manda el front (INFO-1 de seguridad del 009) quedó declarado en los DTOs de esas queries.
 
 ## Candidatos surgidos del feature 011
 
@@ -109,7 +108,7 @@ Origen: `docs/features/013-errores-sin-details/` (00-estado, 05-revision, 06-seg
 | 9 | **RESUELTO (feature 005).** CORS desde `CORS_ORIGIN` (lista blanca), sin `origin: true` | S |
 | 10 | Sesión en cookie `HttpOnly; Secure; SameSite=Lax` emitida por el backend (o route handler de Next); eliminar `'mock_token'`; middleware que valide expiración | M |
 | 11 | **RESUELTO (features 005 y 012):** el 400 por campos faltantes es del 005; el rate limiting del login es del 012 (implementación propia sin `@nestjs/throttler`: 5 por IP + usuario y 20 por IP en 15 min, 429 con `Retry-After`; residuales en #56 a #58) | S |
-| 12 | `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true })`; DTOs explícitos para fee rules y settings de organización | M |
+| 12 | **RESUELTO (feature 014): `RequestValidationPipe` global con `whitelist`, `forbidNonWhitelisted` en bodies y DTOs explícitos (fee rules y settings de organización incluidos).** `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true })`; DTOs explícitos para fee rules y settings de organización | M |
 | 13 | **RESUELTO (feature 013): contrato `{ code, errors }` sin `details`, `X-Error-Id` en 5xx, `axios-filter` borrado.** Filtros de error sin `details` hacia el cliente; mapear errores de negocio a 400/403/404/409 (`BadRequestException`, etc.) en lugar de `Error` | S |
 | 14 | **RESUELTO (Swagger en el 005; `NODE_TLS_REJECT_UNAUTHORIZED` y body limit en el 010).** Swagger solo fuera de producción (hecho en el 005, en `/docs`); quitar `NODE_TLS_REJECT_UNAUTHORIZED=0`; bajar body limit a ~1 MB | S |
 | 15 | Eliminar `/test-suite` del build de producción | S |
@@ -141,3 +140,16 @@ Origen: `docs/features/013-errores-sin-details/` (00-estado, 05-revision, 06-seg
 | 31 | Migrar `middleware.ts` → `proxy.ts` (Next 16); fuente Inter self-hosted (`next/font/local`) para builds offline | S |
 | 32 | Limpiar logs viejos versionados en `frontend/` y actualizar READMEs (`migrate deploy` en vez de `db push`, contactos) | S |
 | 33 | Seeds reproducibles: mover a `backend/prisma/seed.ts` con datos ficticios; scripts Python sin rutas absolutas | M |
+
+## Candidatos surgidos del feature 014
+
+Origen: `docs/features/014-validation-whitelist/` (00-estado decisiones 2, 3 y 7; 05-revision; 06-seguridad).
+
+| # | Ítem | Origen | Esfuerzo |
+|---|---|---|---|
+| 67 | `PacientesTable` es un mock que manda un array a `POST activity` y recibe 400 (igual que antes del 014): conectarlo a un body válido o retirarlo | decisión 2 (014) | S |
+| 68 | `PUT org` reemplaza el JSON de `settings` en vez de fusionarlo con lo guardado: fusionar claves | decisión 3 (014) | S |
+| 69 | `paymentMethod` y otros textos libres (`serviceType`, `linkedType`, `code`, `role`, `professionalCategory`) hoy solo con tipo y largo máximo: convertir `paymentMethod` en enum y evaluar el resto | decisión 7 (014) | M |
+| 70 | Menores del 014 que se resuelven en el feature 015: M-1 (seguridad: `UpdateStaffCommand.canLoadActivities` con `null` da 500; usar `@IsOptionalNotNull()`), M-2 (seguridad: test de `null` dentro de `roles`), N1 (revisor: comentarios y Swagger desactualizados en `ActivityTypeRoleDto`) y N3 (revisor: prettier en dos imports) | M-1, M-2 (seguridad 014) / N1, N3 (revisión 014) | S |
+
+`RetroactiveModal` (descarta `grossAmount` y `payerName` en el builder) ya está cubierto por #45.

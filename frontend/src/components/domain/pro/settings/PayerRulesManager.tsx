@@ -99,8 +99,7 @@ export function PayerRulesManager() {
                 { role: 'PROFESSIONAL', percentage: percent, beneficiaryType: 'PROFESSIONAL' },
                 { role: 'ORGANIZATION', percentage: 100 - percent, beneficiaryType: 'ORGANIZATION' }
             ],
-            name: 'Professional Fee Rule',
-            organization: { connect: { id: orgSlug } }
+            name: 'Professional Fee Rule'
         }
         try {
             await createFeeRule(orgSlug, payload)
@@ -149,8 +148,7 @@ export function PayerRulesManager() {
                     { role: 'PROFESSIONAL', percentage: proPercent, beneficiaryType: 'PROFESSIONAL' },
                     { role: 'ORGANIZATION', percentage: newPayerRetention, beneficiaryType: 'ORGANIZATION' }
                 ],
-                name: 'Professional Fee Rule',
-                organization: { connect: { id: orgSlug } }
+                name: 'Professional Fee Rule'
             }
             await createFeeRule(orgSlug, payload)
 

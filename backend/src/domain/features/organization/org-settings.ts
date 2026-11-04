@@ -1,3 +1,11 @@
+export const ADMISSION_NO_COADMISOR_BEHAVIOR = {
+  TO_ADMISOR: 'TO_ADMISOR',
+  TO_ORG: 'TO_ORG',
+} as const;
+
+export type AdmissionNoCoAdmisorBehavior =
+  (typeof ADMISSION_NO_COADMISOR_BEHAVIOR)[keyof typeof ADMISSION_NO_COADMISOR_BEHAVIOR];
+
 /**
  * Typed configuration stored in Organization.settings (JSON field).
  * All fields are optional — defaults are applied where each is consumed.
@@ -25,7 +33,7 @@ export interface OrgSettings {
    * 'TO_ORG': the unassigned % stays with the organization.
    * Default: 'TO_ADMISOR'
    */
-  admisionNoCoAdmisorBehavior?: 'TO_ADMISOR' | 'TO_ORG';
+  admisionNoCoAdmisorBehavior?: AdmissionNoCoAdmisorBehavior;
 }
 
 /** Parse and return OrgSettings from the raw JSON field, applying defaults. */

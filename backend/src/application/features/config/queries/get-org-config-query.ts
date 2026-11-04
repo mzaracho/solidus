@@ -4,13 +4,8 @@ import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/r
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional } from 'class-validator';
-
+/** Sin parámetros del cliente: el controlador asigna `orgId` desde @CurrentOrgId() (no pasa por el pipe). */
 export class GetOrgConfigQuery implements IRequest<any> {
-  @ApiProperty()
-  @IsString()
-  @IsOptional()
   orgId: string;
 }
 

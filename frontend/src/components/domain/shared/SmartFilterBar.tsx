@@ -89,6 +89,7 @@ export function SmartFilterBar({ filters, setFilters, mode, uniqueTypes = [], un
                     type="text"
                     placeholder="Buscar paciente..."
                     className="pl-8 pr-3 py-1.5 bg-muted/50 border border-input rounded-lg text-xs focus:ring-2 focus:ring-primary outline-none w-40"
+                    maxLength={100}
                     value={localFilters.patient}
                     onChange={e => setLocalFilters({ ...localFilters, patient: e.target.value })}
                     onKeyDown={e => e.key === 'Enter' && handleSearch()}

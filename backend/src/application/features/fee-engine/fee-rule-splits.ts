@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { MAX_MONEY_AMOUNT } from '@src/domain/constants/app.constants';
 
 /**
  * Validación del JSON `FeeRule.splits` (feature 007, MEDIA-1).
@@ -17,7 +18,7 @@ import { BadRequestException } from '@nestjs/common';
 const MAX_ENTRIES = 20;
 const MAX_LABEL = 100;
 /** Decimal(10,2): el mayor monto representable. */
-const MAX_FIXED = 99_999_999.99;
+const MAX_FIXED = MAX_MONEY_AMOUNT;
 const SUM_TOLERANCE = 0.01;
 
 const UI_KEYS = new Set(['role', 'percentage', 'beneficiaryType']);

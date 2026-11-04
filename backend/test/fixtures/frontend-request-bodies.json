@@ -1,0 +1,614 @@
+{
+  "_comment": "Bodies que arma el frontend (feature 014). `input` es lo que recibe la funcion de frontend/src/services/data.ts desde el componente; `body` es lo que sale de su builder (frontend/src/lib/request-bodies.ts) y se manda a la API. Las funciones que ya mandan un literal exacto (sin builder) tienen solo `body`. Los ids son marcadores <<nombre>> que el test del backend reemplaza por ids del seed. Los dos tests leen este mismo archivo: frontend/src/lib/request-bodies.test.mts y la seccion (p) de backend/test/org-isolation.spec.ts.",
+  "cases": [
+    {
+      "name": "createWorkItem: sesión de la organización (AdmisionesTable, WorkItemForm completo)",
+      "builder": "buildCreateActivityBody",
+      "method": "post",
+      "path": "/api/activity",
+      "user": "admin",
+      "mode": "org",
+      "status": 201,
+      "input": {
+        "date": "2026-03-10T15:00:00.000Z",
+        "month": "2026-03",
+        "patient": "Ana Uno",
+        "patientId": "<<ptA1>>",
+        "patientOrganizationId": "<<orgA>>",
+        "type": "session",
+        "professional": "<<staffA>>",
+        "participantsByRole": {},
+        "hours": 1,
+        "quantity": 1,
+        "gross": 100,
+        "baseValue": 0,
+        "payer": "<<payerSysA>>",
+        "status": "Pendiente",
+        "paymentMethod": "Efectivo",
+        "paymentDate": "2026-03-10",
+        "presetId": "",
+        "packDates": [],
+        "attendance": "PRESENT",
+        "amount": 100,
+        "professionalId": "<<staffA>>",
+        "payerId": "<<payerSysA>>",
+        "organizationId": "<<orgA>>",
+        "paymentStatus": "UNPAID",
+        "paid": false,
+        "serviceType": "session",
+        "mode": "org"
+      },
+      "body": {
+        "date": "2026-03-10T15:00:00.000Z",
+        "patientId": "<<ptA1>>",
+        "hours": 1,
+        "quantity": 1,
+        "payerId": "<<payerSysA>>",
+        "paymentMethod": "Efectivo",
+        "paymentDate": "2026-03-10",
+        "presetId": "",
+        "attendance": "PRESENT",
+        "amount": 100,
+        "professionalId": "<<staffA>>",
+        "organizationId": "<<orgA>>",
+        "paymentStatus": "UNPAID",
+        "serviceType": "session"
+      }
+    },
+    {
+      "name": "createWorkItem: sesión cobrada del profesional, Particular (payerId null) y monto con decimales",
+      "builder": "buildCreateActivityBody",
+      "method": "post",
+      "path": "/api/activity",
+      "user": "pro",
+      "mode": "pro",
+      "status": 201,
+      "input": {
+        "date": "2026-03-11T15:00:00.000Z",
+        "month": "2026-03",
+        "patient": "Ana Uno",
+        "patientId": "<<ptA1>>",
+        "patientOrganizationId": "<<orgA>>",
+        "type": "session",
+        "professional": "<<proA>>",
+        "participantsByRole": {},
+        "hours": 1,
+        "quantity": 1,
+        "gross": 150.5,
+        "baseValue": 0,
+        "payer": "Particular",
+        "status": "Pagado",
+        "paymentMethod": "Transferencia",
+        "paymentDate": "2026-03-11",
+        "presetId": "",
+        "packDates": [],
+        "attendance": "PRESENT",
+        "amount": 150.5,
+        "professionalId": "<<proA>>",
+        "payerId": null,
+        "organizationId": "<<orgA>>",
+        "paymentStatus": "PAID",
+        "paid": true,
+        "serviceType": "session",
+        "mode": "pro"
+      },
+      "body": {
+        "date": "2026-03-11T15:00:00.000Z",
+        "patientId": "<<ptA1>>",
+        "hours": 1,
+        "quantity": 1,
+        "payerId": null,
+        "paymentMethod": "Transferencia",
+        "paymentDate": "2026-03-11",
+        "presetId": "",
+        "attendance": "PRESENT",
+        "amount": 150.5,
+        "professionalId": "<<proA>>",
+        "organizationId": "<<orgA>>",
+        "paymentStatus": "PAID",
+        "serviceType": "session"
+      }
+    },
+    {
+      "name": "createWorkItem: monto vacío (NaN del input) no se manda y no rompe la validación de tipos",
+      "builder": "buildCreateActivityBody",
+      "method": "post",
+      "path": "/api/activity",
+      "user": "admin",
+      "mode": "org",
+      "status": 201,
+      "input": {
+        "date": "2026-03-12T15:00:00.000Z",
+        "patientId": "<<ptA1>>",
+        "type": "session",
+        "gross": "",
+        "amount": "",
+        "hours": null,
+        "quantity": 1,
+        "professionalId": "<<staffA>>",
+        "payerId": "",
+        "organizationId": "<<orgA>>",
+        "paymentStatus": "UNPAID",
+        "paid": false,
+        "serviceType": "session",
+        "mode": "org"
+      },
+      "body": {
+        "date": "2026-03-12T15:00:00.000Z",
+        "patientId": "<<ptA1>>",
+        "quantity": 1,
+        "professionalId": "<<staffA>>",
+        "payerId": "",
+        "organizationId": "<<orgA>>",
+        "paymentStatus": "UNPAID",
+        "serviceType": "session"
+      }
+    },
+    {
+      "name": "createWorkItem: con participantes por rol (los participantes salen con las 2 claves)",
+      "builder": "buildCreateActivityBody",
+      "method": "post",
+      "path": "/api/activity",
+      "user": "admin",
+      "mode": "org",
+      "status": 201,
+      "input": {
+        "date": "2026-03-13T15:00:00.000Z",
+        "patientId": "<<ptA1>>",
+        "type": "session",
+        "participantsByRole": { "Profesional": "<<staffA>>" },
+        "participants": [
+          { "professionalId": "<<staffA>>", "roleLabel": "Profesional", "extra": "x" }
+        ],
+        "professionalId": "<<staffA>>",
+        "organizationId": "<<orgA>>",
+        "paymentStatus": "UNPAID",
+        "serviceType": "session",
+        "mode": "org"
+      },
+      "body": {
+        "date": "2026-03-13T15:00:00.000Z",
+        "patientId": "<<ptA1>>",
+        "participants": [
+          { "professionalId": "<<staffA>>", "roleLabel": "Profesional" }
+        ],
+        "professionalId": "<<staffA>>",
+        "organizationId": "<<orgA>>",
+        "paymentStatus": "UNPAID",
+        "serviceType": "session"
+      }
+    },
+    {
+      "name": "updateWorkItem: edición con el formulario completo",
+      "builder": "buildUpdateActivityBody",
+      "method": "put",
+      "path": "/api/activity/<<wiMember>>",
+      "user": "admin",
+      "status": 200,
+      "input": {
+        "date": "2026-03-14T15:00:00.000Z",
+        "month": "2026-03",
+        "patient": "Ana Uno",
+        "patientId": "<<ptA1>>",
+        "type": "session",
+        "professional": "<<staffA>>",
+        "participantsByRole": {},
+        "hours": 1,
+        "quantity": 1,
+        "gross": 100,
+        "baseValue": 0,
+        "payer": "<<payerSysA>>",
+        "status": "Pagado",
+        "paymentMethod": "Efectivo",
+        "paymentDate": "2026-03-14",
+        "presetId": "",
+        "packDates": [],
+        "attendance": "PRESENT",
+        "amount": 100,
+        "professionalId": "<<staffA>>",
+        "payerId": "<<payerSysA>>",
+        "organizationId": "<<orgA>>",
+        "paymentStatus": "PAID",
+        "paid": true,
+        "serviceType": "session",
+        "mode": "org"
+      },
+      "body": {
+        "date": "2026-03-14T15:00:00.000Z",
+        "paymentStatus": "PAID",
+        "paymentMethod": "Efectivo",
+        "paymentDate": "2026-03-14",
+        "attendance": "PRESENT"
+      }
+    },
+    {
+      "name": "updateWorkItem: edición sin fecha de pago ('')",
+      "builder": "buildUpdateActivityBody",
+      "method": "put",
+      "path": "/api/activity/<<wiMember>>",
+      "user": "admin",
+      "status": 200,
+      "input": {
+        "date": "2026-03-14T15:00:00.000Z",
+        "paymentStatus": "UNPAID",
+        "paymentMethod": "Efectivo",
+        "paymentDate": "",
+        "attendance": "ABSENT_NO_NOTICE",
+        "paid": false,
+        "mode": "pro"
+      },
+      "body": {
+        "date": "2026-03-14T15:00:00.000Z",
+        "paymentStatus": "UNPAID",
+        "paymentMethod": "Efectivo",
+        "paymentDate": "",
+        "attendance": "ABSENT_NO_NOTICE"
+      }
+    },
+    {
+      "name": "updateWorkItem: marcar como cobrada (DeudoresTable, workload)",
+      "builder": "buildUpdateActivityBody",
+      "method": "put",
+      "path": "/api/activity/<<wiMember>>",
+      "user": "admin",
+      "status": 200,
+      "input": { "paymentStatus": "PAID" },
+      "body": { "paymentStatus": "PAID" }
+    },
+    {
+      "name": "updateWorkItem: asistencia (AtencionesTable)",
+      "builder": "buildUpdateActivityBody",
+      "method": "put",
+      "path": "/api/activity/<<wiMember>>",
+      "user": "admin",
+      "status": 200,
+      "input": { "attendance": "ABSENT_WITH_NOTICE" },
+      "body": { "attendance": "ABSENT_WITH_NOTICE" }
+    },
+    {
+      "name": "updateWorkItem: registrar cobro (modal de pago)",
+      "builder": "buildUpdateActivityBody",
+      "method": "put",
+      "path": "/api/activity/<<wiMember>>",
+      "user": "admin",
+      "status": 200,
+      "input": { "paymentStatus": "PAID", "paymentDate": "2026-03-15", "paymentMethod": "Transferencia" },
+      "body": { "paymentStatus": "PAID", "paymentDate": "2026-03-15", "paymentMethod": "Transferencia" }
+    },
+    {
+      "name": "updateWorkItem: RetroactiveModal manda grossAmount y payerName, que el backend nunca persistió (body vacío)",
+      "builder": "buildUpdateActivityBody",
+      "method": "put",
+      "path": "/api/activity/<<wiMember>>",
+      "user": "admin",
+      "status": 200,
+      "input": { "grossAmount": 500, "payerName": "Obra Social Ficticia" },
+      "body": {}
+    },
+    {
+      "name": "createStaff: org/profesionales (con userId y categoryId vacíos)",
+      "builder": "buildStaffCreateBody",
+      "method": "post",
+      "path": "/api/org/staff",
+      "user": "admin",
+      "status": 201,
+      "input": {
+        "name": "Nuevo",
+        "surname": "Staff",
+        "userId": "",
+        "cuit": "20999999991",
+        "email": "nuevo@example.test",
+        "phone": "1100000000",
+        "canLoadActivities": false,
+        "categoryId": ""
+      },
+      "body": {
+        "name": "Nuevo",
+        "surname": "Staff",
+        "cuit": "20999999991",
+        "email": "nuevo@example.test",
+        "phone": "1100000000",
+        "canLoadActivities": false,
+        "categoryId": ""
+      }
+    },
+    {
+      "name": "createStaff: ProfessionalManager (sin userId ni categoryId)",
+      "builder": "buildStaffCreateBody",
+      "method": "post",
+      "path": "/api/org/staff",
+      "user": "admin",
+      "status": 201,
+      "input": {
+        "name": "Otro",
+        "surname": "Staff",
+        "email": "otro@example.test",
+        "cuit": "20999999992",
+        "phone": "",
+        "canLoadActivities": true
+      },
+      "body": {
+        "name": "Otro",
+        "surname": "Staff",
+        "cuit": "20999999992",
+        "email": "otro@example.test",
+        "phone": "",
+        "canLoadActivities": true
+      }
+    },
+    {
+      "name": "updateStaff: org/profesionales (el formData trae userId y categoryId)",
+      "builder": "buildStaffUpdateBody",
+      "method": "put",
+      "path": "/api/org/staff/<<staffA>>",
+      "user": "admin",
+      "status": 200,
+      "input": {
+        "name": "Staff",
+        "surname": "Actualizado",
+        "userId": "",
+        "cuit": "20222222222",
+        "email": "staff@example.test",
+        "phone": "2",
+        "canLoadActivities": true,
+        "categoryId": "<<catA>>"
+      },
+      "body": {
+        "name": "Staff",
+        "surname": "Actualizado",
+        "cuit": "20222222222",
+        "email": "staff@example.test",
+        "phone": "2",
+        "canLoadActivities": true
+      }
+    },
+    {
+      "name": "updateStaff: ProfessionalManager (interruptor canLoadActivities)",
+      "builder": "buildStaffUpdateBody",
+      "method": "put",
+      "path": "/api/org/staff/<<staffA>>",
+      "user": "admin",
+      "status": 200,
+      "input": {
+        "name": "Staff",
+        "surname": "A",
+        "email": "staff@example.test",
+        "cuit": "20222222222",
+        "phone": "2",
+        "canLoadActivities": false
+      },
+      "body": {
+        "name": "Staff",
+        "surname": "A",
+        "cuit": "20222222222",
+        "email": "staff@example.test",
+        "phone": "2",
+        "canLoadActivities": false
+      }
+    },
+    {
+      "name": "assignStaffCategory (literal)",
+      "method": "put",
+      "path": "/api/org/staff/<<staffA>>/category",
+      "user": "admin",
+      "status": 200,
+      "body": { "categoryId": "<<catA>>" }
+    },
+    {
+      "name": "createPatient: PatientDirectory (el formData más organizationId)",
+      "builder": "buildPatientBody",
+      "method": "post",
+      "path": "/api/v1/patients",
+      "user": "admin",
+      "status": 201,
+      "input": {
+        "firstName": "Paciente",
+        "lastName": "Nuevo",
+        "email": "",
+        "phone": "",
+        "organizationId": "<<orgA>>"
+      },
+      "body": { "firstName": "Paciente", "lastName": "Nuevo", "email": "", "phone": "" }
+    },
+    {
+      "name": "updatePatient: PatientDirectory",
+      "builder": "buildPatientBody",
+      "method": "put",
+      "path": "/api/v1/patients/<<ptA1>>",
+      "user": "admin",
+      "status": 200,
+      "input": { "firstName": "Ana", "lastName": "Uno", "email": "ana@example.test", "phone": "1122334455" },
+      "body": { "firstName": "Ana", "lastName": "Uno", "email": "ana@example.test", "phone": "1122334455" }
+    },
+    {
+      "name": "mergePatient (literal)",
+      "method": "post",
+      "path": "/api/v1/patients/<<ptA1>>/merge",
+      "user": "admin",
+      "status": 200,
+      "body": { "targetId": "<<ptA2>>" }
+    },
+    {
+      "name": "updateOrgSettings: settings/general en vista organización",
+      "builder": "buildOrgUpdateBody",
+      "method": "put",
+      "path": "/api/org",
+      "user": "admin",
+      "status": 200,
+      "input": {
+        "name": "Org A",
+        "cuit": "30111111111",
+        "address": "Calle Ficticia 123",
+        "settings": { "alertsDays": 60, "emailNotifs": true }
+      },
+      "body": {
+        "name": "Org A",
+        "cuit": "30111111111",
+        "address": "Calle Ficticia 123",
+        "settings": { "alertsDays": 60, "emailNotifs": true }
+      }
+    },
+    {
+      "name": "updateOrgSettings: alertsDays vacío (NaN serializado como null) no se manda",
+      "builder": "buildOrgUpdateBody",
+      "method": "put",
+      "path": "/api/org",
+      "user": "admin",
+      "status": 200,
+      "input": {
+        "name": "Org A",
+        "cuit": "30111111111",
+        "address": "",
+        "settings": { "alertsDays": null, "emailNotifs": false }
+      },
+      "body": {
+        "name": "Org A",
+        "cuit": "30111111111",
+        "address": "",
+        "settings": { "emailNotifs": false }
+      }
+    },
+    {
+      "name": "updateProfessionalProfile: settings/general en vista profesional",
+      "builder": "buildProProfileBody",
+      "method": "put",
+      "path": "/api/pro/profile",
+      "user": "pro",
+      "status": 200,
+      "input": { "displayName": "Pro A", "cuit": "20111111111", "phone": "", "email": "proa@example.test" },
+      "body": { "displayName": "Pro A", "cuit": "20111111111", "phone": "", "email": "proa@example.test" }
+    },
+    {
+      "name": "createFeeRule: PayerRulesManager (trae organization, que el backend no recibe)",
+      "builder": "buildFeeRuleBody",
+      "method": "post",
+      "path": "/api/fee-rules",
+      "user": "admin",
+      "status": 201,
+      "input": {
+        "payer": { "connect": { "id": "<<payerA>>" } },
+        "professionalCategory": "all",
+        "splits": [
+          { "role": "PROFESSIONAL", "percentage": 70, "beneficiaryType": "PROFESSIONAL" },
+          { "role": "ORGANIZATION", "percentage": 30, "beneficiaryType": "ORGANIZATION" }
+        ],
+        "name": "Professional Fee Rule",
+        "organization": { "connect": { "id": "<<orgA>>" } }
+      },
+      "body": {
+        "payer": { "connect": { "id": "<<payerA>>" } },
+        "professionalCategory": "all",
+        "splits": [
+          { "role": "PROFESSIONAL", "percentage": 70, "beneficiaryType": "PROFESSIONAL" },
+          { "role": "ORGANIZATION", "percentage": 30, "beneficiaryType": "ORGANIZATION" }
+        ],
+        "name": "Professional Fee Rule"
+      }
+    },
+    {
+      "name": "createOrgPreset: ReferenceValuesManager (cardValue null no se manda)",
+      "builder": "buildPresetBody",
+      "method": "post",
+      "path": "/api/org/presets",
+      "user": "admin",
+      "status": 201,
+      "input": { "name": "Valor nuevo", "baseValue": 25000, "cardValue": null, "linkedType": "session" },
+      "body": { "name": "Valor nuevo", "baseValue": 25000, "linkedType": "session" }
+    },
+    {
+      "name": "updateOrgPreset: ReferenceValuesManager (con valor de tarjeta)",
+      "builder": "buildPresetBody",
+      "method": "put",
+      "path": "/api/org/presets/<<presetA>>",
+      "user": "admin",
+      "status": 200,
+      "input": { "name": "Preset A", "baseValue": 30000.5, "cardValue": 32000, "linkedType": "session" },
+      "body": { "name": "Preset A", "baseValue": 30000.5, "cardValue": 32000, "linkedType": "session" }
+    },
+    {
+      "name": "createActivityType: ActivityTypesManager",
+      "builder": "buildActivityTypeBody:create",
+      "method": "post",
+      "path": "/api/org/activity-types",
+      "user": "admin",
+      "status": 201,
+      "input": {
+        "code": "Sesion Nueva",
+        "name": "Sesión nueva",
+        "baseValue": 100,
+        "roles": [
+          { "roleLabel": "Profesional", "isRequired": true, "feeStrategy": "CATEGORY" },
+          { "roleLabel": "Admisor", "isRequired": false, "feeStrategy": "FIXED", "fixedPercentage": 10 }
+        ]
+      },
+      "body": {
+        "code": "Sesion Nueva",
+        "name": "Sesión nueva",
+        "baseValue": 100,
+        "roles": [
+          { "roleLabel": "Profesional", "isRequired": true, "feeStrategy": "CATEGORY" },
+          { "roleLabel": "Admisor", "isRequired": false, "feeStrategy": "FIXED", "fixedPercentage": 10 }
+        ]
+      }
+    },
+    {
+      "name": "updateActivityType: ActivityTypesManager manda code y roles leídos de la base con claves de más",
+      "builder": "buildActivityTypeBody:update",
+      "method": "put",
+      "path": "/api/org/activity-types/<<atA>>",
+      "user": "admin",
+      "status": 200,
+      "input": {
+        "code": "a",
+        "name": "Tipo A editado",
+        "baseValue": 100,
+        "cardValue": 20,
+        "roles": [
+          { "roleLabel": "Profesional", "isRequired": true, "feeStrategy": "CATEGORY", "legacyKey": "x" },
+          { "roleLabel": "Admisor", "isRequired": false, "feeStrategy": "FIXED", "fixedPercentage": 10, "id": "r1" }
+        ]
+      },
+      "body": {
+        "name": "Tipo A editado",
+        "baseValue": 100,
+        "cardValue": 20,
+        "roles": [
+          { "roleLabel": "Profesional", "isRequired": true, "feeStrategy": "CATEGORY" },
+          { "roleLabel": "Admisor", "isRequired": false, "feeStrategy": "FIXED", "fixedPercentage": 10 }
+        ]
+      }
+    },
+    {
+      "name": "createCategory (literal)",
+      "method": "post",
+      "path": "/api/org/categories",
+      "user": "admin",
+      "status": 201,
+      "body": { "name": "Categoría nueva", "percentage": 80 }
+    },
+    {
+      "name": "updateCategory (literal)",
+      "method": "put",
+      "path": "/api/org/categories/<<catA>>",
+      "user": "admin",
+      "status": 200,
+      "body": { "name": "Cat A editada", "percentage": 65.5 }
+    },
+    {
+      "name": "createPayer (literal, con CUIT)",
+      "method": "post",
+      "path": "/api/pro/payers",
+      "user": "admin",
+      "status": 201,
+      "body": { "name": "OS Nueva", "retentionPercentage": 10, "cuit": "30888888888" }
+    },
+    {
+      "name": "createPayer (literal, sin CUIT)",
+      "method": "post",
+      "path": "/api/pro/payers",
+      "user": "admin",
+      "status": 201,
+      "body": { "name": "OS Nueva 2", "retentionPercentage": 0 }
+    }
+  ]
+}

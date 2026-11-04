@@ -9,29 +9,31 @@ import {
 } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional } from 'class-validator';
+import { IsDateString, IsEnum, IsOptional } from 'class-validator';
+import {
+  CHART_GROUP_BY,
+  DASHBOARD_BASIS,
+} from '@src/domain/constants/app.constants';
 
 export class GetDashboardChartQuery implements IRequest<any> {
-  @ApiProperty()
-  @IsString()
-  @IsOptional()
-  orgId: string;
+  /** La asigna el controlador desde @CurrentOrgId(); la query del cliente no la pisa. */
+  declare orgId: string;
 
   @ApiProperty()
-  @IsString()
+  @IsDateString({ strict: true })
   startDate: string;
 
   @ApiProperty()
-  @IsString()
+  @IsDateString({ strict: true })
   endDate: string;
 
-  @ApiProperty()
-  @IsString()
+  @ApiProperty({ enum: Object.values(CHART_GROUP_BY) })
+  @IsEnum(CHART_GROUP_BY)
   groupBy: 'day' | 'month';
 
-  @ApiProperty()
+  @ApiProperty({ enum: Object.values(DASHBOARD_BASIS), required: false })
   @IsOptional()
-  @IsString()
+  @IsEnum(DASHBOARD_BASIS)
   basis?: 'ACCRUED' | 'CASH';
 }
 

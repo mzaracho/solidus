@@ -143,13 +143,15 @@ describe('invariantes de seguridad', () => {
         const start = m.index + m[0].length;
         const end = s.text.indexOf('\n}', start);
         const body = s.text.slice(start, end === -1 ? undefined : end);
-        if (/^\s+mode\??\s*[:!]/m.test(body)) offenders.push(`${s.file}:${m[1]}`);
+        if (/^\s+(?:declare |public readonly |readonly )?mode\??\s*[:!]/m.test(body))
+          offenders.push(`${s.file}:${m[1]}`);
       }
     }
     const filter = sources.find(
       (s) => s.file === 'domain/features/patients/find-all-patients-filter.ts',
     )!.text;
-    if (/^\s+mode\??\s*[:!]/m.test(filter)) offenders.push('FindAllPatientsFilter');
+    if (/^\s+(?:declare |public readonly |readonly )?mode\??\s*[:!]/m.test(filter))
+      offenders.push('FindAllPatientsFilter');
     expect(offenders).toEqual([]);
   });
 
@@ -228,7 +230,7 @@ describe('invariantes de seguridad', () => {
 
   // Campos *Id de comandos y queries (clases `implements IRequest`) y cómo se controla cada uno (criterio 4).
   //  verified   : el handler lo valida con requireId/optionalId y foundOr404 contra el scope o la organización destino
-  //  ignored    : el valor del body se ignora; la organización sale del contexto validado
+  //  ignored    : (sin uso desde el 014) el valor del body se ignoraba; ahora un campo no declarado da 400
   //  controller : lo asigna el controlador desde el header o el token ya validados por los guards globales
   //  filter     : filtro dentro de un where ya acotado a la organización; un id ajeno da una lista vacía
   const ID_FIELDS: Record<
@@ -244,13 +246,8 @@ describe('invariantes de seguridad', () => {
     'CreateActivityCommand.payerId': 'verified',
     'CreateActivityCommand.presetId': 'verified',
     'CreateActivityCommand.professionalId': 'verified',
-    'CreateActivityTypeCommand.orgId': 'ignored',
-    'CreateCategoryCommand.orgId': 'ignored',
     'CreatePatientCommand.organizationId': 'controller',
-    'CreatePayerCommand.orgId': 'ignored',
-    'CreatePresetCommand.orgId': 'ignored',
     'CreateStaffCommand.categoryId': 'verified',
-    'CreateStaffCommand.orgId': 'ignored',
     'DeleteActivityCommand.id': 'verified',
     'DeleteActivityTypeCommand.id': 'verified',
     'DeleteCategoryCommand.id': 'verified',
@@ -300,7 +297,7 @@ describe('invariantes de seguridad', () => {
         const end = s.text.indexOf('\n}', start);
         const body = s.text.slice(start, end === -1 ? undefined : end);
         for (const f of body.matchAll(
-          /^\s+(?:public readonly |readonly )?(id|\w+Id)\??\s*[:!]/gm,
+          /^\s+(?:public readonly |readonly |declare )?(id|\w+Id)\??\s*[:!]/gm,
         )) {
           found.add(`${m[1]}.${f[1]}`);
         }
@@ -472,5 +469,27 @@ describe('invariantes del feature 013 (errores sin details)', () => {
 
   it('ErrorResponse tiene solo code y errors', () => {
     expect(Object.keys(new ErrorResponse('x', []))).toEqual(['code', 'errors']);
+  });
+});
+
+describe('invariantes del feature 014 (validación con whitelist)', () => {
+  it('la conversión implícita del ValidationPipe está desactivada y no se reactiva', () => {
+    expect(filesMatching(/enableImplicitConversion\s*:\s*true/)).toEqual([]);
+    const pipes = sources.find(
+      (s) => s.file === 'infrastructure.bootstrap/config/app/pipes-config.ts',
+    )!.text;
+    expect(pipes).toMatch(/enableImplicitConversion:\s*false/);
+  });
+
+  it('nadie usa @Allow( (dejaría pasar cualquier valor por la whitelist)', () => {
+    expect(filesMatching(/@Allow\(/)).toEqual([]);
+  });
+
+  it('el pipe global tiene whitelist y forbidNonWhitelisted en los bodies', () => {
+    const pipes = sources.find(
+      (s) => s.file === 'infrastructure.bootstrap/config/app/pipes-config.ts',
+    )!.text;
+    expect(pipes).toMatch(/whitelist:\s*true/);
+    expect(pipes).toMatch(/forbidNonWhitelisted:\s*true/);
   });
 });

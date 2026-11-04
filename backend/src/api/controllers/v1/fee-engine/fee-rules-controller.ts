@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, Inject } from '@nestjs/common';
+import { Controller, Get, Post, Body, Inject } from '@nestjs/common';
 import { IDispatcher } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-dispatcher';
 import {
   FindFeeRulesQuery,
@@ -19,8 +19,8 @@ export class FeeRulesController extends BaseController {
   async findAll(
     @CurrentOrgId() orgId: string,
     @CurrentUserId() userId: string,
-    @Query() query: FindFeeRulesQuery,
   ) {
+    const query = new FindFeeRulesQuery();
     query.organizationId = orgId;
     query.userId = userId;
     return this.dispatcher.dispatch(query);

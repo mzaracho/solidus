@@ -1,4 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsOptionalNotNull } from '@src/infrastructure.bootstrap/config/core/validation/dto-validators';
 import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request';
 import { PatientResponseDto } from '../dtos/patient-response.dto';
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
@@ -10,33 +12,31 @@ import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/c
 import { foundOr404, inScope, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 
 export class UpdatePatientCommand implements IRequest<PatientResponseDto> {
-  constructor(
-    id: string,
-    firstName: string,
-    lastName: string,
-    email?: string,
-    phone?: string,
-  ) {
-    this.id = id;
-    this.firstName = firstName;
-    this.lastName = lastName;
-    this.email = email;
-    this.phone = phone;
-  }
+  /** Lo asigna el controlador desde el path; el cliente no lo manda (400). */
+  declare id: string;
 
-  @ApiProperty({ description: 'Patient ID', type: String })
-  id!: string;
+  @ApiPropertyOptional({ description: 'First name', type: String })
+  @IsOptionalNotNull()
+  @IsString()
+  @MaxLength(100)
+  firstName?: string;
 
-  @ApiProperty({ description: 'First name', type: String })
-  firstName!: string;
+  @ApiPropertyOptional({ description: 'Last name', type: String })
+  @IsOptionalNotNull()
+  @IsString()
+  @MaxLength(100)
+  lastName?: string;
 
-  @ApiProperty({ description: 'Last name', type: String })
-  lastName!: string;
-
-  @ApiProperty({ description: 'Email', type: String })
+  @ApiPropertyOptional({ description: 'Email', type: String })
+  @IsOptional()
+  @IsString()
+  @MaxLength(254)
   email?: string;
 
-  @ApiProperty({ description: 'Phone', type: String })
+  @ApiPropertyOptional({ description: 'Phone', type: String })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
   phone?: string;
 }
 

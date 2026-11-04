@@ -37,32 +37,38 @@ async function loadPayerForWrite(
 
 // Get
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsString } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
+import { MAX_PAGE_NUMBER, MAX_PAGE_SIZE } from '@src/domain/constants/app.constants';
+import { IsPercentage } from '@src/infrastructure.bootstrap/config/core/validation/dto-validators';
 import { Type } from 'class-transformer';
 
 // Get
-// Get
 export class GetPayersQuery implements IRequest<{ items: Payer[]; total: number }> {
-  @ApiProperty()
-  @IsString()
-  @IsOptional()
-  orgId: string;
+  /** Lo asignan el controlador (@CurrentOrgId() / @CurrentUserId()); la query del cliente no los pisa. */
+  declare orgId: string;
+  declare userId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsString()
-  userId?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
   @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PAGE_NUMBER)
   page?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
   @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PAGE_SIZE)
   limit?: number;
 }
 
@@ -125,23 +131,20 @@ export class GetPayersQueryHandler implements IRequestHandler<
 
 // Create
 export class CreatePayerCommand implements IRequest<Payer> {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  orgId?: string; // Se ignora: la organización y el usuario salen del contexto validado
-
   @ApiProperty()
   @IsString()
+  @MaxLength(200)
   name: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(20)
   cuit?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsPercentage()
   retentionPercentage?: number;
 }
 
@@ -198,15 +201,17 @@ export class CreatePayerCommandHandler implements IRequestHandler<
 
 // Update
 export class UpdatePayerCommand implements IRequest<Payer> {
-  id: string; // Param
+  /** Lo asigna el controlador desde el path; el cliente no lo manda (400). */
+  declare id: string;
 
   @ApiProperty()
   @IsString()
+  @MaxLength(200)
   name: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsPercentage()
   retentionPercentage?: number;
 }
 

@@ -3,22 +3,19 @@ import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
-import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString, Matches } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, Matches } from 'class-validator';
 import { requireOrgId } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 import { parseOrgSettings } from '@src/domain/features/organization/org-settings';
 
 export class CalculateSettlementsQuery implements IRequest<any[]> {
     @ApiProperty({ example: '2026-02' })
     @IsString()
-    @Matches(/^\d{4}-\d{2}$/, { message: 'Month must be in YYYY-MM format' })
+    @Matches(/^\d{4}-(0[1-9]|1[0-2])$/, { message: 'Month must be in YYYY-MM format' })
     month: string;
 
-    /** La asigna el controlador desde @CurrentOrgId(); un valor del cliente se pisa. */
-    @ApiHideProperty()
-    @IsOptional()
-    @IsString()
-    organizationId: string;
+    /** La asigna el controlador desde @CurrentOrgId(); la query del cliente no la pisa. */
+    declare organizationId: string;
 }
 
 @RequestHandler(CalculateSettlementsQuery)

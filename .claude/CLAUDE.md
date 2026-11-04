@@ -62,6 +62,13 @@ salvo que el usuario lo pida.
   agregar el caso a `ID_ROUTE_CASES` de `test/org-isolation.spec.ts` (el test estructural falla si falta una ruta con
   parámetros) y clasificar los campos `*Id` nuevos en `security-invariants.spec.ts`. Si la ruta cambia qué datos
   devuelve según el modo org/pro: `@UsesViewMode()` en el controlador y `requireViewScope(ctx)` en el handler (009).
+- Validación de requests (014): `ValidationPipe` global (`RequestValidationPipe`, `pipes-config.ts`) con `whitelist` en todo,
+  `forbidNonWhitelisted` en bodies (clave de más = 400), `forbidUnknownValues` y SIN conversión implícita (en queries
+  numéricas usar `@Type(() => Number)` explícito; `enableImplicitConversion: true` está prohibido). Los errores no
+  incluyen valores ni claves del cliente. Todo `@Body()`/`@Query()` usa una clase con class-validator (lo vigila
+  `test/request-dto-invariants.spec.ts`); los campos que asigna el controlador (`id`, `organizationId`, `orgId`, `userId`)
+  se declaran con `declare`; `@Allow(` está prohibido. Helpers en `infrastructure.bootstrap/config/core/validation/dto-validators.ts`
+  (`IsMoney`, `IsOptionalNotNull`, etc.) y topes `MAX_PAGE_SIZE` / `MAX_PAGE_NUMBER` en `app.constants.ts`.
 - Todo `@Controller` debe estar registrado en el `controllers` de un módulo Nest: lo vigila el test `(a2)` de
   `test/org-isolation.spec.ts` (011); un controlador huérfano responde 404 y no se debe dejar en el código.
 - Atenciones (007): ADMIN puede todo; MEMBER edita y cobra cualquier atención de su organización pero borra solo las
@@ -74,6 +81,9 @@ salvo que el usuario lo pida.
 - Rutas bajo `src/app/(dashboard)/[orgSlug]/...`; secciones `org/*` (organización) y `pro/*` (profesional).
 - Todo acceso a la API pasa por `src/services/data.ts` (`getHeaders()` agrega `Authorization`,
   `x-org-id`, `x-user-id`).
+- Los bodies de escritura se arman con los builders de `src/lib/request-bodies.ts`, que espejan los DTOs del backend; un
+  test de contrato manda esos bodies (fixture `backend/test/fixtures/frontend-request-bodies.json`) al pipe real. Si cambia
+  un DTO, actualizar builder y fixture.
 - Strings de dominio desde `src/lib/constants.ts` (PAYMENT_STATUS, ATTENDANCE, WORK_ITEM_TYPE, ...);
   no hardcodear literales.
 - UI con componentes de `src/components/ui` (shadcn); componentes de negocio en
@@ -138,12 +148,12 @@ Backend (`cd backend`):
 - `npx tsc --noEmit` — type-check
 - `npx eslint "{src,apps,libs,test}/**/*.ts"` — lint sin modificar archivos
 - `npm run lint` — ATENCIÓN: aplica `--fix` y reescribe archivos
-- `npm test` — Jest (39 suites, 682 tests)
+- `npm test` — Jest (42 suites, 773 tests)
 - `npm run build` — reescribe `dist/`
 
 Frontend (`cd frontend`):
 - `npm install` · `npm run dev` (http://localhost:3000; con `dev.ps1`, el puerto de `FRONTEND_PORT`)
-- `npx tsc --noEmit` · `npm run lint` · `npm test` (`node --test`, 53 tests)
+- `npx tsc --noEmit` · `npm run lint` · `npm test` (`node --test`, 87 tests)
 - `npm run build` — si falla la descarga de Google Fonts por TLS:
   `NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS=1 npm run build`
 - El build Docker (`apk`, `npm`, Prisma, Google Fonts) falla por TLS detrás de un antivirus/proxy que inspecciona

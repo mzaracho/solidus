@@ -8,20 +8,18 @@ import {
     requireViewScope,
 } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional } from 'class-validator';
+import { IsDateString } from 'class-validator';
 
 export class GetDashboardPayerDistributionQuery implements IRequest<any> {
-    @ApiProperty()
-    @IsString()
-    @IsOptional()
-    orgId: string;
+    /** La asigna el controlador desde @CurrentOrgId(); la query del cliente no la pisa. */
+    declare orgId: string;
 
     @ApiProperty()
-    @IsString()
+    @IsDateString({ strict: true })
     startDate: string;
 
     @ApiProperty()
-    @IsString()
+    @IsDateString({ strict: true })
     endDate: string;
 }
 

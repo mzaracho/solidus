@@ -1,14 +1,11 @@
-import { IsString, IsOptional } from 'class-validator';
-
-export class DashboardKpiQueryDto {
+/**
+ * Tipo interno que recibe DashboardService.getKpis. NO es un contrato de request: el body/query real se
+ * valida en GetDashboardKpisQuery (014). Sin decoradores de class-validator a propósito.
+ */
+export interface DashboardKpiQueryDto {
   organizationId: string;
   startDate?: string;
   endDate?: string;
-  @IsOptional()
-  @IsString()
   basis?: 'ACCRUED' | 'CASH';
-
-  @IsOptional()
-  @IsString()
   valueType?: 'NET' | 'GROSS';
 }

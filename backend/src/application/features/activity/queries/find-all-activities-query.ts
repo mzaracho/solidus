@@ -1,74 +1,87 @@
 import { PaginatedActivityResponseDto } from '../Dtos/paginated-activity-response.dto';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
+import {
+  IsOptionalDateString,
+  IsOptionalEntityId,
+} from '@src/infrastructure.bootstrap/config/core/validation/dto-validators';
 import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request';
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { Prisma, PaymentStatus, BeneficiaryType } from '@prisma/client';
-import { DEFAULT_ACTIVITY_PAGE_SIZE } from '@src/domain/constants/app.constants';
+import {
+  DEFAULT_ACTIVITY_PAGE_SIZE,
+  MAX_PAGE_NUMBER,
+  MAX_PAGE_SIZE,
+} from '@src/domain/constants/app.constants';
 import {
   professionalIdsOf,
   RequestContext,
   requireViewScope,
 } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
-import { ApiHideProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class FindAllActivitiesQuery implements IRequest<PaginatedActivityResponseDto> {
-  @ApiHideProperty()
-  @IsOptional()
-  @IsString()
-  organizationId?: string;
+  /** La asigna el controlador desde @CurrentOrgId(); la query del cliente no la pisa. */
+  declare organizationId?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalDateString()
   startDate?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalDateString()
   endDate?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalEntityId()
   patientId?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: PaymentStatus })
   @IsOptional()
-  @IsString()
-  status?: string;
+  @IsEnum(PaymentStatus)
+  status?: PaymentStatus;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalEntityId()
   professionalId?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalEntityId()
   payerId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   type?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   queryType?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   paymentMethod?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   search?: string;
 
   @ApiPropertyOptional()
@@ -76,6 +89,7 @@ export class FindAllActivitiesQuery implements IRequest<PaginatedActivityRespons
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(MAX_PAGE_NUMBER)
   page?: number = 1;
 
   @ApiPropertyOptional()
@@ -83,6 +97,7 @@ export class FindAllActivitiesQuery implements IRequest<PaginatedActivityRespons
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(MAX_PAGE_SIZE)
   limit?: number = 20;
 }
 
@@ -139,11 +154,9 @@ export class FindAllActivitiesQueryHandler implements IRequestHandler<
       };
     }
     
-    if (query.status) {
-      const validStatuses = Object.values(PaymentStatus);
-      if (validStatuses.includes(query.status as PaymentStatus)) {
-        where.paymentStatus = query.status as PaymentStatus;
-      }
+    // El pipe ya rechaza un estado fuera del enum (400); se conserva el chequeo por si el handler se usa sin pipe
+    if (query.status && Object.values(PaymentStatus).includes(query.status)) {
+      where.paymentStatus = query.status;
     }
     if (query.professionalId) where.professionalId = query.professionalId;
     if (query.payerId) where.payerId = query.payerId;

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --no-warnings --test src/lib/session.test.mts src/services/api-routes.test.mts src/services/login-rate-limit.test.mts src/lib/activity-permissions.test.mts src/lib/view-mode.test.mts src/components/domain/workload/data-schema.test.mts src/lib/api-errors.test.mts"
+    "test": "node --no-warnings --test src/lib/session.test.mts src/services/api-routes.test.mts src/services/login-rate-limit.test.mts src/lib/activity-permissions.test.mts src/lib/view-mode.test.mts src/components/domain/workload/data-schema.test.mts src/lib/api-errors.test.mts src/lib/request-bodies.test.mts"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.11",

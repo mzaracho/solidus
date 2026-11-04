@@ -68,3 +68,36 @@ test('createWorkItem no manda mode en el body', () => {
   assert.equal(body.includes('JSON.stringify(data)'), false)
   assert.ok(body.includes('const { mode, ...body }'))
 })
+
+// Feature 014: la organizacion va en x-org-id; el backend no recibe ?orgId= en org/config.
+test('getOrgConfig no manda ?orgId= (la organizacion va en el header)', () => {
+  assert.equal(functionBody('getOrgConfig').includes('orgId='), false)
+})
+
+// Feature 014: las escrituras arman el body con los builders de request-bodies.ts (lista explicita de campos).
+test('las escrituras con body de formulario usan su builder y no mandan el objeto crudo', () => {
+  const builders: Record<string, string> = {
+    createWorkItem: 'buildCreateActivityBody',
+    updateWorkItem: 'buildUpdateActivityBody',
+    createStaff: 'buildStaffCreateBody',
+    updateStaff: 'buildStaffUpdateBody',
+    createPatient: 'buildPatientBody',
+    updatePatient: 'buildPatientBody',
+    updateOrgSettings: 'buildOrgUpdateBody',
+    updateProfessionalProfile: 'buildProProfileBody',
+    createFeeRule: 'buildFeeRuleBody',
+    createOrgPreset: 'buildPresetBody',
+    updateOrgPreset: 'buildPresetBody',
+    createActivityType: 'buildActivityTypeBody',
+    updateActivityType: 'buildActivityTypeBody',
+  }
+  for (const [name, builder] of Object.entries(builders)) {
+    const body = functionBody(name)
+    assert.ok(body.includes(builder), `${name} debe usar ${builder}`)
+    assert.equal(/JSON\.stringify\((data|body)\)/.test(body), false, `${name} manda el objeto crudo`)
+  }
+})
+
+test('getWorkItems arma la query con buildWorkItemsQuery', () => {
+  assert.ok(functionBody('getWorkItems').includes('buildWorkItemsQuery('))
+})

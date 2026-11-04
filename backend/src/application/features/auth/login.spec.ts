@@ -59,6 +59,11 @@ describe('POST /api/v1/auth/login', () => {
     ['user array', { user: ['a'], password: 'x' }],
     ['user booleano', { user: true, password: 'x' }],
     ['user vacío', { user: '', password: 'x' }],
+    // 014: campo no declarado (whitelist + forbidNonWhitelisted en bodies)
+    [
+      'campo sobrante',
+      { user: 'a@example.test', password: 'x', remember: true },
+    ],
     ['user demasiado largo', { user: 'a'.repeat(255), password: 'x' }],
     [
       'password demasiado larga',

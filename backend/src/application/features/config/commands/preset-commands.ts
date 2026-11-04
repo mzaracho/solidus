@@ -9,31 +9,29 @@ import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/c
 import { foundOr404, inScope, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsMoney } from '@src/infrastructure.bootstrap/config/core/validation/dto-validators';
 
 // Create
 export class CreatePresetCommand implements IRequest<FeePreset> {
   @ApiProperty()
-  @IsOptional() // Injected by Controller
   @IsString()
-  orgId: string;
-
-  @ApiProperty()
-  @IsString()
+  @MaxLength(200)
   name: string;
 
   @ApiProperty()
-  @IsNumber()
+  @IsMoney()
   baseValue: number;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsMoney()
   cardValue?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   linkedType?: string;
 }
 
@@ -73,24 +71,27 @@ export class CreatePresetCommandHandler implements IRequestHandler<
 
 // Update
 export class UpdatePresetCommand implements IRequest<FeePreset> {
-  id: string; // From Param
+  /** Lo asigna el controlador desde el path; el cliente no lo manda (400). */
+  declare id: string;
 
   @ApiProperty()
   @IsString()
+  @MaxLength(200)
   name: string;
 
   @ApiProperty()
-  @IsNumber()
+  @IsMoney()
   baseValue: number;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsMoney()
   cardValue?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   linkedType?: string;
 }
 

@@ -48,3 +48,35 @@ export const ROLE_CODE = {
   PROFESSIONAL: 'PROFESSIONAL',
   ADMIN: 'ADMIN',
 } as const
+
+// ─── Validación de requests (014) ─────────────────────────────────────────────
+
+/** Mayor monto representable en una columna Decimal(10,2). */
+export const MAX_MONEY_AMOUNT = 99_999_999.99;
+
+/** Tope de `limit` en los listados paginados. */
+export const MAX_PAGE_SIZE = 100;
+
+/** Tope de `page` en los listados paginados (evita un `skip` fuera del entero de 32 bits de Prisma). */
+export const MAX_PAGE_NUMBER = 10_000;
+
+/** Tope de roles aceptados en el body de un tipo de actividad (el handler luego exige MAX_ROLES_PER_ACTIVITY_TYPE). */
+export const MAX_ACTIVITY_TYPE_ROLES_INPUT = 20;
+
+/** Tope de participantes por atención (cada uno es una consulta a la base). */
+export const MAX_ACTIVITY_PARTICIPANTS = 10;
+
+export const DASHBOARD_BASIS = {
+  ACCRUED: 'ACCRUED',
+  CASH: 'CASH',
+} as const;
+
+export const DASHBOARD_VALUE_TYPE = {
+  NET: 'NET',
+  GROSS: 'GROSS',
+} as const;
+
+export const CHART_GROUP_BY = {
+  DAY: 'day',
+  MONTH: 'month',
+} as const;

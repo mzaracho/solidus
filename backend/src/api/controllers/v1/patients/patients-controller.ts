@@ -16,6 +16,7 @@ import { CurrentUserId } from '@src/infrastructure.bootstrap/config/core/authent
 import { BaseController } from '../../base/base-controller';
 import { IDispatcher } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-dispatcher';
 import { ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { MergePatientRequestDto } from '@src/application/features/patients/dtos/merge-patient-request.dto';
 import {
   ApiPaginatedOkResponse,
   PaginatedArrayDto,
@@ -87,11 +88,11 @@ export class PatientsController extends BaseController {
   @ApiResponse({ status: 200, description: 'Patient merged successfully' })
   async merge(
     @Param('id') sourceId: string,
-    @Body() body: { targetId: string },
+    @Body() body: MergePatientRequestDto,
   ): Promise<void> {
     const command = new MergePatientCommand();
     command.sourceId = sourceId;
-    command.targetId = body?.targetId;
+    command.targetId = body.targetId;
     return await this.dispatcher.dispatch(command);
   }
 

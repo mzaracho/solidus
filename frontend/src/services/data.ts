@@ -9,6 +9,19 @@ import {
     mapLoginFailure,
     readSessionToken,
 } from '@/lib/session'
+import {
+    buildActivityTypeBody,
+    buildCreateActivityBody,
+    buildFeeRuleBody,
+    buildOrgUpdateBody,
+    buildPatientBody,
+    buildPresetBody,
+    buildProProfileBody,
+    buildStaffCreateBody,
+    buildStaffUpdateBody,
+    buildUpdateActivityBody,
+    buildWorkItemsQuery,
+} from '@/lib/request-bodies'
 
 // En el servidor (SSR) el default es localhost (npm run dev fuera de Docker). En Docker lo define
 // docker-compose.yml con INTERNAL_API_URL=http://backend:8080/api.
@@ -269,32 +282,8 @@ export async function getDashboardStats(
  */
 export async function getWorkItems(slug: string, mode: 'ORGANIZATION' | 'PROFESSIONAL', filters?: any, page: number = 1, limit: number = 20, ctx?: ApiContext) {
     try {
-        const params = new URLSearchParams({
-            mode: mode,
-            page: page.toString(),
-            limit: limit.toString()
-        });
-
-        if (filters) {
-            Object.keys(filters).forEach(key => {
-                if (filters[key]) params.append(key, filters[key]);
-            });
-            // Ensure specific mapping if needed, but existing logic seems to iterate keys
-            // If filters.payer is set, it appends 'payer=ID'. Backend needs to expect 'payer' or we map here.
-            // Backend Query Handler has: if (query.payerId) ...
-            // Frontend generic iterator sends 'payer'.
-            // Quick fix: Map 'payer' to 'payerId' if needed, or update backend DTO to accept 'payer' alias.
-            // Backend Query DTO: @IsOptional() payerId?: string.
-            // But it doesn't have 'payer' property?
-            // Wait, backend 'FindAllActivitiesQuery' has:
-            // @ApiPropertyOptional() payerId?: string;
-            // It does NOT have 'payer'.
-            // AtencionesTable passes `filters.payer` (which is ID from dropdown).
-            // So we send `payer=ID`. NestJS DTO mapping *might* fail to map `payer` to `payerId` automatically unless we use @Expose or alias.
-            // Better to map it here in frontend data service.
-            if (filters.payer) params.set('payerId', filters.payer);
-            if (filters.patient) params.set('search', filters.patient);
-        }
+        // Solo viajan los filtros que declara FindAllActivitiesQuery (payer -> payerId, patient -> search); ver request-bodies.ts
+        const params = new URLSearchParams(buildWorkItemsQuery(mode, filters, page, limit));
 
         const res = await apiFetch(`${API_BASE_URL}/activity?${params.toString()}`, {
             headers: getHeaders(slug, ctx?.token),
@@ -390,7 +379,7 @@ export async function createWorkItem(slug: string, data: any, ctx?: ApiContext) 
         const res = await apiFetch(`${API_BASE_URL}/activity`, {
             method: 'POST',
             headers: headers,
-            body: JSON.stringify(body)
+            body: JSON.stringify(buildCreateActivityBody(body))
         });
 
         if (!res.ok) throw await toApiError(res);
@@ -408,7 +397,7 @@ export async function createWorkItem(slug: string, data: any, ctx?: ApiContext) 
  */
 export async function getOrgConfig(slug: string, ctx?: ApiContext) {
     try {
-        const res = await apiFetch(`${API_BASE_URL}/org/config?orgId=${slug}`, {
+        const res = await apiFetch(`${API_BASE_URL}/org/config`, {
             headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
@@ -514,7 +503,7 @@ export async function updateProfessionalProfile(slug: string, data: any, ctx?: A
         const res = await apiFetch(`${API_BASE_URL}/pro/profile`, {
             method: 'PUT',
             headers: getHeaders(slug, ctx?.token),
-            body: JSON.stringify(data)
+            body: JSON.stringify(buildProProfileBody(data))
         });
         if (!res.ok) throw await toApiError(res)
         return await res.json();
@@ -552,7 +541,7 @@ export async function createStaff(slug: string, data: any, ctx?: ApiContext) {
         const res = await apiFetch(`${API_BASE_URL}/org/staff`, {
             method: 'POST',
             headers: getHeaders(slug, ctx?.token),
-            body: JSON.stringify(data)
+            body: JSON.stringify(buildStaffCreateBody(data))
         });
         if (!res.ok) throw await toApiError(res);
         return await res.json();
@@ -571,7 +560,7 @@ export async function updateStaff(slug: string, id: string, data: any, ctx?: Api
         const res = await apiFetch(`${API_BASE_URL}/org/staff/${id}`, {
             method: 'PUT',
             headers: getHeaders(slug, ctx?.token),
-            body: JSON.stringify(data)
+            body: JSON.stringify(buildStaffUpdateBody(data))
         });
         if (!res.ok) throw await toApiError(res);
         return await res.json();
@@ -629,7 +618,7 @@ export async function createPatient(slug: string, data: any, ctx?: ApiContext) {
         const res = await apiFetch(`${API_BASE_URL}/v1/patients`, {
             method: 'POST',
             headers: getHeaders(slug, ctx?.token),
-            body: JSON.stringify(data)
+            body: JSON.stringify(buildPatientBody(data))
         });
         if (!res.ok) throw await toApiError(res);
         return await res.json();
@@ -668,7 +657,7 @@ export async function updatePatient(slug: string, id: string, data: any, ctx?: A
         const res = await apiFetch(`${API_BASE_URL}/v1/patients/${id}`, {
             method: 'PUT',
             headers: getHeaders(slug, ctx?.token),
-            body: JSON.stringify(data)
+            body: JSON.stringify(buildPatientBody(data))
         });
         if (!res.ok) throw await toApiError(res);
         return await res.json();
@@ -688,7 +677,7 @@ export async function updateWorkItem(slug: string, id: string, data: any, ctx?: 
         const res = await apiFetch(`${API_BASE_URL}/activity/${id}`, {
             method: 'PUT',
             headers: getHeaders(slug, ctx?.token),
-            body: JSON.stringify(data)
+            body: JSON.stringify(buildUpdateActivityBody(data))
         });
         if (!res.ok) throw await toApiError(res)
         return await res.json();
@@ -746,7 +735,7 @@ export async function updateOrgSettings(slug: string, data: any, ctx?: ApiContex
         const res = await apiFetch(`${API_BASE_URL}/org`, {
             method: 'PUT',
             headers: headers,
-            body: JSON.stringify(data)
+            body: JSON.stringify(buildOrgUpdateBody(data))
         });
 
         if (!res.ok) throw await toApiError(res);
@@ -841,7 +830,7 @@ export async function createFeeRule(slug: string, data: any, ctx?: ApiContext) {
         const res = await apiFetch(`${API_BASE_URL}/fee-rules`, {
             method: 'POST',
             headers: getHeaders(slug, ctx?.token),
-            body: JSON.stringify(data)
+            body: JSON.stringify(buildFeeRuleBody(data))
         });
         if (!res.ok) throw await toApiError(res);
         return await res.json();
@@ -862,7 +851,7 @@ export async function createOrgPreset(slug: string, data: any, ctx?: ApiContext)
         const res = await apiFetch(`${API_BASE_URL}/org/presets`, {
             method: 'POST',
             headers: getHeaders(slug, ctx?.token),
-            body: JSON.stringify(data)
+            body: JSON.stringify(buildPresetBody(data))
         });
         if (!res.ok) throw await toApiError(res);
         return await res.json();
@@ -899,7 +888,7 @@ export async function updateOrgPreset(slug: string, id: string, data: any, ctx?:
         const res = await apiFetch(`${API_BASE_URL}/org/presets/${id}`, {
             method: 'PUT',
             headers: getHeaders(slug, ctx?.token),
-            body: JSON.stringify(data)
+            body: JSON.stringify(buildPresetBody(data))
         });
         if (!res.ok) throw await toApiError(res);
         return await res.json();
@@ -961,7 +950,7 @@ export async function createActivityType(slug: string, data: {
     const res = await apiFetch(`${API_BASE_URL}/org/activity-types`, {
         method: 'POST',
         headers: getHeaders(slug, ctx?.token),
-        body: JSON.stringify(data),
+        body: JSON.stringify(buildActivityTypeBody(data, 'create')),
     });
     if (!res.ok) throw await toApiError(res);
     return res.json();
@@ -979,7 +968,7 @@ export async function updateActivityType(slug: string, id: string, data: {
     const res = await apiFetch(`${API_BASE_URL}/org/activity-types/${id}`, {
         method: 'PUT',
         headers: getHeaders(slug, ctx?.token),
-        body: JSON.stringify(data),
+        body: JSON.stringify(buildActivityTypeBody(data, 'update')),
     });
     if (!res.ok) throw await toApiError(res);
     return res.json();

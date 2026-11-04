@@ -1,120 +1,62 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsArray,
-  IsDateString,
-  IsNumber,
-  IsOptional,
-  IsString,
-  ValidateNested,
-} from 'class-validator';
-import { Type } from 'class-transformer';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, MaxLength } from 'class-validator';
+import { IsEntityId } from '@src/infrastructure.bootstrap/config/core/validation/dto-validators';
 
 export class ActivityParticipantDto {
   @ApiProperty()
-  @IsString()
+  @IsEntityId()
   professionalId: string;
 
   @ApiProperty()
   @IsString()
+  @MaxLength(100)
   roleLabel: string;
 }
 
-export class CreateActivityDto {
-  @ApiProperty()
-  @IsDateString()
+/**
+ * Tipo interno que recibe ActivityService.createActivity. NO es el contrato del request: el body se valida en
+ * CreateActivityCommand (014). Sin decoradores de class-validator a propósito.
+ */
+export interface CreateActivityDto {
   date: string; // ISO Date
 
-  @ApiProperty()
-  @IsString()
   organizationId: string;
 
-  @ApiProperty()
-  @IsString()
   patientId: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  professionalId: string | undefined;
+  professionalId?: string;
 
-  @ApiPropertyOptional({ type: [ActivityParticipantDto] })
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => ActivityParticipantDto)
   participants?: ActivityParticipantDto[];
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   activityTypeId?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   serviceType?: string;
 
   // Optional / Mode dependent
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   payerId?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   presetId?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
   amount?: number; // For Pro mode
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
   amountBase?: number;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
   amountCard?: number;
 
   // Status
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   paymentStatus?: 'PAID' | 'PARTIAL' | 'UNPAID';
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   paymentMethod?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   paymentDate?: string;
 
   // Org specifics
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   role?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
   hours?: number;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
   quantity?: number;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   attendance?: string;
 
 }

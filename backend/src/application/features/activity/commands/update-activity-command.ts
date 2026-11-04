@@ -9,35 +9,36 @@ import { foundOr404, forbiddenAction, inScope, requireId } from '@src/infrastruc
 import { canModifyActivity } from '../activity-ownership';
 
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsOptionalDateString } from '@src/infrastructure.bootstrap/config/core/validation/dto-validators';
 
 export class UpdateActivityCommand implements IRequest<WorkItem> {
-  id: string; // Will be set from Param
+  /** Lo asigna el controlador desde el path; el cliente no lo manda (400). */
+  declare id: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalDateString()
   date?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: PaymentStatus })
   @IsOptional()
-  @IsString()
+  @IsEnum(PaymentStatus)
   paymentStatus?: PaymentStatus;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   paymentMethod?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalDateString()
   paymentDate?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: AttendanceStatus })
   @IsOptional()
-  @IsString()
-  attendance?: string;
+  @IsEnum(AttendanceStatus)
+  attendance?: AttendanceStatus;
 }
 
 @RequestHandler(UpdateActivityCommand)
@@ -75,7 +76,7 @@ export class UpdateActivityCommandHandler implements IRequestHandler<
       data.paymentDate = command.paymentDate
         ? new Date(command.paymentDate)
         : null;
-    if (command.attendance) data.attendance = command.attendance as AttendanceStatus;
+    if (command.attendance) data.attendance = command.attendance;
 
     if (command.paymentStatus) data.paymentStatus = command.paymentStatus;
 

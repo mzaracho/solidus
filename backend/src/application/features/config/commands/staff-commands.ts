@@ -9,35 +9,45 @@ import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/c
 import { foundOr404, inOrg, inScope, optionalId, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsEmail, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsEmail,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
+import {
+  IsEntityId,
+  IsOptionalEntityId,
+} from '@src/infrastructure.bootstrap/config/core/validation/dto-validators';
 
 // Create
 export class CreateStaffCommand implements IRequest<Professional> {
   @ApiProperty()
   @IsString()
-  @IsOptional()
-  orgId: string;
-
-  @ApiProperty()
-  @IsString()
+  @MaxLength(100)
   name: string;
 
   @ApiProperty()
   @IsString()
+  @MaxLength(100)
   surname: string;
 
   @ApiProperty({ description: 'CUIT/CUIL del profesional — identificador unico en el sistema' })
   @IsString()
+  @MaxLength(20)
   cuit: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsEmail()
+  @MaxLength(254)
   email?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   phone?: string;
 
   @ApiPropertyOptional()
@@ -46,8 +56,7 @@ export class CreateStaffCommand implements IRequest<Professional> {
   canLoadActivities?: boolean;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalEntityId()
   categoryId?: string;
 }
 
@@ -113,28 +122,34 @@ export class CreateStaffCommandHandler implements IRequestHandler<
 
 // Update
 export class UpdateStaffCommand implements IRequest<Professional> {
-  id: string; // From Param
+  /** Lo asigna el controlador desde el path; el cliente no lo manda (400). */
+  declare id: string;
 
   @ApiProperty()
   @IsString()
+  @MaxLength(100)
   name: string;
 
   @ApiProperty()
   @IsString()
+  @MaxLength(100)
   surname: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(20)
   cuit?: string;
 
   @ApiProperty()
   @IsEmail()
+  @MaxLength(254)
   email: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   phone?: string;
 
   @ApiPropertyOptional()
@@ -254,10 +269,11 @@ export class DeleteStaffCommandHandler implements IRequestHandler<
 
 // Assign Category
 export class AssignStaffCategoryCommand implements IRequest<Professional> {
-  id: string; // From Param
+  /** Lo asigna el controlador desde el path; el cliente no lo manda (400). */
+  declare id: string;
 
   @ApiProperty()
-  @IsString()
+  @IsEntityId()
   categoryId: string;
 }
 

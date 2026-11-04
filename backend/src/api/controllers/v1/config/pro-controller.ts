@@ -16,6 +16,7 @@ import {
   DeletePayerCommand,
   GetPayersQuery,
 } from '@src/application/features/config/commands/payer-commands';
+import { UpdateProProfileDto } from '@src/application/features/config/Dtos/update-pro-profile.dto';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { BaseController } from '../../base/base-controller';
 import { CurrentUserId } from '@src/infrastructure.bootstrap/config/core/authentication/current-user-decorator';
@@ -111,13 +112,7 @@ export class ProController extends BaseController {
   async updateProfile(
     @CurrentOrgId() orgId: string,
     @CurrentUserId() userId: string,
-    @Body()
-    data: {
-      displayName?: string;
-      cuit?: string;
-      phone?: string;
-      email?: string;
-    },
+    @Body() data: UpdateProProfileDto,
   ) {
     if (!userId || !orgId) return null;
 

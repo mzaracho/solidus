@@ -4,7 +4,12 @@ import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/r
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDefined, IsObject, IsString, IsOptional, ValidateNested } from 'class-validator';
+import { IsArray, IsDefined, IsObject, IsString, IsOptional, MaxLength, ValidateNested } from 'class-validator';
+import {
+  IsEntityId,
+  IsOptionalDateString,
+  IsOptionalEntityId,
+} from '@src/infrastructure.bootstrap/config/core/validation/dto-validators';
 import { Type } from 'class-transformer';
 import { FeeRule, Prisma } from '@prisma/client';
 import { requireOrgScope, RequestContext, roleIn } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
@@ -12,15 +17,9 @@ import { validateFeeRuleSplits } from '../fee-rule-splits';
 import { forbiddenAction, foundOr404, inOrg, optionalId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 
 // Get
+/** Sin parámetros del cliente: el controlador asigna ambos campos (no pasa por el pipe). */
 export class FindFeeRulesQuery implements IRequest<FeeRule[]> {
-  @ApiProperty()
-  @IsString()
-  @IsOptional()
   organizationId: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   userId?: string;
 }
 
@@ -77,7 +76,7 @@ export class FindFeeRulesQueryHandler implements IRequestHandler<
 
 class FeeRulePayerConnectDto {
   @ApiProperty()
-  @IsString()
+  @IsEntityId()
   id: string;
 }
 
@@ -89,15 +88,19 @@ class FeeRulePayerRefDto {
   connect?: FeeRulePayerConnectDto;
 }
 
-/** Body de POST fee-rules. Solo estos campos llegan a Prisma: cualquier otra clave se ignora. */
+/**
+ * Body de POST fee-rules (crea la regla o, si ya existe para el pagador y la categoría, actualiza sus splits).
+ * Solo estos campos se aceptan: cualquier otra clave responde 400. El esquema de `splits` lo valida
+ * validateFeeRuleSplits en el handler (después del 404 del pagador y del 403 de permiso).
+ */
 export class CreateFeeRuleDto {
   @ApiProperty()
   @IsString()
+  @MaxLength(200)
   name: string;
 
   @ApiPropertyOptional({ description: 'Alternativa a payer.connect.id' })
-  @IsOptional()
-  @IsString()
+  @IsOptionalEntityId()
   payerId?: string;
 
   @ApiPropertyOptional({ type: FeeRulePayerRefDto })
@@ -109,30 +112,32 @@ export class CreateFeeRuleDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   professionalCategory?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(50)
   serviceType?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   conditionProfessionalRole?: string;
 
   @ApiProperty({ description: 'Definición de splits (JSON)' })
   @IsDefined()
+  @IsArray()
   splits: Prisma.InputJsonValue;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalDateString()
   validFrom?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @IsOptionalDateString()
   validTo?: string;
 }
 

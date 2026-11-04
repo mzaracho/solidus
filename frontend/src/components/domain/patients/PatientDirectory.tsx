@@ -98,7 +98,7 @@ export function PatientDirectory() {
 
     const handleCreate = async () => {
         try {
-            await createPatient(orgSlug, { ...formData, organizationId: orgSlug })
+            await createPatient(orgSlug, formData)
             toast.success("Paciente creado correctamente")
             setIsCreateOpen(false)
             setFormData({ firstName: '', lastName: '', email: '', phone: '' })
@@ -375,6 +375,7 @@ export function PatientDirectory() {
                                 </p>
                                 <Input
                                     placeholder="Buscar por nombre..."
+                                    maxLength={100}
                                     value={mergeSearch}
                                     onChange={e => setMergeSearch(e.target.value)}
                                     autoFocus
@@ -426,6 +427,7 @@ export function PatientDirectory() {
             <div className="flex justify-between">
                 <Input
                     placeholder="Buscar por nombre..."
+                    maxLength={100}
                     value={searchTerm}
                     onChange={e => handleSearchChange(e.target.value)}
                     className="max-w-sm"

@@ -41,6 +41,7 @@ import {
 } from '@src/application/features/config/commands/activity-type-commands';
 import { UpdateOrganizationCommand } from '@src/application/features/config/commands/update-organization-command';
 import { LookupStaffByCuitQuery } from '@src/application/features/config/queries/lookup-staff-by-cuit-query';
+import { LookupStaffByCuitQueryDto } from '@src/application/features/config/Dtos/lookup-staff-by-cuit-query.dto';
 import { BaseController } from '../../base/base-controller';
 import { CurrentOrgId } from '@src/infrastructure.bootstrap/config/core/authentication/current-org-decorator';
 
@@ -67,10 +68,8 @@ export class OrgController extends BaseController {
   }
 
   @Get('config')
-  async getConfig(
-    @CurrentOrgId() orgId: string,
-    @Query() query: GetOrgConfigQuery,
-  ) {
+  async getConfig(@CurrentOrgId() orgId: string) {
+    const query = new GetOrgConfigQuery();
     query.orgId = orgId;
     return this.dispatcher.dispatch(query);
   }
@@ -174,8 +173,8 @@ export class OrgController extends BaseController {
   @Get('staff/lookup')
   @RequireOrgRole('ADMIN')
   @UseGuards(OrgRoleGuard)
-  async lookupStaffByCuit(@Query('cuit') cuit: string) {
-    return this.dispatcher.dispatch(new LookupStaffByCuitQuery(cuit));
+  async lookupStaffByCuit(@Query() query: LookupStaffByCuitQueryDto) {
+    return this.dispatcher.dispatch(new LookupStaffByCuitQuery(query.cuit));
   }
 
   // ─── ACTIVITY TYPES ──────────────────────────────────────────────────────────

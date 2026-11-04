@@ -113,7 +113,6 @@ describe('categorías', () => {
       assign(CreateCategoryCommand, {
         name: 'Senior',
         percentage: 70,
-        orgId: randomUUID(),
       }),
       admin,
     );
@@ -147,7 +146,6 @@ describe('presets', () => {
       assign(CreatePresetCommand, {
         name: 'P',
         baseValue: 1,
-        orgId: randomUUID(),
       }),
       admin,
     );
@@ -182,7 +180,6 @@ describe('tipos de actividad', () => {
       assign(CreateActivityTypeCommand, {
         code: 'Una Cosa',
         name: 'N',
-        orgId: randomUUID(),
       }),
       admin,
     );
@@ -407,7 +404,6 @@ describe('staff', () => {
         name: 'A',
         surname: 'B',
         cuit: '20000000001',
-        orgId: randomUUID(),
         ...over,
       }),
       admin,
@@ -539,7 +535,7 @@ describe('pagadores', () => {
     cuit?: string,
   ) =>
     new CreatePayerCommandHandler(prisma).execute(
-      assign(CreatePayerCommand, { name: 'OS', cuit, orgId: randomUUID() }),
+      assign(CreatePayerCommand, { name: 'OS', cuit }),
       ctxOf(role),
     );
 

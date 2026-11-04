@@ -5,61 +5,87 @@ import { Injectable, BadRequestException, ConflictException } from '@nestjs/comm
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { ActivityType } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsEnum, IsOptional, IsString, MaxLength, ValidateNested } from 'class-validator';
+import {
+  IsMoney,
+  IsOptionalNotNull,
+  IsPercentage,
+} from '@src/infrastructure.bootstrap/config/core/validation/dto-validators';
 import { Type } from 'class-transformer';
 import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 import { foundOr404, inScope, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
-import { FEE_STRATEGY, MAX_ROLES_PER_ACTIVITY_TYPE } from '@src/domain/constants/app.constants';
+import { FEE_STRATEGY, MAX_ACTIVITY_TYPE_ROLES_INPUT, MAX_ROLES_PER_ACTIVITY_TYPE } from '@src/domain/constants/app.constants';
 import type { FeeStrategy } from '@src/domain/constants/app.constants';
 
 // DTO for a single role configuration within an ActivityType
 export class ActivityTypeRoleDto {
   @ApiProperty({ description: 'Role label, e.g. "Profesional", "Admisor", "Coadmisor"' })
   @IsString()
+  @MaxLength(100)
   roleLabel: string;
 
-  @ApiProperty({ description: 'Whether this role is required when loading an activity' })
+  /** Roles guardados antes del 014 pueden no traerlo: si falta, el handler guarda `false`. */
+  @ApiPropertyOptional({ description: 'Whether this role is required when loading an activity (default false)' })
+  @IsOptional()
   @IsBoolean()
-  isRequired: boolean;
+  isRequired?: boolean;
 
-  @ApiProperty({ enum: Object.values(FEE_STRATEGY) })
-  @IsString()
-  feeStrategy: FeeStrategy;
+  /** Si falta, el handler guarda CATEGORY (el valor por defecto de la UI). */
+  @ApiPropertyOptional({ enum: Object.values(FEE_STRATEGY) })
+  @IsOptional()
+  @IsEnum(FEE_STRATEGY)
+  feeStrategy?: FeeStrategy;
 
   @ApiPropertyOptional({ description: 'Percentage to assign (0-100) when feeStrategy is FIXED' })
   @IsOptional()
-  @IsNumber()
+  @IsPercentage()
   fixedPercentage?: number;
+}
+
+/**
+ * Forma guardada de cada rol (ActivityType.roles es Json): { roleLabel, isRequired, feeStrategy, fixedPercentage? }.
+ * Guarda solo esas 4 claves. Los defaults replican la lectura actual de ActivityService (no cambian montos):
+ * `isRequired` ausente = true (`isRequired ?? true`, igual que EMPTY_ROLE de la UI) y `feeStrategy` ausente se
+ * guarda SIN la clave (ActivityService calcula honorario 0 en ese caso).
+ */
+export function normalizeActivityTypeRoles(roles: ActivityTypeRoleDto[]) {
+  return roles.map((role) => ({
+    roleLabel: role.roleLabel,
+    isRequired: role.isRequired ?? true,
+    ...(role.feeStrategy != null && { feeStrategy: role.feeStrategy }),
+    ...(role.fixedPercentage != null && {
+      fixedPercentage: role.fixedPercentage,
+    }),
+  }));
 }
 
 // ─── CREATE ────────────────────────────────────────────────────────────────────
 
 export class CreateActivityTypeCommand implements IRequest<ActivityType> {
-  @IsOptional()
-  @IsString()
-  orgId: string;
-
   @ApiProperty()
   @IsString()
+  @MaxLength(50)
   code: string;
 
   @ApiProperty()
   @IsString()
+  @MaxLength(200)
   name: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsMoney()
   baseValue?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsMoney()
   cardValue?: number;
 
   @ApiPropertyOptional({ type: [ActivityTypeRoleDto] })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(MAX_ACTIVITY_TYPE_ROLES_INPUT)
   @ValidateNested({ each: true })
   @Type(() => ActivityTypeRoleDto)
   roles?: ActivityTypeRoleDto[];
@@ -99,7 +125,7 @@ export class CreateActivityTypeCommandHandler implements IRequestHandler<CreateA
         name: command.name,
         baseValue: command.baseValue != null ? command.baseValue : undefined,
         cardValue: command.cardValue != null ? command.cardValue : undefined,
-        roles: (command.roles ?? []) as any,
+        roles: normalizeActivityTypeRoles(command.roles ?? []) as any,
       },
     });
   }
@@ -108,26 +134,29 @@ export class CreateActivityTypeCommandHandler implements IRequestHandler<CreateA
 // ─── UPDATE ────────────────────────────────────────────────────────────────────
 
 export class UpdateActivityTypeCommand implements IRequest<ActivityType> {
-  id: string; // From param
+  /** Lo asigna el controlador desde el path; el cliente no lo manda (400). */
+  declare id: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
+  @MaxLength(200)
   name?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsMoney()
   baseValue?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsMoney()
   cardValue?: number;
 
   @ApiPropertyOptional({ type: [ActivityTypeRoleDto] })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(MAX_ACTIVITY_TYPE_ROLES_INPUT)
   @ValidateNested({ each: true })
   @Type(() => ActivityTypeRoleDto)
   roles?: ActivityTypeRoleDto[];
@@ -159,7 +188,7 @@ export class UpdateActivityTypeCommandHandler implements IRequestHandler<UpdateA
     if (command.name !== undefined) data.name = command.name;
     if (command.baseValue !== undefined) data.baseValue = command.baseValue;
     if (command.cardValue !== undefined) data.cardValue = command.cardValue;
-    if (command.roles !== undefined) data.roles = command.roles as any;
+    if (command.roles !== undefined) data.roles = normalizeActivityTypeRoles(command.roles) as any;
 
     return this.prisma.activityType.update({
       where: { id },

@@ -294,7 +294,12 @@ describe('FindAllPatientsQueryHandler: includeCurrentOrg y vista (009)', () => {
 });
 
 describe('UpdatePatientCommandHandler', () => {
-  const cmd = (id: string) => new UpdatePatientCommand(id, 'Ana', 'Prueba');
+  const cmd = (id: string) =>
+    Object.assign(new UpdatePatientCommand(), {
+      id,
+      firstName: 'Ana',
+      lastName: 'Prueba',
+    });
 
   it('propio: actualiza; ajeno: 404 y sin update', async () => {
     const id = randomUUID();

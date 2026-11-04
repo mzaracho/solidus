@@ -21,6 +21,10 @@
  *  (l) Estructural: el conjunto de rutas con @UsesViewMode y los roles exigidos.
  *  (m) Valores de modo inválidos y rutas que ignoran el modo.
  *  (n) Lecturas por id de un profesional sin membresía, y vista pro multi-organización.
+ *
+ * Feature 014 (ValidationPipe con whitelist):
+ *  (o) Por endpoint: caso legítimo, campo sobrante (400) y tipo incorrecto (400); queries; guards con la whitelist.
+ *  (p) Contrato con los bodies exactos del frontend (fixtures/frontend-request-bodies.json).
  */
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
@@ -1188,13 +1192,24 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
         .find((r) => r.name === 'Sesión nueva');
       expect(row?.organizationId).toBe(orgA);
       expect(row?.code).toBe('sesion_nueva');
+      // el update nunca cambió `code`: el front lo quita (014) y el backend lo rechaza si llega
+      const updatePayload: any = { ...payload };
+      delete updatePayload.code;
       const updated = await call(
+        U.admin,
+        'put',
+        p(`/org/activity-types/${row!.id}`),
+        { body: updatePayload },
+      );
+      expect(updated.status).toBe(200);
+      const withCode = await call(
         U.admin,
         'put',
         p(`/org/activity-types/${row!.id}`),
         { body: payload },
       );
-      expect(updated.status).toBe(200);
+      expect(withCode.status).toBe(400);
+      expect(withCode.body.code).toBe('validation-failed');
     });
 
     it('POST org/presets y POST org/staff crean en la organización del request', async () => {
@@ -1296,14 +1311,21 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
       expect(fake.writeCount()).toBe(0);
     });
 
-    it('un body con organization.connect a otra organización se ignora', async () => {
+    it('un body con organization.connect a otra organización se rechaza con 400 y sin escrituras (014)', async () => {
       const res = await call(U.admin, 'post', p('/fee-rules'), {
         body: rule({
           payer: { connect: { id: I.payerA } },
           organization: { connect: { id: orgB } },
         }),
       });
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('validation-failed');
+      expect(fake.writeCount()).toBe(0);
+      // sin el campo sobrante la regla se crea siempre en la organización del request
+      const ok = await call(U.admin, 'post', p('/fee-rules'), {
+        body: rule({ payer: { connect: { id: I.payerA } } }),
+      });
+      expect(ok.status).toBe(201);
       expect(
         fake.rows('feeRule').find((r) => r.name === 'R')?.organizationId,
       ).toBe(orgA);
@@ -1979,6 +2001,762 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
       expect(res.status).toBe(200);
       expect(res.body.items.map((x: any) => x.id)).not.toContain(I.wkDelB);
       expect(res.body.items).toEqual([]);
+    });
+  });
+
+  // ─── (o) 014: validación por endpoint (whitelist + tipos) ───────────────────
+  describe('(o) 014: por endpoint, el caso legítimo, un campo sobrante y un tipo incorrecto', () => {
+    type Mutator = (b: any) => void;
+    interface BodyCase {
+      route: string;
+      method: 'post' | 'put';
+      path: string;
+      user: string;
+      mode?: string;
+      ok: number;
+      legit: () => any;
+      extra: Array<[string, Mutator]>;
+      wrong: Array<[string, Mutator]>;
+    }
+    const role = () => ({
+      roleLabel: 'Profesional',
+      isRequired: true,
+      feeStrategy: 'CATEGORY',
+    });
+    const withId: Array<[string, Mutator]> = [['id', (b) => (b.id = id())]];
+    const rule = () => ({
+      name: 'R',
+      professionalCategory: 'all',
+      payer: { connect: { id: I.payerA } },
+      splits: [
+        {
+          role: 'PROFESSIONAL',
+          percentage: 70,
+          beneficiaryType: 'PROFESSIONAL',
+        },
+      ],
+    });
+    const CASES: BodyCase[] = [
+      {
+        route: 'POST activity',
+        method: 'post',
+        path: p('/activity'),
+        user: U.admin,
+        mode: 'org',
+        ok: 201,
+        legit: () => ({
+          date: '2026-03-01',
+          organizationId: orgA,
+          patientId: I.ptA1,
+          professionalId: I.staffA,
+        }),
+        extra: [
+          ['paid', (b) => (b.paid = true)],
+          ['createdByUserId', (b) => (b.createdByUserId = U.stranger)],
+          ['mode', (b) => (b.mode = 'org')],
+        ],
+        wrong: [
+          ['date inválida', (b) => (b.date = 'ayer')],
+          ['amount string', (b) => (b.amount = '100')],
+          ['amount sobre el tope', (b) => (b.amount = 1e9)],
+          [
+            'paymentStatus fuera del enum',
+            (b) => (b.paymentStatus = 'PENDING'),
+          ],
+          [
+            'participante sin UUID',
+            (b) => (b.participants = [{ professionalId: 'x', roleLabel: 'R' }]),
+          ],
+          [
+            'participante con clave de más',
+            (b) =>
+              (b.participants = [
+                { professionalId: I.staffA, roleLabel: 'R', extra: 1 },
+              ]),
+          ],
+          ['patientId vacío', (b) => (b.patientId = '')],
+          ['hours string', (b) => (b.hours = '2')],
+          ['quantity decimal', (b) => (b.quantity = 1.5)],
+        ],
+      },
+      {
+        route: 'PUT activity/:id',
+        method: 'put',
+        path: p(`/activity/${I.wiMember}`),
+        user: U.admin,
+        ok: 200,
+        legit: () => ({ attendance: 'PRESENT' }),
+        extra: [...withId, ['grossAmount', (b) => (b.grossAmount = 5)]],
+        wrong: [
+          ['attendance fuera del enum', (b) => (b.attendance = 'FOO')],
+          [
+            'paymentDate con otro formato',
+            (b) => (b.paymentDate = '31/12/2026'),
+          ],
+          ['paymentStatus número', (b) => (b.paymentStatus = 1)],
+        ],
+      },
+      {
+        route: 'PUT org',
+        method: 'put',
+        path: p('/org'),
+        user: U.admin,
+        ok: 200,
+        legit: () => ({
+          name: 'N',
+          settings: { alertsDays: 30, emailNotifs: true },
+        }),
+        extra: [...withId, ['settings.foo', (b) => (b.settings.foo = 1)]],
+        wrong: [
+          ['settings.alertsDays string', (b) => (b.settings.alertsDays = '60')],
+          ['settings.alertsDays negativo', (b) => (b.settings.alertsDays = -1)],
+          ['name número', (b) => (b.name = 123)],
+          ['name null (B-3)', (b) => (b.name = null)],
+          ['settings array (I-3)', (b) => (b.settings = [])],
+          ['settings texto', (b) => (b.settings = 'x')],
+        ],
+      },
+      {
+        route: 'POST org/categories',
+        method: 'post',
+        path: p('/org/categories'),
+        user: U.admin,
+        ok: 201,
+        legit: () => ({ name: 'C', percentage: 50 }),
+        extra: [['orgId', (b) => (b.orgId = orgA)]],
+        wrong: [
+          ['percentage string', (b) => (b.percentage = '80')],
+          ['percentage 101', (b) => (b.percentage = 101)],
+        ],
+      },
+      {
+        route: 'PUT org/categories/:id',
+        method: 'put',
+        path: p(`/org/categories/${I.catA}`),
+        user: U.admin,
+        ok: 200,
+        legit: () => ({ name: 'C', percentage: 50 }),
+        extra: withId,
+        wrong: [
+          ['percentage string', (b) => (b.percentage = '80')],
+          ['percentage 101', (b) => (b.percentage = 101)],
+        ],
+      },
+      {
+        route: 'POST org/presets',
+        method: 'post',
+        path: p('/org/presets'),
+        user: U.admin,
+        ok: 201,
+        legit: () => ({ name: 'P', baseValue: 3 }),
+        extra: [
+          ['serviceType', (b) => (b.serviceType = 'x')],
+          ['orgId', (b) => (b.orgId = orgA)],
+        ],
+        wrong: [
+          ['baseValue string', (b) => (b.baseValue = '3')],
+          ['baseValue negativo', (b) => (b.baseValue = -1)],
+        ],
+      },
+      {
+        route: 'PUT org/presets/:id',
+        method: 'put',
+        path: p(`/org/presets/${I.presetA}`),
+        user: U.admin,
+        ok: 200,
+        legit: () => ({ name: 'P', baseValue: 3 }),
+        extra: [...withId, ['serviceType', (b) => (b.serviceType = 'x')]],
+        wrong: [
+          ['baseValue string', (b) => (b.baseValue = '3')],
+          ['baseValue negativo', (b) => (b.baseValue = -1)],
+        ],
+      },
+      {
+        route: 'POST org/staff',
+        method: 'post',
+        path: p('/org/staff'),
+        user: U.admin,
+        ok: 201,
+        legit: () => ({ name: 'N', surname: 'S', cuit: '20999999993' }),
+        extra: [
+          ['userId', (b) => (b.userId = U.stranger)],
+          ['orgId', (b) => (b.orgId = orgA)],
+        ],
+        wrong: [
+          ['canLoadActivities string', (b) => (b.canLoadActivities = 'true')],
+          ['categoryId sin UUID', (b) => (b.categoryId = 'x')],
+          ['email sin formato', (b) => (b.email = 'no-mail')],
+        ],
+      },
+      {
+        route: 'PUT org/staff/:id',
+        method: 'put',
+        path: p(`/org/staff/${I.staffA}`),
+        user: U.admin,
+        ok: 200,
+        legit: () => ({ name: 'N', surname: 'S', email: 'n@example.test' }),
+        extra: [
+          ...withId,
+          ['categoryId', (b) => (b.categoryId = I.catA)],
+          ['userId', (b) => (b.userId = U.stranger)],
+        ],
+        wrong: [['email sin formato', (b) => (b.email = 'no-mail')]],
+      },
+      {
+        route: 'PUT org/staff/:id/category',
+        method: 'put',
+        path: p(`/org/staff/${I.staffA}/category`),
+        user: U.admin,
+        ok: 200,
+        legit: () => ({ categoryId: I.catA }),
+        extra: withId,
+        wrong: [
+          ['categoryId número', (b) => (b.categoryId = 5)],
+          ['categoryId sin UUID', (b) => (b.categoryId = 'x')],
+        ],
+      },
+      {
+        route: 'POST org/activity-types',
+        method: 'post',
+        path: p('/org/activity-types'),
+        user: U.admin,
+        ok: 201,
+        legit: () => ({ code: 'nuevo', name: 'N', roles: [role()] }),
+        extra: [
+          ['roles[0].extra', (b) => (b.roles[0].extra = 1)],
+          ['orgId', (b) => (b.orgId = orgA)],
+        ],
+        wrong: [
+          [
+            'roles[0].feeStrategy fuera del enum',
+            (b) => (b.roles[0].feeStrategy = 'OTRA'),
+          ],
+          [
+            'roles[0].isRequired string',
+            (b) => (b.roles[0].isRequired = 'yes'),
+          ],
+          [
+            'roles[0].fixedPercentage 101',
+            (b) => (b.roles[0].fixedPercentage = 101),
+          ],
+          ['baseValue string', (b) => (b.baseValue = '100')],
+          [
+            'roles con más de 20 elementos (B-2)',
+            (b) => (b.roles = Array.from({ length: 21 }, role)),
+          ],
+          ['roles[0].roleLabel ausente', (b) => delete b.roles[0].roleLabel],
+        ],
+      },
+      {
+        route: 'PUT org/activity-types/:id',
+        method: 'put',
+        path: p(`/org/activity-types/${I.atA}`),
+        user: U.admin,
+        ok: 200,
+        legit: () => ({ name: 'N', roles: [role()] }),
+        extra: [
+          ...withId,
+          ['code', (b) => (b.code = 'otro')],
+          ['roles[0].extra', (b) => (b.roles[0].extra = 1)],
+        ],
+        wrong: [
+          [
+            'roles[0].feeStrategy fuera del enum',
+            (b) => (b.roles[0].feeStrategy = 'OTRA'),
+          ],
+          [
+            'roles[0].isRequired string',
+            (b) => (b.roles[0].isRequired = 'yes'),
+          ],
+          ['baseValue string', (b) => (b.baseValue = '100')],
+          ['name null (B-3)', (b) => (b.name = null)],
+          [
+            'roles con más de 20 elementos (B-2)',
+            (b) => (b.roles = Array.from({ length: 21 }, role)),
+          ],
+        ],
+      },
+      {
+        route: 'PUT pro/profile',
+        method: 'put',
+        path: p('/pro/profile'),
+        user: U.pro,
+        ok: 200,
+        legit: () => ({ displayName: 'Pro A', phone: '' }),
+        extra: [
+          ['userId', (b) => (b.userId = U.stranger)],
+          ['canLoadActivities', (b) => (b.canLoadActivities = true)],
+        ],
+        wrong: [
+          ['displayName número', (b) => (b.displayName = 5)],
+          ['displayName null (B-3)', (b) => (b.displayName = null)],
+        ],
+      },
+      {
+        route: 'POST pro/payers',
+        method: 'post',
+        path: p('/pro/payers'),
+        user: U.admin,
+        ok: 201,
+        legit: () => ({ name: 'OS', retentionPercentage: 10 }),
+        extra: [
+          ['orgId', (b) => (b.orgId = orgA)],
+          ['isManagedBySystem', (b) => (b.isManagedBySystem = true)],
+        ],
+        wrong: [
+          ['retentionPercentage string', (b) => (b.retentionPercentage = '10')],
+          ['retentionPercentage 150', (b) => (b.retentionPercentage = 150)],
+        ],
+      },
+      {
+        route: 'PUT pro/payers/:id',
+        method: 'put',
+        path: p(`/pro/payers/${I.payerA}`),
+        user: U.admin,
+        ok: 200,
+        legit: () => ({ name: 'N', retentionPercentage: 5 }),
+        extra: [
+          ...withId,
+          ['isManagedBySystem', (b) => (b.isManagedBySystem = true)],
+        ],
+        wrong: [
+          ['retentionPercentage string', (b) => (b.retentionPercentage = '10')],
+          ['retentionPercentage 150', (b) => (b.retentionPercentage = 150)],
+        ],
+      },
+      {
+        route: 'POST fee-rules',
+        method: 'post',
+        path: p('/fee-rules'),
+        user: U.admin,
+        ok: 201,
+        legit: rule,
+        extra: [
+          ['organization', (b) => (b.organization = { connect: { id: orgB } })],
+          ['payer.connect.extra', (b) => (b.payer.connect.extra = 1)],
+        ],
+        wrong: [
+          ['splits string', (b) => (b.splits = 'x')],
+          ['splits ausente', (b) => delete b.splits],
+          ['payer.connect.id sin UUID', (b) => (b.payer.connect.id = 'x')],
+          ['validFrom inválida', (b) => (b.validFrom = 'ayer')],
+        ],
+      },
+      {
+        route: 'POST v1/patients',
+        method: 'post',
+        path: p('/v1/patients'),
+        user: U.admin,
+        ok: 201,
+        legit: () => ({ firstName: 'Ana', lastName: 'Nueva' }),
+        extra: [['organizationId', (b) => (b.organizationId = orgA)]],
+        wrong: [
+          ['firstName número', (b) => (b.firstName = 1)],
+          ['email objeto', (b) => (b.email = {})],
+        ],
+      },
+      {
+        route: 'PUT v1/patients/:id',
+        method: 'put',
+        path: p(`/v1/patients/${I.ptA1}`),
+        user: U.admin,
+        ok: 200,
+        legit: () => ({ firstName: 'X', lastName: 'Y' }),
+        extra: [
+          ...withId,
+          ['organizationId', (b) => (b.organizationId = orgA)],
+        ],
+        wrong: [
+          ['email objeto', (b) => (b.email = {})],
+          ['firstName null (B-3)', (b) => (b.firstName = null)],
+          ['lastName null (B-3)', (b) => (b.lastName = null)],
+        ],
+      },
+      {
+        route: 'POST v1/patients/:id/merge',
+        method: 'post',
+        path: p(`/v1/patients/${I.ptA1}/merge`),
+        user: U.admin,
+        ok: 200,
+        legit: () => ({ targetId: I.ptA2 }),
+        extra: [['sourceId', (b) => (b.sourceId = I.ptB)]],
+        wrong: [
+          ['targetId null', (b) => (b.targetId = null)],
+          ['targetId número', (b) => (b.targetId = 5)],
+          ['targetId vacío', (b) => (b.targetId = '')],
+          ['targetId array', (b) => (b.targetId = ['x'])],
+        ],
+      },
+    ];
+
+    it('toda ruta con body del AppModule (salvo login y logout) tiene su caso en (o)', () => {
+      const routes = allRoutes
+        .filter((r) => ['post', 'put'].includes(r.method))
+        .filter((r) => !/auth\/(login|logout)/.test(r.template))
+        .map((r) => `${r.method} ${r.template.replace(/:\w+/g, ':id')}`)
+        .sort();
+      const covered = CASES.map(
+        (c) =>
+          `${c.method} ${c.path.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, ':id')}`,
+      ).sort();
+      expect(covered).toEqual(routes);
+    });
+
+    it('M5: roles viejos sin isRequired/feeStrategy se aceptan y se guardan con defaults (create y update)', async () => {
+      const oldRoles = () => [
+        { roleLabel: 'Profesional' },
+        { roleLabel: 'Admisor', feeStrategy: 'FIXED', fixedPercentage: 10 },
+        { roleLabel: 'Coadmisor', isRequired: true },
+      ];
+      fake.reset();
+      const created = await call(U.admin, 'post', p('/org/activity-types'), {
+        body: { code: 'viejo', name: 'Viejo', roles: oldRoles() },
+      });
+      expect(created.status).toBe(201);
+      const stored = fake.rows('activityType').find((r) => r.name === 'Viejo');
+      expect(stored?.roles).toEqual([
+        { roleLabel: 'Profesional', isRequired: true },
+        {
+          roleLabel: 'Admisor',
+          isRequired: true,
+          feeStrategy: 'FIXED',
+          fixedPercentage: 10,
+        },
+        { roleLabel: 'Coadmisor', isRequired: true },
+      ]);
+      // isRequired ausente = true; feeStrategy ausente se guarda sin la clave
+      const storedRoles = stored?.roles as Record<string, unknown>[];
+      expect(storedRoles[0].isRequired).toBe(true);
+      expect(storedRoles[0]).not.toHaveProperty('feeStrategy');
+      expect(storedRoles[2]).not.toHaveProperty('feeStrategy');
+
+      const updated = await call(
+        U.admin,
+        'put',
+        p(`/org/activity-types/${I.atA}`),
+        { body: { roles: oldRoles() } },
+      );
+      expect(updated.status).toBe(200);
+      expect(
+        fake.rows('activityType').find((r) => r.id === I.atA)?.roles,
+      ).toEqual(stored?.roles);
+
+      // lo que sigue siendo inválido: sin roleLabel, FIXED sin porcentaje y claves de más
+      for (const roles of [
+        [{ isRequired: true }],
+        [{ roleLabel: 'X', feeStrategy: 'FIXED' }],
+        [{ roleLabel: 'X', extra: 1 }],
+      ]) {
+        fake.reset();
+        const res = await call(U.admin, 'post', p('/org/activity-types'), {
+          body: { code: 'malo', name: 'Malo', roles },
+        });
+        expect(res.status).toBe(400);
+        expect(fake.writeCount()).toBe(0);
+      }
+    });
+
+    for (const c of CASES) {
+      it(`${c.route}: legítimo ${c.ok}; sobrante -> 400 sin escrituras; tipo incorrecto -> 400 sin escrituras`, async () => {
+        const send = (body: any) =>
+          call(c.user, c.method, c.path, { body, mode: c.mode });
+
+        fake.reset();
+        const ok = await send(c.legit());
+        expect({ route: c.route, status: ok.status }).toEqual({
+          route: c.route,
+          status: c.ok,
+        });
+
+        for (const [label, mutate] of c.extra) {
+          fake.reset();
+          const body = c.legit();
+          mutate(body);
+          const res = await send(body);
+          expect({ label, status: res.status, code: res.body.code }).toEqual({
+            label,
+            status: 400,
+            code: 'validation-failed',
+          });
+          expect(fake.writeCount()).toBe(0);
+          expect(
+            res.body.errors.some((e: any) =>
+              e.message === 'El cuerpo contiene campos no permitidos.',
+            ),
+          ).toBe(true);
+        }
+
+        for (const [label, mutate] of c.wrong) {
+          fake.reset();
+          const body = c.legit();
+          mutate(body);
+          const res = await send(body);
+          expect({ label, status: res.status, code: res.body.code }).toEqual({
+            label,
+            status: 400,
+            code: 'validation-failed',
+          });
+          expect(fake.writeCount()).toBe(0);
+        }
+      });
+    }
+
+    it('un body que no es un objeto (array, texto, número) da 400 sin escrituras', async () => {
+      for (const payload of [[], [{ name: 'x' }], 'texto', 5]) {
+        fake.reset();
+        const res = await (request(app.getHttpServer()) as any)
+          .post(p('/org/categories'))
+          .set('Authorization', `Bearer ${tokenOf(U.admin)}`)
+          .set('x-org-id', orgA)
+          .set('Content-Type', 'application/json')
+          .send(JSON.stringify(payload));
+        expect({ payload, status: res.status }).toEqual({
+          payload,
+          status: 400,
+        });
+        expect(fake.writeCount()).toBe(0);
+      }
+    });
+
+    // Queries: lo no declarado se descarta (la whitelist no rompe a los guards); un tipo incorrecto da 400.
+    describe('queries', () => {
+      const RANGE = 'startDate=2026-01-01&endDate=2026-01-31';
+      interface QueryCase {
+        route: string;
+        user: string;
+        path: string;
+        extra: string[];
+        wrong: string[];
+      }
+      const QUERIES: QueryCase[] = [
+        {
+          route: 'GET activity',
+          user: U.admin,
+          path: '/activity?mode=ORGANIZATION',
+          extra: ['foo=1', 'patient=x', 'payer=x', 'orgId=' + orgA],
+          wrong: [
+            'page=abc',
+            'page=99999999999',
+            'page=10001',
+            'limit=1000',
+            'patientId=x',
+            'status=FOO',
+            'startDate=xx',
+            'search[a]=b',
+          ],
+        },
+        {
+          route: 'GET v1/patients',
+          user: U.proNoLoad,
+          path: '/v1/patients?mode=PROFESSIONAL',
+          extra: [`userId=${U.pro}`, 'foo=1', `organizationId=${orgA}`],
+          wrong: ['limit=0', 'limit=101', 'search[a]=b', 'page=99999999999'],
+        },
+        {
+          route: 'GET pro/payers',
+          user: U.proNoLoad,
+          path: '/pro/payers?page=1',
+          extra: [`userId=${U.pro}`, 'foo=1'],
+          wrong: ['page=-1', 'limit=1000', 'page=99999999999'],
+        },
+        {
+          route: 'GET dashboard/kpis',
+          user: U.admin,
+          path: `/dashboard/kpis?mode=ORGANIZATION&${RANGE}`,
+          extra: ['foo=1', `organizationId=${orgA}`],
+          wrong: ['basis=XYZ', 'valueType=XYZ', 'startDate=no'],
+        },
+        {
+          route: 'GET dashboard/chart',
+          user: U.admin,
+          path: `/dashboard/chart?mode=ORGANIZATION&${RANGE}&groupBy=day`,
+          extra: ['foo=1', `orgId=${orgA}`],
+          wrong: ['basis=XYZ', 'groupBy=week', 'startDate=no'],
+        },
+        {
+          route: 'GET dashboard/payers',
+          user: U.admin,
+          path: `/dashboard/payers?mode=ORGANIZATION&${RANGE}`,
+          extra: ['foo=1'],
+          wrong: ['endDate=no'],
+        },
+        {
+          route: 'GET settlements/calculate',
+          user: U.admin,
+          path: '/settlements/calculate?month=2026-02',
+          extra: ['foo=1'],
+          wrong: ['month=2026-13', 'month[a]=b'],
+        },
+        {
+          route: 'GET org/staff/lookup',
+          user: U.admin,
+          path: `/org/staff/lookup?cuit=${CUIT.proA}`,
+          extra: ['foo=1'],
+          wrong: ['cuit[]=a'],
+        },
+      ];
+      for (const q of QUERIES) {
+        it(`${q.route}: sobrante -> mismo resultado; tipo incorrecto -> 400`, async () => {
+          const get = (extra?: string) =>
+            call(q.user, 'get', p(extra ? `${q.path}&${extra}` : q.path));
+          const base = await get();
+          expect({ route: q.route, status: base.status }).toEqual({
+            route: q.route,
+            status: 200,
+          });
+          for (const extra of q.extra) {
+            const res = await get(extra);
+            expect({ extra, status: res.status }).toEqual({
+              extra,
+              status: 200,
+            });
+            expect({ extra, body: res.body }).toEqual({
+              extra,
+              body: base.body,
+            });
+          }
+          for (const wrong of q.wrong) {
+            const res = await get(wrong);
+            expect({ wrong, status: res.status, code: res.body.code }).toEqual({
+              wrong,
+              status: 400,
+              code: 'validation-failed',
+            });
+          }
+        });
+      }
+
+      it('criterio 5: ?userId= no cambia a quién se le calculan los pagadores (se usa el del token)', async () => {
+        const base = await call(U.proNoLoad, 'get', p('/pro/payers'));
+        const injected = await call(
+          U.proNoLoad,
+          'get',
+          p(`/pro/payers?userId=${U.pro}`),
+        );
+        expect(injected.body).toEqual(base.body);
+        // con el usuario que sí tiene un pagador propio, el listado es distinto: el filtro depende del token
+        const own = await call(U.pro, 'get', p('/pro/payers'));
+        expect(own.body.items.map((x: any) => x.id)).toContain(I.payerA);
+        expect(base.body.items.map((x: any) => x.id)).not.toContain(I.payerA);
+      });
+    });
+
+    describe('guards con la whitelist activa', () => {
+      const noHeader = (userId: string, path: string) =>
+        (request(app.getHttpServer()) as any)
+          .get(path)
+          .set('Authorization', `Bearer ${tokenOf(userId)}`);
+      const RANGE = 'startDate=2026-01-01&endDate=2026-01-31';
+
+      it('?orgId= propio sin x-org-id: GET org/config 200; ajeno: 403 del guard', async () => {
+        const ok = await noHeader(U.admin, p(`/org/config?orgId=${orgA}`));
+        expect(ok.status).toBe(200);
+        expect(
+          ok.body.categories.every((c: any) => c.organizationId === orgA),
+        ).toBe(true);
+        const foreign = await noHeader(U.admin, p(`/org/config?orgId=${orgB}`));
+        expect(foreign.status).toBe(403);
+      });
+
+      it('?organizationId= propio sin x-org-id: dashboard/kpis 200; ajeno: 403', async () => {
+        const ok = await noHeader(
+          U.admin,
+          p(
+            `/dashboard/kpis?mode=ORGANIZATION&${RANGE}&organizationId=${orgA}`,
+          ),
+        );
+        expect(ok.status).toBe(200);
+        const foreign = await noHeader(
+          U.admin,
+          p(
+            `/dashboard/kpis?mode=ORGANIZATION&${RANGE}&organizationId=${orgB}`,
+          ),
+        );
+        expect(foreign.status).toBe(403);
+      });
+
+      it('?mode= sigue llegando al ViewModeGuard aunque ningún DTO lo declare', async () => {
+        for (const mode of ['ORGANIZATION', 'PROFESSIONAL', 'org', 'pro']) {
+          const res = await call(
+            U.adminPro,
+            'get',
+            p(`/activity?mode=${mode}`),
+          );
+          expect({ mode, status: res.status }).toEqual({ mode, status: 200 });
+        }
+        const invalid = await call(U.adminPro, 'get', p('/activity?mode=xyz'));
+        expect(invalid.status).toBe(400);
+        expect(invalid.body.code).toBe('invalid-mode');
+      });
+
+      it('un body con orgId/organizationId: ajeno -> 403 del guard (antes del pipe); propio -> 400 del pipe', async () => {
+        for (const key of ['orgId', 'organizationId']) {
+          fake.reset();
+          const foreign = await call(U.admin, 'post', p('/org/categories'), {
+            body: { name: 'C', [key]: orgB },
+          });
+          expect({
+            key,
+            status: foreign.status,
+            code: foreign.body.code,
+          }).toEqual({
+            key,
+            status: 403,
+            code: 'org-access-denied',
+          });
+          const own = await call(U.admin, 'post', p('/org/categories'), {
+            body: { name: 'C', [key]: orgA },
+          });
+          expect({ key, status: own.status, code: own.body.code }).toEqual({
+            key,
+            status: 400,
+            code: 'validation-failed',
+          });
+          expect(fake.writeCount()).toBe(0);
+        }
+      });
+    });
+  });
+
+  // ─── (p) 014: contrato con los bodies exactos que arma el frontend ──────────
+  describe('(p) contrato del frontend 014: cada body del fixture compartido es aceptado', () => {
+    const fixture: { cases: any[] } = JSON.parse(
+      fs.readFileSync(
+        path.join(__dirname, 'fixtures', 'frontend-request-bodies.json'),
+        'utf8',
+      ),
+    );
+    const MARKERS: Record<string, string> = { ...I, orgA, orgB };
+    const subst = (value: any): any => {
+      if (typeof value === 'string') {
+        return value.replace(/<<(\w+)>>/g, (_m, key: string) => {
+          if (!MARKERS[key]) throw new Error(`marcador desconocido: ${key}`);
+          return MARKERS[key];
+        });
+      }
+      if (Array.isArray(value)) return value.map(subst);
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(
+          Object.entries(value).map(([k, v]) => [k, subst(v)]),
+        );
+      }
+      return value;
+    };
+
+    it('el fixture no está vacío y usa solo usuarios conocidos', () => {
+      expect(fixture.cases.length).toBeGreaterThan(20);
+      for (const c of fixture.cases)
+        expect(U[c.user as keyof typeof U]).toBeDefined();
+    });
+
+    it.each(fixture.cases.map((c) => [c.name, c]))('%s', async (_name, c) => {
+      const res = await call(
+        U[c.user as keyof typeof U],
+        c.method,
+        subst(c.path),
+        { body: subst(c.body), mode: c.mode },
+      );
+      expect(res.status).toBe(c.status);
     });
   });
 });

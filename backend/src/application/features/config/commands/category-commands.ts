@@ -16,22 +16,19 @@ import {
 } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsPercentage } from '@src/infrastructure.bootstrap/config/core/validation/dto-validators';
 
 // Create
 export class CreateCategoryCommand implements IRequest<ProfessionalCategory> {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  orgId?: string; // Se ignora: la organización sale del contexto validado
-
   @ApiProperty()
   @IsString()
+  @MaxLength(200)
   name: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsPercentage()
   percentage?: number;
 }
 
@@ -60,15 +57,17 @@ export class CreateCategoryCommandHandler implements IRequestHandler<
 
 // Update
 export class UpdateCategoryCommand implements IRequest<ProfessionalCategory> {
-  id: string; // From Param
+  /** Lo asigna el controlador desde el path; el cliente no lo manda (400). */
+  declare id: string;
 
   @ApiProperty()
   @IsString()
+  @MaxLength(200)
   name: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsPercentage()
   percentage?: number;
 }
 
