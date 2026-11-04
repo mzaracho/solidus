@@ -26,9 +26,15 @@ Origen: `docs/features/005-seguridad-backend/06-seguridad.md`. Ver los residuale
 | 34 | **RESUELTO (feature 006).** Usuarios con `User.deletedAt`: mismo 401 genérico en el login y chequeo en `OrgAccessService`/guard | M-1 | S |
 | 35 | Upgrade a Nest 11 o superior (15 vulnerabilidades de `npm audit` en el backend, entre ellas `proxy-addr`) | H-2 | L |
 | 36 | `npm audit fix` en el frontend (`source-map-js`) | H-3 | S |
-| 37 | Loguear requests fallidos (método, ruta, status, duración), incluidos los 401 y 403 de los guards, sin datos sensibles | B-3 | S |
-| 38 | Bajar el límite del body (hoy 50 MB) a 1–2 MB | B-4 | S |
+| 37 | **RESUELTO (feature 010).** Loguear requests fallidos (método, ruta, status, duración), incluidos los 401 y 403 de los guards, sin datos sensibles | B-3 | S |
+| 38 | **RESUELTO (feature 010).** Bajar el límite del body (hoy 50 MB) a 1–2 MB (queda `BODY_SIZE_LIMIT`, default 1mb, máx 10mb) | B-4 | S |
 | 39 | `ProductionController` y `ReportingController`: reemplazar `userId` por query con `@CurrentUserId()` (o borrarlos) y agregar un test que lo vigile | B-1 | S |
+
+Notas del feature 010 (`docs/features/010-logs-y-limites/06-seguridad.md`):
+- I-4: un error del parser con otro status o sin `type` cae en el manejador por defecto de Express (fuera de producción
+  puede mostrar el stack). Agregar un manejador final genérico; relacionado con #13.
+- I-2: los UUID de recursos quedan en la ruta del log de acceso. Considerarlo en una política de retención de logs.
+- El compose no pasa `BODY_SIZE_LIMIT` al contenedor (queda en 1mb): declararlo en el compose si hace falta hacerlo configurable.
 
 ## Candidatos surgidos del feature 007
 
@@ -71,7 +77,7 @@ Nota para #12 (whitelist): con `forbidNonWhitelisted` el `?mode=` que manda el f
 | 11 | **PARCIAL (feature 005):** el 400 por campos faltantes está hecho; falta el rate limiting. Rate limiting en login (`@nestjs/throttler`) y respuesta 400 si faltan campos | S |
 | 12 | `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true })`; DTOs explícitos para fee rules y settings de organización | M |
 | 13 | Filtros de error sin `details` hacia el cliente; mapear errores de negocio a 400/403/404/409 (`BadRequestException`, etc.) en lugar de `Error` | S |
-| 14 | Swagger solo fuera de producción (hecho en el 005, en `/docs`); quitar `NODE_TLS_REJECT_UNAUTHORIZED=0`; bajar body limit a ~1 MB | S |
+| 14 | **RESUELTO (Swagger en el 005; `NODE_TLS_REJECT_UNAUTHORIZED` y body limit en el 010).** Swagger solo fuera de producción (hecho en el 005, en `/docs`); quitar `NODE_TLS_REJECT_UNAUTHORIZED=0`; bajar body limit a ~1 MB | S |
 | 15 | Eliminar `/test-suite` del build de producción | S |
 | 16 | Transacciones Prisma (`$transaction`) en `createActivity`, `MergePatientCommand` y borrado de staff; revisar que borrar staff no afecte membresías de otras orgs | M |
 | 17 | Dinero con `Prisma.Decimal` de punta a punta en splits, KPIs y liquidaciones | M |

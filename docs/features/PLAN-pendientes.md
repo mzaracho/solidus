@@ -10,11 +10,11 @@ Lo mantiene el PO. Los números con `#` son de `docs/auditoria/BACKLOG.md`.
 | 1 | 006-usuarios-dados-de-baja | #34 | **Hecho** (`d698615`) |
 | 2 | 007-aislamiento-organizaciones | #3, #4, #5 | **Hecho** (`f69b73e`) |
 | 3 | 008-fix-tabla-work-items | Bug O-3 del 005, #44 | **Hecho** (`8f65cb5`) |
-| 4 | 009-modo-desde-rol | #2 (resto: `x-mode`), #41 | **Hecho** (commit en curso) |
-| 5 | 010-logs-y-limites | #37, #38, #14 (resto: `NODE_TLS_REJECT_UNAUTHORIZED`) | En curso |
-| 6 | 011-controladores-huerfanos | #39 | Pendiente |
+| 4 | 009-modo-desde-rol | #2 (resto: `x-mode`), #41 | **Hecho** (`f2ecc50`) |
+| 5 | 010-logs-y-limites | #37, #38, #14 | **Hecho** (commit en curso) |
+| 6 | 011-controladores-huerfanos | #39 | En curso |
 | 7 | 012-rate-limiting-login | #11 (resto) | Pendiente |
-| 8 | 013-errores-sin-details | #13, #42, #53, y B-1 y B-2 del 006 | Pendiente |
+| 8 | 013-errores-sin-details | #13, #42, #53, B-1 y B-2 del 006, I-4 del 010 | Pendiente |
 | 9 | 014-validation-whitelist | #12, #43 | Pendiente |
 | 10 | 015-transacciones | #16 | Pendiente |
 | 11 | 016-dinero-y-motor-honorarios | #17, #40, #45 | Pendiente |

@@ -218,7 +218,11 @@ try {
         Assert-True (-not $allWarnings.Contains($secret)) 'Sync caso 3: avisos sin valores'
     }
     Assert-True ($new3 -notmatch '(?m)^POSTGRES_') 'Sync caso 3: elimina POSTGRES_*'
-    Assert-True ($new3 -match '(?m)^NODE_TLS_REJECT_UNAUTHORIZED=0$') 'Sync caso 3: conserva NODE_TLS'
+    Assert-True ($new3 -notmatch 'NODE_TLS_REJECT_UNAUTHORIZED') 'Sync caso 3: elimina NODE_TLS_REJECT_UNAUTHORIZED'
+    $tlsWarn3 = @($s3.Warnings | Where-Object { $_ -match 'NODE_TLS_REJECT_UNAUTHORIZED' })
+    Assert-Equal 1 $tlsWarn3.Count 'Sync caso 3: avisa una vez que se quito NODE_TLS'
+    Assert-True (($tlsWarn3 -join "`n") -match '-ExportCa') 'Sync caso 3: el aviso de TLS remite a -ExportCa'
+    Assert-True (($tlsWarn3 -join "`n") -notmatch 'NODE_TLS_REJECT_UNAUTHORIZED\s*=') 'Sync caso 3: el aviso de TLS no muestra el valor'
     Assert-True ($new3 -match '(?m)^CORS_ORIGIN=') 'Sync caso 3: conserva CORS_ORIGIN'
     Assert-True ($new3 -match '(?m)^CORS_METHODS=') 'Sync caso 3: conserva CORS_METHODS'
     Assert-True ($new3 -match '(?m)^NODE_ENV=production$') 'Sync caso 3: respeta NODE_ENV'
@@ -244,6 +248,18 @@ try {
     $s3c = Sync-BackendEnv -RootDir $b
     Assert-True (-not $s3c.Changed) 'Sync: regimen normal sin cambios'
     Assert-True (-not $s3c.Legacy) 'Sync: ya no es heredado'
+
+    # --- Sync-BackendEnv: backend/.env ya generado que reintroduce la clave TLS ---
+    $withTls = (Read-Raw $beB).TrimEnd() + "`nNODE_TLS_REJECT_UNAUTHORIZED=0`nCUSTOM_LOCAL_KEY=valor-ficticio-local`n"
+    Write-Utf8NoBom -Path $beB -Text $withTls
+    $s3d = Sync-BackendEnv -RootDir $b
+    $new3d = Read-Raw $beB
+    Assert-True ($new3d -notmatch 'NODE_TLS_REJECT_UNAUTHORIZED') 'Sync TLS: la clave reintroducida se elimina'
+    Assert-True ($new3d -match '(?m)^CUSTOM_LOCAL_KEY=valor-ficticio-local$') 'Sync TLS: conserva CUSTOM_LOCAL_KEY'
+    Assert-Equal 1 @($s3d.Warnings | Where-Object { $_ -match 'NODE_TLS_REJECT_UNAUTHORIZED' }).Count 'Sync TLS: avisa una vez'
+    $s3e = Sync-BackendEnv -RootDir $b
+    Assert-True (-not $s3e.Changed) 'Sync TLS: la segunda corrida no cambia nada'
+    Assert-Equal 0 @($s3e.Warnings | Where-Object { $_ -match 'NODE_TLS_REJECT_UNAUTHORIZED' }).Count 'Sync TLS: la segunda corrida no avisa'
 
     # --- Caso 2: solo backend/.env heredado ---
     $f = New-Sandbox

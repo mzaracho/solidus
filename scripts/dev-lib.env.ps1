@@ -566,10 +566,17 @@ function Sync-BackendEnv {
     $defaultKeys = @('NODE_ENV', 'APP_NAME', 'PORT')
     $derivedKeys = @('DATABASE_URL', 'JWT_SECRET', 'LISTEN_HOST', 'CORS_ORIGIN')
     $obsoleteKeys = @('POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB')
+    # Prohibida: desactiva la verificacion TLS de todo el proceso Node (el backend tampoco arranca con ella en 0).
+    $forbiddenKeys = @('NODE_TLS_REJECT_UNAUTHORIZED')
+    $removedForbidden = New-Object System.Collections.ArrayList
     $defaultLines = @{}
     $localLines = New-Object System.Collections.Specialized.OrderedDictionary
     foreach ($e in $entries) {
         if ($derivedKeys -contains $e.Key -or $obsoleteKeys -contains $e.Key) { continue }
+        if ($forbiddenKeys -contains $e.Key) {
+            if ($removedForbidden -notcontains $e.Key) { [void]$removedForbidden.Add($e.Key) }
+            continue
+        }
         if ($defaultKeys -contains $e.Key) { $defaultLines[$e.Key] = $e.Line.Trim(); continue }
         $localLines[$e.Key] = $e.Line.Trim()
     }
@@ -616,6 +623,9 @@ function Sync-BackendEnv {
         }
         [void]$warnings.Add(('Copia del archivo anterior: backend\{0} (contiene los valores viejos; borrala cuando todo funcione).' -f (Split-Path -Leaf $bakUsed)))
         [void]$warnings.Add('Los comentarios y las lineas no parseables del backend/.env anterior NO se migraron: quedan solo en esa copia (.bak).')
+    }
+    foreach ($k in $removedForbidden) {
+        [void]$warnings.Add(('Se quito {0} de backend/.env: desactiva la verificacion TLS de todo el proceso y ya no se conserva. Si un antivirus o proxy inspecciona HTTPS, usa .\dev.ps1 -ExportCa.' -f $k))
     }
     $changed = $false
     if ($newText -ne $existingText) {

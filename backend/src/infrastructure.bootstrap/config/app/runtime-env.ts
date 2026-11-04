@@ -23,3 +23,21 @@ export function isProduction(config: ConfigService): boolean {
 export function shouldEnableSwagger(config: ConfigService): boolean {
   return getRuntimeEnv(config) !== 'production';
 }
+
+/**
+ * El backend no arranca con la verificación TLS desactivada (NODE_TLS_REJECT_UNAUTHORIZED=0):
+ * afecta a todo el proceso Node. Función pura: recibe el entorno y lanza si el valor es '0'.
+ */
+export function assertTlsVerificationEnabled(
+  env: Record<string, string | undefined> = process.env,
+): void {
+  const raw = env.NODE_TLS_REJECT_UNAUTHORIZED;
+  if (
+    typeof raw === 'string' &&
+    raw.trim().replace(/^["']|["']$/g, '') === '0'
+  ) {
+    throw new Error(
+      'NODE_TLS_REJECT_UNAUTHORIZED=0 desactiva la verificación TLS de todo el proceso y no está permitido. Quite la variable del entorno y de backend/.env; si un antivirus o proxy inspecciona TLS, use .\\dev.ps1 -ExportCa.',
+    );
+  }
+}

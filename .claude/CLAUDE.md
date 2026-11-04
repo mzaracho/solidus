@@ -105,6 +105,9 @@ mano. Detalle, códigos de salida y errores comunes: `docs/auditoria/COMANDOS.md
   `Unblock-File .\dev.ps1, .\scripts\*.ps1`.
 - CORS: `CORS_ORIGIN` (lista separada por comas, sin comodines; obligatoria con `NODE_ENV=production`) la genera
   `dev.ps1` en `backend/.env`; `CORS_EXTRA_ORIGINS` (opcional, `.env` raíz) agrega orígenes, p. ej. al usar `BIND_ADDRESS`.
+- `BODY_SIZE_LIMIT` (opcional, `<número>[b|kb|mb]`, default 1mb, máx 10mb; inválido = el backend no arranca; en Docker queda en 1mb).
+  `NODE_TLS_REJECT_UNAUTHORIZED=0` está prohibida: el backend no arranca y `-Init` la quita de `backend/.env`; ante
+  TLS de antivirus/proxy usar `-ExportCa`. Todo request deja una línea de acceso `METHOD ruta STATUS Nms` (sin query ni datos).
 - Swagger en http://localhost:8080/docs solo con `NODE_ENV` `development` o `test` (otro valor cuenta como
   producción). Salud pública sin auth: `GET /health/liveness` (fuera de `/api`).
 - Variables opcionales del `.env` raíz: `FRONTEND_PORT` (puerto del frontend en desarrollo, default 3000;
@@ -124,7 +127,7 @@ Backend (`cd backend`):
 - `npx tsc --noEmit` — type-check
 - `npx eslint "{src,apps,libs,test}/**/*.ts"` — lint sin modificar archivos
 - `npm run lint` — ATENCIÓN: aplica `--fix` y reescribe archivos
-- `npm test` — Jest (30 suites)
+- `npm test` — Jest (32 suites)
 - `npm run build` — reescribe `dist/`
 
 Frontend (`cd frontend`):

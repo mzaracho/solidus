@@ -8,6 +8,7 @@ import {
   makePrismaMock,
 } from '../../../test/helpers/login-app';
 import { NestLoggerAdapter } from '../config/core/nest-logger-adapter';
+import { createAccessLogMiddleware } from '../config/app/access-log';
 import { LoggingInterceptor } from './logging.interceptor';
 
 type Spies = jest.SpyInstance[];
@@ -50,6 +51,7 @@ describe('LoggingInterceptor', () => {
     const user = makeFakeUser();
     const prisma = makePrismaMock(user);
     app = await createLoginApp(prisma, (a) => {
+      a.use(createAccessLogMiddleware());
       a.useGlobalInterceptors(new LoggingInterceptor({ debugEnabled }));
       a.useLogger(new NestLoggerAdapter(a.get(ConfigService)));
     });
@@ -87,6 +89,8 @@ describe('LoggingInterceptor', () => {
     expect(out).toContain('[REDACTED]');
     // Una línea por request, con ruta y status.
     expect(out).toMatch(/POST \/api\/v1\/auth\/login 201 \d+ms/);
+    // El interceptor ya no escribe la línea de acceso: aparece una sola vez (la del middleware).
+    expect(out.match(/POST \/api\/v1\/auth\/login 201/g)).toHaveLength(1);
   });
 
   it('un body anidado sale redactado en debug y los headers y las respuestas no se loguean', async () => {

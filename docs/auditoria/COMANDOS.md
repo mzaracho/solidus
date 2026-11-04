@@ -236,6 +236,7 @@ sistema de archivos no admite ACL, avisa y sigue. Se puede comprobar con `icacls
 | `FRONTEND_PORT` inválido (código 1) | También aborta `-Docker`. Corregir el valor o quitarlo |
 | `docker compose up --build` falla en `apk add`, `npm` o `next build` por TLS ("TLS: server certificate not trusted", "unable to verify the first certificate", "TLS-related") (código 9) | Red o antivirus con inspección TLS. Correr `.\dev.ps1 -ExportCa` (confirmar sujeto y huella) y repetir `.\dev.ps1 -Docker`: ver "CA extra para builds Docker". Si ya existe `.dev/certs/extra-ca.pem` y sigue fallando, volver a exportarla o indicar la huella correcta con `EXTRA_CA_THUMBPRINT` |
 | Código 9 sin error de certificados | Falló el build o algún contenedor no arrancó. Revisar la salida del build y `docker compose logs` |
+| `NODE_TLS_REJECT_UNAUTHORIZED` en `backend/.env` o en el entorno (el backend no arranca y el mensaje remite a `-ExportCa`) | La verificación TLS no se puede desactivar. `.\dev.ps1 -Init` quita la clave de `backend/.env` y avisa una sola vez (no muestra el valor); si viene del entorno del sistema, quitarla ahí. Ante problemas de TLS por antivirus o proxy, usar `.\dev.ps1 -ExportCa` |
 | Código 10 | Una rotación quedó a medias. Ver "Rotaciones" para recuperar |
 | `core.hooksPath ya apunta a otra carpeta` (aviso) | El hook `pre-commit` de secretos no está activo. Activarlo con `git config --local core.hooksPath .githooks` |
 | Login rechazado (HTTP 401) en `-Smoke` | El usuario de humo no existe o no coincide con `.env`: `.\dev.ps1 -CreateSmokeUser` |
@@ -332,7 +333,9 @@ npm install
 #   DATABASE_URL="postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5433/solidus_db?schema=public"
 #   JWT_SECRET=<obligatorio, mínimo 32 caracteres; el backend no arranca sin él>
 #   (POSTGRES_* ya no van en backend/.env: viven solo en el .env de la raíz)
-#   BODY_SIZE_LIMIT (opcional, default 50mb)
+#   BODY_SIZE_LIMIT (opcional; default 1mb, máximo 10mb; formato <número>[b|kb|mb], p. ej. 500kb, 2mb; un valor
+#     inválido hace que el backend no arranque). En modo Docker no se pasa al contenedor: queda en 1mb
+#   NODE_TLS_REJECT_UNAUTHORIZED=0 está prohibida: el backend no arranca si vale 0 y `dev.ps1 -Init` la quita de backend/.env
 #   CORS_ORIGIN (lista por comas, sin comodines; lo genera dev.ps1; obligatoria con NODE_ENV=production)
 #   CORS_EXTRA_ORIGINS (opcional; vive en el .env raíz). CORS_METHODS no se lee del entorno (los métodos están fijos en `cors-config.ts`).
 
@@ -351,10 +354,17 @@ npm run format                                # prettier --write sobre src/ y te
 
 ### Tests
 ```bash
-npm test              # jest (13 suites, 141 tests: guards, login, logs, CORS, rutas, etc.)
+npm test              # jest (32 suites, 567 tests: guards, login, logs, log de acceso, body limit, CORS, rutas, etc.)
 npm run test:cov      # cobertura en backend/coverage
 npm run test:e2e      # requiere DB; el único e2e es boilerplate roto
 ```
+
+### Log de acceso y errores del body
+- Cada request deja una línea `Access`: `METHOD ruta STATUS Nms`, sin query, headers, body, tokens ni datos de usuario.
+  Nivel `warn` para 4xx y 5xx. Incluye los 401 y 403 de los guards, el 404 de ruta inexistente y los rechazos del parser.
+  Los caracteres no ASCII imprimibles de la ruta se reemplazan por `?` y la ruta se acota a 200 caracteres.
+- Un body mayor al límite responde 413 (`payload-too-large`), un JSON inválido 400 (`bad-request`) y una codificación o
+  charset no soportado 415 (`unsupported-media-type`), con el formato genérico de error (sin stack ni detalles).
 
 ## 4. Frontend (`frontend/`)
 ```bash

@@ -5,9 +5,8 @@ import {
   CallHandler,
   Logger,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
+import { Request } from 'express';
 import { Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
 import { safeStringify } from '../config/core/redact';
 
 export interface LoggingInterceptorOptions {
@@ -16,8 +15,8 @@ export interface LoggingInterceptorOptions {
 }
 
 /**
- * Una línea por request (método, ruta sin query, status y duración).
- * En debug agrega params, query y body redactados. Nunca loguea headers ni cuerpos de respuesta.
+ * Solo debug: params, query y body redactados (fuera de producción). La línea de acceso la escribe el
+ * middleware de `access-log.ts`. Nunca loguea headers ni cuerpos de respuesta.
  */
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
@@ -26,11 +25,7 @@ export class LoggingInterceptor implements NestInterceptor {
   constructor(private readonly options: LoggingInterceptorOptions) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const http = context.switchToHttp();
-    const req = http.getRequest<Request>();
-    const res = http.getResponse<Response>();
-    const method = req.method;
-    const path = String(req.originalUrl ?? req.url ?? '').split('?')[0];
+    const req = context.switchToHttp().getRequest<Request>();
 
     if (this.options.debugEnabled) {
       this.logger.debug(`Params: ${safeStringify(req.params)}`);
@@ -38,15 +33,6 @@ export class LoggingInterceptor implements NestInterceptor {
       this.logger.debug(`Body: ${safeStringify(req.body)}`);
     }
 
-    const now = Date.now();
-    return next.handle().pipe(
-      tap({
-        next: () => {
-          this.logger.log(
-            `${method} ${path} ${res.statusCode} ${Date.now() - now}ms`,
-          );
-        },
-      }),
-    );
+    return next.handle();
   }
 }

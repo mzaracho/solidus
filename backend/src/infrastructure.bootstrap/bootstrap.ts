@@ -10,9 +10,14 @@ import { configureCors } from './config/app/cors-config';
 import { configureSwagger } from './config/app/swagger-config';
 import { configureNestInternalLogger } from './config/app/logger-config';
 import { getListenHost } from './config/app/listen-config';
-import { getRuntimeEnv } from './config/app/runtime-env';
+import {
+  assertTlsVerificationEnabled,
+  getRuntimeEnv,
+} from './config/app/runtime-env';
+import { createAccessLogMiddleware } from './config/app/access-log';
 
 export async function bootstrap() {
+  assertTlsVerificationEnabled();
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
   });
@@ -22,6 +27,8 @@ export async function bootstrap() {
       debugEnabled: getRuntimeEnv(config) !== 'production',
     }),
   );
+  // Antes del body parser: ve también los 413/400 del parser y los rechazos de los guards.
+  app.use(createAccessLogMiddleware());
   configureBodyParser(app, config);
   configureGlobalPrefix(app);
   configurePipes(app);
