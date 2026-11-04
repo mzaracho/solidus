@@ -9,7 +9,7 @@
 | # | Ítem | Riesgo | Esfuerzo |
 |---|---|---|---|
 | 1 | **RESUELTO (feature 005).** **Autenticación real**: un único `JwtModule` con `JWT_SECRET` obligatorio (fallar al arrancar si falta); `AuthGuard` global (`APP_GUARD`) que use `jwtService.verifyAsync`; `@Public()` solo en login; eliminar `VerifyTokenService` stub, `ApiKeyGuard` y `JwtAuthGuard` basado en `decode` | S1, S2, S5 | M |
-| 2 | **PARCIAL (features 005 y 007; falta el modo derivado del rol, feature 009):** `userId` sale de `sub` y `x-org-id` se valida contra membresías; falta deducir el modo del rol (`x-mode`). **Contexto de tenant desde el token, no desde headers**: derivar `userId` de `sub` y validar `x-org-id` contra las membresías/Professional del usuario en un guard/interceptor; el modo (org/pro) se deduce del rol, no de `x-mode` | S3 | L |
+| 2 | **RESUELTO (features 005, 007 y 009):** `userId` sale de `sub`, `x-org-id` se valida contra membresías y el modo (org/pro) lo resuelve `ViewModeGuard` según los vínculos del usuario; `x-mode` es solo una preferencia. **Contexto de tenant desde el token, no desde headers**: derivar `userId` de `sub` y validar `x-org-id` contra las membresías/Professional del usuario en un guard/interceptor; el modo (org/pro) se deduce del rol, no de `x-mode` | S3 | L |
 | 3 | **RESUELTO (feature 007).** **Chequeo de pertenencia por recurso**: toda operación por `:id` (activity, patient, staff, payer, settlement, category, preset, activity type, merge) filtra por `organizationId` del contexto | S3 | M |
 | 4 | **RESUELTO (feature 007).** **Aplicar en backend `canLoadActivities` y ownership**: rechazar `POST /activity` si el Professional no tiene permiso; ownership independiente de `x-mode`; definir política para `createdByUserId = null` | S4 | S |
 | 5 | **RESUELTO (feature 007; `ConfigController` eliminado, escrituras de `org/*` con ADMIN verificado).** **Proteger o eliminar `ConfigController`** (duplica escrituras de `OrgController` sin guards) y aplicar `RequireOrgRole('ADMIN')` con rol verificado | S2 | S |
@@ -37,12 +37,30 @@ Origen: `docs/features/007-aislamiento-organizaciones/` (06-seguridad, 05-revisi
 | # | Ítem | Riesgo | Esfuerzo |
 |---|---|---|---|
 | 40 | Motor de honorarios: unificar la forma de `splits` entre la UI (`{role, percentage, beneficiaryType}`) y `FeeResolutionService` (`{beneficiary, type, value}`) y acotar los montos `FIXED` al bruto de la atención (`computeAmounts`: limitar a `grossAmount - totalAllocated`, mínimo 0) | MEDIA-2 (007) | M |
-| 41 | `settlements/calculate`: usar `@CurrentOrgId()` en lugar de `organizationId` de la query y sumar el controlador al invariante de `security-invariants.spec.ts`; evaluar `@RequireOrgRole('ADMIN')` en `settlements/calculate` y acceso por rol en el dashboard en modo organización | MENOR-1 e INFO-1 (007) | S |
+| 41 | **RESUELTO (feature 009).** `settlements/calculate`: usar `@CurrentOrgId()` en lugar de `organizationId` de la query y sumar el controlador al invariante de `security-invariants.spec.ts`; evaluar `@RequireOrgRole('ADMIN')` en `settlements/calculate` y acceso por rol en el dashboard en modo organización | MENOR-1 e INFO-1 (007) | S |
 | 42 | Mensajes de error 404 en español y sin JSON crudo en los toasts del front (`updateWorkItem`/`deleteWorkItem` en `data.ts`, `AtencionesTable`, `AdmisionesTable`, `WorkItemForm`) | m-4 (re-revisión 1) | S |
 | 43 | DTOs con class-validator en los comandos de update (`UpdatePatientCommand`, `UpdateActivityCommand`, `UpdateStaffCommand`: enums de pago, email, fechas) para evitar 500 de Prisma. Relacionado con #12 | S-2 / BAJA-2 resto | M |
 | 44 | **RESUELTO (feature 008).** Ocultar "Eliminar" al MEMBER también en `workload/columns.tsx`: `canDeleteActivity` (`src/lib/activity-permissions.ts`) compartida con `AdmisionesTable`; ítem deshabilitado con tooltip. El bug de la tabla de work-items vacía ("No results", O-3 del 005) también quedó resuelto por el 008 | 007 §8.1 | S |
 | 45 | Editar atención: `PUT /activity/:id` ignora monto (`grossAmount`) y pagador (solo persiste `date`, `paymentStatus`, `paymentMethod`, `paymentDate`, `attendance`), pero `workload/RetroactiveModal` y otros formularios permiten cambiarlos y la UI informa éxito. Además el pagador faltante se muestra "—" y se reenvía como valor (M2). Definir si se pueden editar (recalcular splits) o deshabilitarlos en la UI. Relacionado con #17 y #40 (motor de honorarios) | 008 (M1, M2) | M |
 | 46 | UX menor en `workload/columns.tsx`: el tooltip (`title`) del ítem "Eliminar" deshabilitado no se ve (`data-[disabled]:pointer-events-none` del `DropdownMenuItem`; envolver en `<span title>` o `Tooltip`) y "Eliminar" aparece habilitado hasta hidratar el rol (`orgRole` null; el backend responde 403; tratar `null` como no habilitado). Mismo patrón en `pro/atenciones/columns.tsx` y `AdmisionesTable` | 008 (M3, M4) | S |
+
+## Candidatos surgidos del feature 009
+
+Origen: `docs/features/009-modo-desde-rol/` (decisiones del PO en `00-estado.md`, revisión 05 y seguridad 06).
+
+| # | Ítem | Origen | Esfuerzo |
+|---|---|---|---|
+| 47 | Menús según el rol de la primera membresía del token: hoy el front ofrece "Ver como" y oculta enlaces con `orgRole`/`roles` del token, que corresponden a la primera membresía del token; el backend decide y responde 403. Hidratar `professionalId` y el rol por organización | decisión 8 / INFO-3 (009) | M |
+| 48 | `GET fee-rules` filtra por categoría también en la vista org (residual aceptado del 009) | decisión 9 / INFO-4 (009) | S |
+| 49 | `org/config` abierto a cualquier vínculo con la organización (devuelve emails y CUIT del staff): exigir ADMIN o recortar la respuesta | decisión 11 / INFO-1 (007) | S |
+| 50 | Listado de pacientes en pro: el orden de deudores (`debtorWhere`) mira deuda de otros profesionales; permite inferir deuda ajena por la posición, sin montos. Acotar con `ownProfessionalsFilter` en organizaciones sin membresía | MENOR-7 (revisión 009) | S |
+| 51 | El `MEMBER` ve comisión y montos por atención en org (decisión 1 del 009, aceptada): feature que oculte montos por rol | BAJA-1 (seguridad 009) | M |
+| 52 | El modo se valida contra la organización del header y `POST /activity` puede apuntar a otra en el body (documentado). Quitar `organizationId` del body o rechazarlo si difiere del header; mientras tanto el front no lo manda | BAJA-2 (seguridad 009) | S |
+| 53 | `new Error(...)` en la regla de primera carga de `activity.service.ts` responde 500: pasar a `BadRequestException`/`ForbiddenException`. Relacionado con #13 | INFO-2 (seguridad 009) | S |
+| 54 | Mover `ownProfessionalsFilter` de `application/features/patients/patient-read-access.ts` a `domain/features/patients/` (hoy `patients.service.ts` de infraestructura importa de `application/`) | MENOR-6 (revisión) / INFO-8 (seguridad) 009 | S |
+
+Nota para #12 (whitelist): con `forbidNonWhitelisted` el `?mode=` que manda el front en dashboard, work-items y pacientes daría 400
+(INFO-1 de seguridad del 009); declarar el campo en los DTOs de esas queries antes de activarlo.
 
 ## P1 — Endurecimiento y consistencia
 

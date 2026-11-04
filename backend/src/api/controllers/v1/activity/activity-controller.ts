@@ -7,7 +7,6 @@ import {
   Body,
   Param,
   Query,
-  Headers,
   Inject,
 } from '@nestjs/common';
 import { ActivityResponseDto } from '@src/application/features/activity/Dtos/activity-response.dto';
@@ -19,7 +18,7 @@ import { UpdateActivityCommand } from '@src/application/features/activity/comman
 import { DeleteActivityCommand } from '@src/application/features/activity/commands/delete-activity-command';
 import { BaseController } from '../../base/base-controller';
 
-import { CurrentUserId } from '@src/infrastructure.bootstrap/config/core/authentication/current-user-decorator';
+import { UsesViewMode } from '@src/infrastructure.bootstrap/config/core/authentication/view-mode-decorator';
 import { CurrentOrgId } from '@src/infrastructure.bootstrap/config/core/authentication/current-org-decorator';
 
 @Controller('activity')
@@ -33,27 +32,23 @@ export class ActivityController extends BaseController {
     return this.dispatcher.dispatch(new FindActivityByIdQuery(id));
   }
 
+  // El modo (org/pro) lo resuelve ViewModeGuard desde los vinculos del usuario: llega en ctx.view.
+  @UsesViewMode()
   @Get()
   async findAll(
     @Query() query: FindAllActivitiesQuery,
     @CurrentOrgId() orgId: string,
-    @CurrentUserId() userId: string,
-    @Query('mode') modeQuery: string
-  ): Promise<any> { // Using any for partial migration or PaginatedActivityResponseDto if verified
-    // Or better, import the new DTO
+  ): Promise<any> {
     query.organizationId = orgId;
-    query.userId = userId;
-    query.mode = modeQuery; // Frontend sends mode as query param
     return this.dispatcher.dispatch(query);
   }
 
+  @UsesViewMode()
   @Post()
   async create(
     @Body() command: CreateActivityCommand,
-    @Headers('x-mode') mode: string,
     @CurrentOrgId() orgId: string,
   ) {
-    command.mode = mode; // Manually attach header if needed by logic
     command.organizationId = command.organizationId || orgId;
     return this.dispatcher.dispatch(command);
   }

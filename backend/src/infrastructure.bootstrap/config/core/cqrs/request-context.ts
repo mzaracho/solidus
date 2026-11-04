@@ -3,6 +3,8 @@ import {
   AUTH_ERROR_CODE,
   AuthenticatedRequest,
   OrgRoleValue,
+  OwnProfessional,
+  ViewModeValue,
 } from '../authentication/auth-context';
 
 export interface OrgScope {
@@ -14,10 +16,21 @@ export interface OrgScope {
   readonly roles: Readonly<Record<string, OrgRoleValue | null>>;
 }
 
+/** Vista efectiva decidida por ViewModeGuard (solo en rutas con @UsesViewMode). */
+export interface ViewScope {
+  readonly mode: ViewModeValue;
+  /** Preferencia que mandó el cliente; solo informativa. */
+  readonly requested: ViewModeValue | null;
+  /** Solo en pro: Professional ACTIVE, no eliminados, de cualquier organización, tomados de la base. En org: []. */
+  readonly professionals: readonly OwnProfessional[];
+}
+
 export interface RequestContext {
   readonly userId: string | null;
   /** null en rutas @Public o @OrgOptional sin organización. */
   readonly org: OrgScope | null;
+  /** null en rutas sin @UsesViewMode. */
+  readonly view: ViewScope | null;
 }
 
 /** Arma el contexto (inmutable) a partir de lo que dejaron los guards globales. */
@@ -35,7 +48,17 @@ export function buildRequestContext(
           roles: Object.freeze({ ...access.roles }),
         })
       : null;
-  return Object.freeze({ userId, org });
+  const v = req?.viewAccess;
+  const view: ViewScope | null = v
+    ? Object.freeze({
+        mode: v.mode,
+        requested: v.requested,
+        professionals: Object.freeze(
+          v.professionals.map((p) => Object.freeze({ ...p })),
+        ),
+      })
+    : null;
+  return Object.freeze({ userId, org, view });
 }
 
 /** Devuelve el scope de organización o 403 org-access-denied si el request no lo tiene. */
@@ -66,3 +89,17 @@ export function requireOrgId(orgId: unknown): string {
 export function roleIn(scope: OrgScope, orgId: string): OrgRoleValue | null {
   return scope.roles[orgId] ?? null;
 }
+
+/** Devuelve la vista efectiva o 403 forbidden si la ruta no pasó por ViewModeGuard (falla cerrado). */
+export function requireViewScope(ctx: RequestContext | undefined): ViewScope {
+  if (!ctx?.view) {
+    throw new ForbiddenException({
+      code: AUTH_ERROR_CODE.FORBIDDEN,
+      message: 'Forbidden',
+    });
+  }
+  return ctx.view;
+}
+
+export const professionalIdsOf = (view: ViewScope): string[] =>
+  view.professionals.map((p) => p.id);

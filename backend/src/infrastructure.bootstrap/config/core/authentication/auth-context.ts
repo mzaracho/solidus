@@ -31,9 +31,29 @@ export interface OrgAccessContext {
   roles: Record<string, OrgRoleValue | null>;
 }
 
+/** Vista (modo) efectiva de una ruta marcada con @UsesViewMode: la decide el servidor. */
+export type ViewModeValue = 'org' | 'pro';
+
+/** Professional propio del usuario autenticado, tomado de la base. */
+export interface OwnProfessional {
+  readonly id: string;
+  readonly organizationId: string;
+  readonly canLoadActivities: boolean;
+}
+
+/** Resultado de ViewModeGuard. */
+export interface ViewAccessContext {
+  mode: ViewModeValue;
+  /** Preferencia del cliente (x-mode o ?mode=), solo informativa. */
+  requested: ViewModeValue | null;
+  /** Solo en pro: Professional ACTIVE, deletedAt null, de cualquier organización. En org: []. */
+  professionals: OwnProfessional[];
+}
+
 export interface AuthenticatedRequest extends Request {
   auth?: AuthContext;
   orgAccess?: OrgAccessContext;
+  viewAccess?: ViewAccessContext;
 }
 
 export const UUID_REGEX =
@@ -44,4 +64,5 @@ export const AUTH_ERROR_CODE = {
   ORG_ACCESS_DENIED: 'org-access-denied',
   FORBIDDEN: 'forbidden',
   NOT_FOUND: 'not-found',
+  INVALID_MODE: 'invalid-mode',
 } as const;

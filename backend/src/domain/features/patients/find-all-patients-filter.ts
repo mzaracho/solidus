@@ -4,5 +4,4 @@ export class FindAllPatientsFilter {
   page: number;
   limit: number;
   userId?: string;
-  mode?: string;
 }

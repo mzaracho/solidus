@@ -3,6 +3,10 @@ import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
 import { Injectable } from '@nestjs/common';
 import { DashboardService } from '@src/infrastructure/features/dashboard/dashboard.service';
+import {
+    RequestContext,
+    requireViewScope,
+} from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsOptional } from 'class-validator';
 
@@ -19,14 +23,6 @@ export class GetDashboardPayerDistributionQuery implements IRequest<any> {
     @ApiProperty()
     @IsString()
     endDate: string;
-
-    @ApiProperty()
-    @IsOptional()
-    mode?: 'ORGANIZATION' | 'PROFESSIONAL';
-
-    @ApiProperty()
-    @IsOptional()
-    userId?: string;
 }
 
 @RequestHandler(GetDashboardPayerDistributionQuery)
@@ -37,13 +33,15 @@ export class GetDashboardPayerDistributionQueryHandler implements IRequestHandle
 > {
     constructor(private readonly dashboardService: DashboardService) { }
 
-    async execute(query: GetDashboardPayerDistributionQuery): Promise<any> {
+    async execute(
+        query: GetDashboardPayerDistributionQuery,
+        ctx: RequestContext,
+    ): Promise<any> {
         return this.dashboardService.getPayerDistribution(
             query.orgId,
             query.startDate,
             query.endDate,
-            query.mode,
-            query.userId
+            requireViewScope(ctx),
         );
     }
 }

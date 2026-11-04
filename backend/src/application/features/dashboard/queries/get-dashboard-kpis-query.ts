@@ -5,6 +5,10 @@ import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
 import { Injectable } from '@nestjs/common';
 import { DashboardService } from '@src/infrastructure/features/dashboard/dashboard.service';
+import {
+  RequestContext,
+  requireViewScope,
+} from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 
 import { ApiProperty } from '@nestjs/swagger';
 import { IsDateString, IsString, IsOptional } from 'class-validator';
@@ -22,16 +26,6 @@ export class GetDashboardKpisQuery implements IRequest<DashboardKpisResponseDto>
   @ApiProperty()
   @IsString()
   endDate: string;
-
-  @ApiProperty()
-  @IsOptional()
-  mode?: 'ORGANIZATION' | 'PROFESSIONAL';
-
-  @ApiProperty()
-  @IsOptional()
-  @ApiProperty()
-  @IsOptional()
-  userId?: string;
 
   @ApiProperty()
   @IsOptional()
@@ -54,7 +48,8 @@ export class GetDashboardKpisQueryHandler implements IRequestHandler<
 
   async execute(
     query: GetDashboardKpisQuery,
+    ctx: RequestContext,
   ): Promise<DashboardKpisResponseDto> {
-    return this.dashboardService.getKpis(query);
+    return this.dashboardService.getKpis(query, requireViewScope(ctx));
   }
 }

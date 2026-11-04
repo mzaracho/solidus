@@ -7,7 +7,12 @@ import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/r
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { Prisma, PaymentStatus, BeneficiaryType } from '@prisma/client';
-import { isProfessionalMode, DEFAULT_ACTIVITY_PAGE_SIZE } from '@src/domain/constants/app.constants';
+import { DEFAULT_ACTIVITY_PAGE_SIZE } from '@src/domain/constants/app.constants';
+import {
+  professionalIdsOf,
+  RequestContext,
+  requireViewScope,
+} from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 import { ApiHideProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class FindAllActivitiesQuery implements IRequest<PaginatedActivityResponseDto> {
@@ -66,16 +71,6 @@ export class FindAllActivitiesQuery implements IRequest<PaginatedActivityRespons
   @IsString()
   search?: string;
 
-  @ApiHideProperty()
-  @IsOptional()
-  @IsString()
-  userId?: string;
-
-  @ApiHideProperty()
-  @IsOptional()
-  @IsString()
-  mode?: string;
-
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)
@@ -99,24 +94,24 @@ export class FindAllActivitiesQueryHandler implements IRequestHandler<
 > {
   constructor(private readonly prisma: PrismaService) { }
 
-  async execute(query: FindAllActivitiesQuery): Promise<PaginatedActivityResponseDto> {
+  async execute(
+    query: FindAllActivitiesQuery,
+    ctx: RequestContext,
+  ): Promise<PaginatedActivityResponseDto> {
+    // El modo y los Professional del usuario los resolvio ViewModeGuard (no el cliente).
+    const view = requireViewScope(ctx);
+    const isPro = view.mode === 'pro';
     const orgId = query.organizationId;
     if (!orgId) return { items: [], total: 0, page: 0, pageSize: 0, totalPages: 0 };
 
     const where: Prisma.WorkItemWhereInput = {};
-    let proIds: string[] = [];
+    const proIds: string[] = isPro ? professionalIdsOf(view) : [];
 
-    if (isProfessionalMode(query.mode) && query.userId) {
-      // Find ALL active Professional profiles for this user across all orgs
-      const allPros = await this.prisma.professional.findMany({
-        where: { userId: query.userId, status: 'ACTIVE' },
-      });
-
-      if (allPros.length === 0) {
+    if (isPro) {
+      // Professional ACTIVE del usuario en cualquier organizacion (vista multi-organizacion)
+      if (proIds.length === 0) {
         return { items: [], total: 0, page: 0, pageSize: 0, totalPages: 0 };
       }
-
-      proIds = allPros.map((p) => p.id);
 
       // Cross-org: no organizationId restriction in PRO mode
       where.OR = [
@@ -201,7 +196,7 @@ export class FindAllActivitiesQueryHandler implements IRequestHandler<
       commission: item.splits
         .filter((s) => s.beneficiaryType === BeneficiaryType.ORG)
         .reduce((sum, s) => sum + Number((s as any).amount), 0),
-      netAmount: isProfessionalMode(query.mode) && proIds.length > 0
+      netAmount: isPro
         // PRO mode: only the current professional's own splits
         ? item.splits
           .filter((s) => s.beneficiaryId != null && proIds.includes(s.beneficiaryId!))
@@ -217,7 +212,7 @@ export class FindAllActivitiesQueryHandler implements IRequestHandler<
       isExternal: item.organizationId !== orgId,
       isReadOnly: item.organizationId !== orgId,
       role: (() => {
-        if (isProfessionalMode(query.mode) && proIds.length > 0) {
+        if (isPro) {
           const myParticipant = (item as any).participants?.find(
             (p: any) => proIds.includes(p.professionalId),
           );

@@ -4,8 +4,8 @@ import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/r
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { BeneficiaryType } from '@prisma/client';
-import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
-import { foundOr404, inScope, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
+import { requireOrgScope, RequestContext, roleIn } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
+import { foundOr404, inScope, requireId, resourceNotFound } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 
 export class FindActivityByIdQuery implements IRequest<any> {
     constructor(public readonly id: string) { }
@@ -32,6 +32,30 @@ export class FindActivityByIdQueryHandler implements IRequestHandler<
                 splits: true, // Includes Beneficiary ID
             },
         }));
+
+        // Vinculo solo de Professional (sin membresia en la organizacion de la atencion): solo lee las atenciones
+        // de su propio Professional, como profesional principal o como participante. Lo demas, el 404 generico.
+        if (roleIn(scope, activity.organizationId) === null) {
+            const own = await this.prisma.professional.findMany({
+                where: {
+                    userId: scope.userId,
+                    organizationId: activity.organizationId,
+                    status: 'ACTIVE',
+                    deletedAt: null,
+                },
+                select: { id: true },
+            });
+            const ids = own.map((p) => p.id);
+            let mine = !!activity.professionalId && ids.includes(activity.professionalId);
+            if (!mine && ids.length > 0) {
+                const participation = await this.prisma.workItemParticipant.findFirst({
+                    where: { workItemId: activity.id, professionalId: { in: ids } },
+                    select: { id: true },
+                });
+                mine = !!participation;
+            }
+            if (!mine) throw resourceNotFound();
+        }
 
         // Resolve Co-Professional Name if possible requires extra query or finding it in splits
         const coProSplit = activity.splits.find(s => s.beneficiaryType === BeneficiaryType.PROFESSIONAL && s.beneficiaryId !== activity.professionalId);

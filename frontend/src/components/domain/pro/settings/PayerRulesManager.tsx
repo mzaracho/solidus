@@ -56,7 +56,7 @@ export function PayerRulesManager() {
         try {
             const [payersData, fetchedRules, fetchedMemberships] = await Promise.all([
                 getPayers(orgSlug, page, pageSize),
-                getFeeRules(orgSlug, 'PROFESSIONAL'),
+                getFeeRules(orgSlug),
                 getProfessionalMemberships(orgSlug),
             ])
 

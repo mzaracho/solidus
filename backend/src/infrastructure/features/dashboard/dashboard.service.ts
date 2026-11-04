@@ -1,38 +1,25 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { BeneficiaryType, PaymentStatus, Prisma } from '@prisma/client';
-import { isProfessionalMode } from '@src/domain/constants/app.constants';
 import { DashboardKpiQueryDto } from '@src/application/features/dashboard/Dtos/dashboard-kpi-query.dto';
 import { DashboardKpisResponseDto } from '@src/application/features/dashboard/Dtos/dashboard-kpis-response.dto';
-import { requireOrgId } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
+import {
+  professionalIdsOf,
+  requireOrgId,
+  ViewScope,
+} from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 
 @Injectable()
 export class DashboardService {
   constructor(private prisma: PrismaService) { }
 
-  private async resolveProfessionalId(organizationId: string, userId: string): Promise<string | null> {
-    const pro = await this.prisma.professional.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId,
-          userId,
-        },
-      },
-      select: { id: true },
-    });
-    return pro?.id || null;
-  }
-
-  private async resolveAllProfessionalIds(userId: string): Promise<string[]> {
-    const pros = await this.prisma.professional.findMany({
-      where: { userId, status: 'ACTIVE' },
-      select: { id: true },
-    });
-    return pros.map(p => p.id);
-  }
-
+  /**
+   * El modo y los Professional del usuario (`view`) los resolvio ViewModeGuard con los vinculos de la base;
+   * el servicio no consulta Professional ni lee ningun dato de modo del cliente.
+   */
   async getKpis(
     query: DashboardKpiQueryDto,
+    view: ViewScope,
   ): Promise<DashboardKpisResponseDto> {
     if (!query.organizationId) {
       return {
@@ -56,9 +43,9 @@ export class DashboardService {
     }
 
     // Cross-org filtering for Professional mode (same logic as FindAllActivitiesQuery)
-    let proIds: string[] = [];
-    if (isProfessionalMode(query.mode) && query.userId) {
-      proIds = await this.resolveAllProfessionalIds(query.userId);
+    const isPro = view.mode === 'pro';
+    const proIds: string[] = isPro ? professionalIdsOf(view) : [];
+    if (isPro) {
       if (proIds.length === 0) {
         return {
           accruedGross: 0,
@@ -88,7 +75,7 @@ export class DashboardService {
 
     // 2. Accrued Net (Total Earnings - My Share)
     let accruedNet = 0;
-    if (isProfessionalMode(query.mode) && proIds.length > 0) {
+    if (isPro) {
       items.forEach(item => {
         const mySplits = item.splits.filter(s => s.beneficiaryId != null && proIds.includes(s.beneficiaryId!));
         const myShare = mySplits.reduce((acc, s) => acc + Number(s.amount), 0);
@@ -124,7 +111,7 @@ export class DashboardService {
     let pending = 0;
     const pendingItems = items.filter(i => i.paymentStatus !== PaymentStatus.PAID);
 
-    if (isProfessionalMode(query.mode) && proIds.length > 0) {
+    if (isPro) {
       pendingItems.forEach(item => {
         const mySplits = item.splits.filter(s => s.beneficiaryId != null && proIds.includes(s.beneficiaryId!));
         pending += mySplits.reduce((acc, s) => acc + Number(s.amount), 0);
@@ -140,7 +127,7 @@ export class DashboardService {
 
     // 5. Cash Net (Collected Net)
     let cashNet = 0;
-    if (isProfessionalMode(query.mode) && proIds.length > 0) {
+    if (isPro) {
       paidItems.forEach(item => {
         const mySplits = item.splits.filter(s => s.beneficiaryId != null && proIds.includes(s.beneficiaryId!));
         cashNet += mySplits.reduce((acc, s) => acc + Number(s.amount), 0);
@@ -171,11 +158,10 @@ export class DashboardService {
 
   async getChart(
     organizationId: string,
-    startDate?: string,
-    endDate?: string,
-    groupBy?: 'day' | 'month',
-    mode?: 'ORGANIZATION' | 'PROFESSIONAL',
-    userId?: string,
+    startDate: string | undefined,
+    endDate: string | undefined,
+    groupBy: 'day' | 'month' | undefined,
+    view: ViewScope,
     basis: 'ACCRUED' | 'CASH' = 'ACCRUED'
   ) {
     organizationId = requireOrgId(organizationId);
@@ -202,9 +188,9 @@ export class DashboardService {
       }
     }
 
-    let proIds: string[] = [];
-    if (isProfessionalMode(mode) && userId) {
-      proIds = await this.resolveAllProfessionalIds(userId);
+    const isPro = view.mode === 'pro';
+    const proIds: string[] = isPro ? professionalIdsOf(view) : [];
+    if (isPro) {
       if (proIds.length === 0) return [];
       where.OR = [
         { professionalId: { in: proIds } },
@@ -240,7 +226,7 @@ export class DashboardService {
       const gross = Number(item.grossAmount);
       let net = 0;
 
-      if (isProfessionalMode(mode) && proIds.length > 0) {
+      if (isPro) {
         const mySplits = item.splits.filter(s => s.beneficiaryId != null && proIds.includes(s.beneficiaryId!));
         net = mySplits.reduce((acc, s) => acc + Number(s.amount), 0);
       } else {
@@ -268,10 +254,9 @@ export class DashboardService {
 
   async getPayerDistribution(
     organizationId: string,
-    startDate?: string,
-    endDate?: string,
-    mode?: 'ORGANIZATION' | 'PROFESSIONAL',
-    userId?: string
+    startDate: string | undefined,
+    endDate: string | undefined,
+    view: ViewScope,
   ) {
     organizationId = requireOrgId(organizationId);
     const where: Prisma.WorkItemWhereInput = {};
@@ -286,8 +271,8 @@ export class DashboardService {
     }
 
     // Cross-org filtering for Professional mode
-    if (isProfessionalMode(mode) && userId) {
-      const proIds = await this.resolveAllProfessionalIds(userId);
+    if (view.mode === 'pro') {
+      const proIds = professionalIdsOf(view);
       if (proIds.length === 0) return [];
       // groupBy doesn't support nested-relation OR; resolve matching IDs first
       const matchingItems = await this.prisma.workItem.findMany({

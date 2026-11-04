@@ -3,7 +3,9 @@ import { ForbiddenException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import {
   buildRequestContext,
+  professionalIdsOf,
   requireOrgScope,
+  requireViewScope,
   roleIn,
 } from './request-context';
 
@@ -57,5 +59,47 @@ describe('request-context', () => {
     expect(roleIn(scope, orgA)).toBe('ADMIN');
     expect(roleIn(scope, orgB)).toBeNull();
     expect(roleIn(scope, randomUUID())).toBeNull();
+  });
+
+  it('view: null sin viewAccess; con viewAccess queda congelado, tambien professionals', () => {
+    expect(buildRequestContext(req).view).toBeNull();
+    const pro = {
+      id: randomUUID(),
+      organizationId: orgA,
+      canLoadActivities: true,
+    };
+    const ctx = buildRequestContext({
+      ...req,
+      viewAccess: { mode: 'pro', requested: 'pro', professionals: [pro] },
+    });
+    expect(ctx.view).toEqual({
+      mode: 'pro',
+      requested: 'pro',
+      professionals: [pro],
+    });
+    expect(Object.isFrozen(ctx.view)).toBe(true);
+    expect(Object.isFrozen(ctx.view?.professionals)).toBe(true);
+    expect(Object.isFrozen(ctx.view?.professionals[0])).toBe(true);
+    expect(professionalIdsOf(ctx.view!)).toEqual([pro.id]);
+  });
+
+  it('requireViewScope: devuelve la vista o 403 forbidden si no hay', () => {
+    const ctx = buildRequestContext({
+      ...req,
+      viewAccess: { mode: 'org', requested: null, professionals: [] },
+    });
+    expect(requireViewScope(ctx).mode).toBe('org');
+    for (const bad of [buildRequestContext(req), undefined]) {
+      try {
+        requireViewScope(bad);
+        fail('debia lanzar');
+      } catch (e: any) {
+        expect(e).toBeInstanceOf(ForbiddenException);
+        expect(e.getResponse()).toEqual({
+          code: 'forbidden',
+          message: 'Forbidden',
+        });
+      }
+    }
   });
 });

@@ -7,6 +7,12 @@ import { Transform, Type } from 'class-transformer';
 import { IsNumber, IsString, IsOptional } from 'class-validator';
 import { PatientResponseDto } from '../dtos/patient-response.dto';
 import { IPatientService } from '@src/domain/features/patients/service/i-patient-service';
+import {
+  RequestContext,
+  requireOrgScope,
+  requireViewScope,
+  roleIn,
+} from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request';
 
 export class FindAllPatientsQuery implements IRequest<
@@ -20,11 +26,6 @@ export class FindAllPatientsQuery implements IRequest<
   @IsOptional()
   @IsString()
   userId?: string;
-
-  @ApiHideProperty()
-  @IsOptional()
-  @IsString()
-  mode?: string;
 
   @ApiPropertyOptional({ description: 'Search term', type: String })
   search?: string;
@@ -56,8 +57,21 @@ export class FindAllPatientsQueryHandler implements IRequestHandler<
 
   async execute(
     query: FindAllPatientsQuery,
+    ctx: RequestContext,
   ): Promise<PaginatedArrayDto<PatientResponseDto>> {
-    const { items, total } = await this.patientService.findAll(query);
+    const scope = requireOrgScope(ctx);
+    const view = requireViewScope(ctx);
+    const orgId = query.organizationId;
+    // Con membresia, o con permiso de carga en esta organizacion, la vista pro incluye toda la organizacion;
+    // un profesional sin ninguna de las dos ve solo los pacientes que atendio.
+    const includeCurrentOrg =
+      roleIn(scope, orgId) !== null ||
+      view.professionals.some(
+        (p) => p.organizationId === orgId && p.canLoadActivities,
+      );
+    const { items, total } = await this.patientService.findAll(query, view, {
+      includeCurrentOrg,
+    });
     return new PaginatedArrayDto<PatientResponseDto>(
       items.map(
         (patient) =>

@@ -89,15 +89,88 @@ describe('invariantes de seguridad', () => {
     }
   });
 
-  it('007: x-mode solo se lee en activity-controller.ts, una vez (create)', () => {
-    // (el CORS lo permite como header y las constantes lo nombran: solo importan los controladores)
-    expect(
-      filesMatching(/x-mode/i).filter((f) => f.startsWith('api/controllers/')),
-    ).toEqual(['api/controllers/v1/activity/activity-controller.ts']);
-    const text = sources.find(
-      (s) => s.file === 'api/controllers/v1/activity/activity-controller.ts',
+  // ─── Feature 009: el modo (org/pro) lo decide el servidor ───────────────────
+  // x-mode y ?mode= solo los lee ViewModeGuard (una vez); el resto del backend recibe ctx.view.
+  const X_MODE_ALLOWLIST: Record<string, string> = {
+    'domain/constants/app.constants.ts': 'comentario sobre los valores que circulan',
+    'infrastructure.bootstrap/config/app/cors-config.ts':
+      'lista el header como permitido en CORS; no lo lee',
+    'infrastructure.bootstrap/config/core/authentication/auth-context.ts':
+      'comentario de ViewAccessContext',
+    'infrastructure.bootstrap/config/core/authentication/view-mode.ts':
+      'comentario: lógica pura, recibe los valores ya leídos',
+    'infrastructure.bootstrap/guards/view-mode-guard.ts':
+      'único lugar que lee el header y la query: arma request.viewAccess',
+  };
+
+  it('009: x-mode solo se menciona en el ViewModeGuard, CORS y comentarios justificados', () => {
+    expect(filesMatching(/x-mode/i).sort()).toEqual(
+      Object.keys(X_MODE_ALLOWLIST).sort(),
+    );
+    const guard = sources.find(
+      (s) => s.file === 'infrastructure.bootstrap/guards/view-mode-guard.ts',
     )!.text;
-    expect(text.match(/@Headers\(\s*['"]x-mode['"]\s*\)/g)).toHaveLength(1);
+    expect(guard.match(/['"]x-mode['"]/g)).toHaveLength(1);
+  });
+
+  it('009: ningún controlador, handler ni servicio lee el modo del cliente', () => {
+    const offenders = sources
+      .filter(
+        (s) =>
+          s.file.startsWith('api/') ||
+          s.file.startsWith('application/') ||
+          s.file.startsWith('infrastructure/'),
+      )
+      .filter(
+        (s) =>
+          /@Query\(\s*['"]mode['"]/.test(s.text) ||
+          /@Headers\(\s*['"]x-mode['"]/i.test(s.text) ||
+          /headers\s*(\?\.)?\[\s*['"]x-mode['"]/i.test(s.text) ||
+          /query\s*(\?\.)?\[\s*['"]mode['"]/.test(s.text) ||
+          /\b(query|command|dto|data|q)\.mode\b/.test(s.text),
+      )
+      .map((s) => s.file);
+    expect(offenders).toEqual([]);
+  });
+
+  it('009: ningún comando, query ni DTO declara un campo mode', () => {
+    const offenders: string[] = [];
+    for (const s of sources.filter((x) =>
+      x.file.startsWith('application/features/'),
+    )) {
+      for (const m of s.text.matchAll(/export class (\w+)[^{]*\{/g)) {
+        const start = m.index + m[0].length;
+        const end = s.text.indexOf('\n}', start);
+        const body = s.text.slice(start, end === -1 ? undefined : end);
+        if (/^\s+mode\??\s*[:!]/m.test(body)) offenders.push(`${s.file}:${m[1]}`);
+      }
+    }
+    const filter = sources.find(
+      (s) => s.file === 'domain/features/patients/find-all-patients-filter.ts',
+    )!.text;
+    if (/^\s+mode\??\s*[:!]/m.test(filter)) offenders.push('FindAllPatientsFilter');
+    expect(offenders).toEqual([]);
+  });
+
+  it('009: isProfessionalMode solo aparece en app.constants.ts y en el login (código de rol, no dato del cliente)', () => {
+    expect(filesMatching(/isProfessionalMode/).sort()).toEqual([
+      'application/features/auth/login-query-handler.ts',
+      'domain/constants/app.constants.ts',
+    ]);
+  });
+
+  it('009: las rutas que dependen del modo declaran @UsesViewMode y los handlers piden requireViewScope', () => {
+    for (const file of [
+      'application/features/activity/queries/find-all-activities-query.ts',
+      'application/features/activity/commands/create-activity-command.ts',
+      'application/features/dashboard/queries/get-dashboard-kpis-query.ts',
+      'application/features/dashboard/queries/get-dashboard-chart-query.ts',
+      'application/features/dashboard/queries/get-dashboard-payer-dist-query.ts',
+      'application/features/patients/queries/find-all-patients-query.ts',
+    ]) {
+      const text = sources.find((s) => s.file === file)!.text;
+      expect(`${file} ${/requireViewScope\(ctx\)/.test(text)}`).toBe(`${file} true`);
+    }
   });
 
   it('007: update y delete de atenciones no dependen del modo', () => {
@@ -118,7 +191,7 @@ describe('invariantes de seguridad', () => {
     'application/features/config/queries/get-organization-query.ts':
       'el id es el x-org-id validado por OrgAccessGuard',
     'application/features/settlements/queries/calculate-settlements-query.ts':
-      'ids de organización validados por OrgAccessGuard (query organizationId)',
+      'el id es @CurrentOrgId() (validado por OrgAccessGuard) y la ruta exige ADMIN',
     'infrastructure/features/auth/services/org-access.service.ts':
       'consulta la pertenencia: filtra por la membresía o el vínculo del usuario autenticado',
     'infrastructure/features/dashboard/dashboard.service.ts':
@@ -188,7 +261,6 @@ describe('invariantes de seguridad', () => {
     'FindAllActivitiesQuery.patientId': 'filter',
     'FindAllActivitiesQuery.payerId': 'filter',
     'FindAllActivitiesQuery.professionalId': 'filter',
-    'FindAllActivitiesQuery.userId': 'controller',
     'FindAllPatientsQuery.organizationId': 'controller',
     'FindAllPatientsQuery.userId': 'controller',
     'FindFeeRulesQuery.organizationId': 'controller',
@@ -196,11 +268,8 @@ describe('invariantes de seguridad', () => {
     'GetActivityTypesQuery.orgId': 'controller',
     'GetDailyReportQuery.userId': 'controller',
     'GetDashboardChartQuery.orgId': 'controller',
-    'GetDashboardChartQuery.userId': 'controller',
     'GetDashboardKpisQuery.organizationId': 'controller',
-    'GetDashboardKpisQuery.userId': 'controller',
     'GetDashboardPayerDistributionQuery.orgId': 'controller',
-    'GetDashboardPayerDistributionQuery.userId': 'controller',
     'GetDebtQuery.id': 'verified',
     'GetDebtorsReportQuery.userId': 'controller',
     'GetMonthlyReportQuery.userId': 'controller',
@@ -248,6 +317,60 @@ describe('invariantes de seguridad', () => {
       }
     }
     expect([...found].sort()).toEqual(Object.keys(ID_FIELDS).sort());
+  });
+
+  // Clases con campos 'controller' cuyo controlador no está registrado en ningún módulo (011): justificadas.
+  // Su userId viene hoy de la query cruda; si se registran, hay que asignarlo desde @CurrentUserId().
+  const NOT_REGISTERED_ALLOWLIST: Record<string, string> = {
+    GetDailyReportQuery: 'ReportingController no está registrado (011)',
+    GetDebtorsReportQuery: 'ReportingController no está registrado (011)',
+    GetMonthlyReportQuery: 'ReportingController no está registrado (011)',
+    GetMyProductionQuery: 'ProductionController no está registrado (011)',
+  };
+
+  it('009: cada campo "controller" de ID_FIELDS lo asigna el controlador que despacha la clase', () => {
+    const controllers = sources.filter((s) =>
+      s.file.startsWith('api/controllers/'),
+    );
+    const missing: string[] = [];
+    for (const [key, kind] of Object.entries(ID_FIELDS)) {
+      if (kind !== 'controller') continue;
+      const [cls, field] = key.split('.');
+      if (cls in NOT_REGISTERED_ALLOWLIST) continue;
+      const users = controllers.filter((c) =>
+        new RegExp(`\\b${cls}\\b`).test(c.text),
+      );
+      if (users.length === 0) {
+        missing.push(`${key}: ningún controlador despacha la clase`);
+      } else if (
+        !users.some((c) => new RegExp(`\\.${field}\\s*=(?!=)`).test(c.text))
+      ) {
+        missing.push(`${key}: el controlador no asigna el campo`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('009: la lista blanca de controladores no registrados no acumula entradas obsoletas', () => {
+    const registered = sources
+      .filter((s) => s.file.startsWith('infrastructure.bootstrap/modules/'))
+      .map((s) => s.text)
+      .join('\n');
+    for (const cls of Object.keys(NOT_REGISTERED_ALLOWLIST)) {
+      // la clase sigue clasificada como 'controller' en ID_FIELDS
+      expect(
+        Object.keys(ID_FIELDS).some(
+          (k) => k.startsWith(`${cls}.`) && ID_FIELDS[k] === 'controller',
+        ),
+      ).toBe(true);
+      const ctrl = sources.find(
+        (s) =>
+          s.file.startsWith('api/controllers/') &&
+          new RegExp(`\\b${cls}\\b`).test(s.text),
+      )!;
+      const ctrlClass = /export class (\w+Controller)/.exec(ctrl.text)![1];
+      expect(registered).not.toContain(ctrlClass);
+    }
   });
 
   it('007: los comandos con ids verificados viven en archivos que usan org-resource o el contexto', () => {
@@ -315,6 +438,7 @@ describe('invariantes de seguridad', () => {
       'api/controllers/v1/dashboard/dashboard-controller.ts',
       'api/controllers/v1/fee-engine/fee-rules-controller.ts',
       'api/controllers/v1/patients/patients-controller.ts',
+      'api/controllers/v1/settlements/settlements-controller.ts',
     ]);
   });
 

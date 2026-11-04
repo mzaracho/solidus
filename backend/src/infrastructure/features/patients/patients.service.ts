@@ -2,10 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../Prisma/prisma.service';
 import { Prisma, PaymentStatus } from '@prisma/client';
 import { Patient } from '@src/domain/features/patients/Patient.entity';
-import { IPatientService } from '@src/domain/features/patients/service/i-patient-service';
+import {
+  FindAllPatientsOptions,
+  IPatientService,
+} from '@src/domain/features/patients/service/i-patient-service';
 import { FindAllPatientsFilter } from '@src/domain/features/patients/find-all-patients-filter';
+import { ownProfessionalsFilter } from '@src/application/features/patients/patient-read-access';
 import { CreatePatientRequest } from '@src/domain/features/patients/create-patient-request';
-import { isProfessionalMode } from '@src/domain/constants/app.constants';
+import {
+  professionalIdsOf,
+  ViewScope,
+} from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 
 function toTitleCase(name: string): string {
   return name
@@ -19,11 +26,15 @@ function toTitleCase(name: string): string {
 export class PatientsService implements IPatientService {
   constructor(private prisma: PrismaService) { }
 
-  getDebt(id: string): Promise<number> {
-    return this.calcDebt(id);
+  getDebt(id: string, professionalIds?: string[]): Promise<number> {
+    return this.calcDebt(id, professionalIds);
   }
 
-  async findAll(query: FindAllPatientsFilter): Promise<{ items: Patient[]; total: number }> {
+  async findAll(
+    query: FindAllPatientsFilter,
+    view: ViewScope,
+    options: FindAllPatientsOptions,
+  ): Promise<{ items: Patient[]; total: number }> {
     if (!query.organizationId) return { items: [], total: 0 };
 
     const where: Prisma.PatientWhereInput = {
@@ -32,28 +43,42 @@ export class PatientsService implements IPatientService {
 
     // Filter by Professional (if Mode = PROFESSIONAL)
     const andFilters: Prisma.PatientWhereInput[] = [];
+    // Vista pro: sin membresia en la organizacion del paciente, deuda y ultima visita cuentan solo las
+    // atenciones de los Professional del usuario (nada de montos ajenos).
+    let memberOrgIds = new Set<string>();
+    let restrictedIds: string[] | null = null;
 
-    if (isProfessionalMode(query.mode) && query.userId) {
-      // Find ALL active Professional profiles for this user across all orgs
-      const allPros = await this.prisma.professional.findMany({
-        where: { userId: query.userId, status: 'ACTIVE' },
-      });
+    if (view.mode === 'pro') {
+      // Los Professional ACTIVE del usuario (cualquier organizacion) los resolvio ViewModeGuard.
+      const proIds = professionalIdsOf(view);
 
-      if (allPros.length === 0) {
+      if (proIds.length === 0) {
         return { items: [], total: 0 };
       }
-
-      const proIds = allPros.map((p) => p.id);
 
       // Cross-org: remove org restriction, filter patients by activity participation or ownership
       const originalOrgId = where.organizationId as string | undefined;
       delete where.organizationId;
 
-      const soloOrgs = await this.prisma.organizationMember.findMany({
-        where: { userId: query.userId, organization: { type: 'SOLO_PRACTICE' } },
-        select: { organizationId: true },
-      });
-      const soloOrgIds = soloOrgs.map(m => m.organizationId);
+      // Membresias del usuario: las practicas propias se ven enteras solo como ADMIN (igual que el
+      // ViewModeGuard); y la deuda solo se calcula completa en organizaciones donde es miembro.
+      const memberships = query.userId
+        ? await this.prisma.organizationMember.findMany({
+            where: { userId: query.userId },
+            select: {
+              organizationId: true,
+              role: true,
+              organization: { select: { type: true } },
+            },
+          })
+        : [];
+      memberOrgIds = new Set(memberships.map((m) => m.organizationId));
+      restrictedIds = proIds;
+      const soloOrgIds = memberships
+        .filter(
+          (m) => m.organization?.type === 'SOLO_PRACTICE' && m.role === 'ADMIN',
+        )
+        .map((m) => m.organizationId);
 
       const proOrConditions: Prisma.PatientWhereInput[] = [
         {
@@ -68,7 +93,8 @@ export class PatientsService implements IPatientService {
         }
       ];
 
-      if (originalOrgId) {
+      // Toda la organizacion de la URL solo con membresia o permiso de carga (009)
+      if (originalOrgId && options.includeCurrentOrg) {
         proOrConditions.push({ organizationId: originalOrgId });
       }
 
@@ -113,9 +139,16 @@ export class PatientsService implements IPatientService {
     // Map to response with debt
     const results: Patient[] = [];
     for (const p of paginated) {
-      const debt = await this.calcDebt(p.id);
+      const ownIds =
+        restrictedIds && !memberOrgIds.has(p.organizationId)
+          ? restrictedIds
+          : undefined;
+      const debt = await this.calcDebt(p.id, ownIds);
       const last = await this.prisma.workItem.findFirst({
-        where: { patientId: p.id },
+        where: {
+          patientId: p.id,
+          ...(ownIds ? ownProfessionalsFilter(ownIds) : {}),
+        },
         orderBy: { occurredAt: 'desc' },
       });
 
@@ -158,11 +191,12 @@ export class PatientsService implements IPatientService {
     return new Patient(result);
   }
 
-  async calcDebt(patientId: string): Promise<number> {
+  async calcDebt(patientId: string, professionalIds?: string[]): Promise<number> {
     const items = await this.prisma.workItem.findMany({
       where: {
         patientId,
         paymentStatus: { not: 'PAID' },
+        ...(professionalIds ? ownProfessionalsFilter(professionalIds) : {}),
       },
     });
     return items.reduce((acc, item) => acc + Number(item.grossAmount), 0);

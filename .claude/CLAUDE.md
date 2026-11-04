@@ -56,7 +56,8 @@ salvo que el usuario lo pida.
 - Endpoint nuevo con datos de una organización: usar `@CurrentUserId()` / `@CurrentOrgId()`, `requireOrgScope(ctx)`
   y `foundOr404` / `inScope` / `inOrg` (`infrastructure.bootstrap/config/core/authentication/org-resource.ts`);
   agregar el caso a `ID_ROUTE_CASES` de `test/org-isolation.spec.ts` (el test estructural falla si falta una ruta con
-  parámetros) y clasificar los campos `*Id` nuevos en `security-invariants.spec.ts`.
+  parámetros) y clasificar los campos `*Id` nuevos en `security-invariants.spec.ts`. Si la ruta cambia qué datos
+  devuelve según el modo org/pro: `@UsesViewMode()` en el controlador y `requireViewScope(ctx)` en el handler (009).
 - Atenciones (007): ADMIN puede todo; MEMBER edita y cobra cualquier atención de su organización pero borra solo las
   propias (`createdByUserId`); quien solo tiene un `Professional` edita/borra lo suyo y necesita `canLoadActivities`
   para crear. Detalle: `docs/features/007-aislamiento-organizaciones/00-estado.md`.
@@ -73,6 +74,9 @@ salvo que el usuario lo pida.
   `src/components/domain/<área>`.
 - Refrescar datos con `router.refresh()`, no `window.location.reload()`.
 - Alias `@/*` → `src/*`.
+- Modo org/pro (009): `src/lib/view-mode.ts` (`allowedViewModes`, `pickViewMode`, `canSeeRestrictedLinks`) decide
+  solo qué ofrece la UI (selector "Ver como", enlaces restringidos a ADMIN); el front manda el modo como preferencia
+  (`x-mode` / `?mode=`) y el backend decide.
 - Permisos de UI de atenciones: `canDeleteActivity` en `src/lib/activity-permissions.ts` e identidad con
   `readSessionIdentity()` en `src/lib/session.ts`; solo presentación (el backend es la autoridad).
 
@@ -120,7 +124,7 @@ Backend (`cd backend`):
 - `npx tsc --noEmit` — type-check
 - `npx eslint "{src,apps,libs,test}/**/*.ts"` — lint sin modificar archivos
 - `npm run lint` — ATENCIÓN: aplica `--fix` y reescribe archivos
-- `npm test` — Jest (13 suites)
+- `npm test` — Jest (30 suites)
 - `npm run build` — reescribe `dist/`
 
 Frontend (`cd frontend`):
@@ -150,9 +154,12 @@ Seeds (archivos locales, no versionados): `.\dev.ps1 -Seed`; manual con `docker 
    - recursos por `:id` y ids referenciados verificados contra la organización (helper `org-resource.ts`); si no
      pertenece, 404 genérico idéntico al de un id inexistente,
    - permisos en el backend con el rol de la base: las escrituras de `org/*` exigen `@RequireOrgRole('ADMIN')`;
-     `x-mode` no da permisos (solo se lee en `activity-controller.ts` al crear).
-   Pendiente (ver BACKLOG): modo derivado del rol para qué datos se muestran (feature 009), cookie `HttpOnly`,
-   rate limiting en login.
+   - modo org/pro (009): lo resuelve `ViewModeGuard` (tercer guard global: autenticación, organización, modo), único
+     lector de `x-mode` / `?mode=` (lo vigila `security-invariants.spec.ts`). Las rutas que dependen del modo llevan
+     `@UsesViewMode()` y sus handlers usan `requireViewScope(ctx)` (sin decorador: 403). El modo es una preferencia: si
+     el pedido no corresponde a los vínculos del usuario, 403 sin degradar a otro modo; valor inválido: 400
+     `invalid-mode`. Los datos financieros de la organización (dashboard en org, `settlements/calculate`) son solo ADMIN.
+   Pendiente (ver BACKLOG): cookie `HttpOnly`, rate limiting en login.
 5. Operaciones que escriben varias tablas van dentro de `prisma.$transaction`.
 6. Cambios de schema: migración Prisma + `prisma generate` + mencionar en la spec del feature.
 7. Antes de dar por terminado un cambio: `npx tsc --noEmit` en el repo afectado sin errores,

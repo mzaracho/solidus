@@ -27,6 +27,7 @@ import { CreatePatientCommand } from '@src/application/features/patients/command
 import { UpdatePatientCommand } from '@src/application/features/patients/commands/update-patient-command';
 import { MergePatientCommand } from '@src/application/features/patients/commands/merge-patient-command';
 import { CurrentOrgId } from '@src/infrastructure.bootstrap/config/core/authentication/current-org-decorator';
+import { UsesViewMode } from '@src/infrastructure.bootstrap/config/core/authentication/view-mode-decorator';
 @ApiTags('Patients')
 @Controller('v1/patients')
 export class PatientsController extends BaseController {
@@ -35,6 +36,7 @@ export class PatientsController extends BaseController {
   }
 
   @Get()
+  @UsesViewMode()
   @ApiOperation({ summary: 'Find all patients' })
   @ApiPaginatedOkResponse({
     description: 'List of patients',
@@ -43,12 +45,10 @@ export class PatientsController extends BaseController {
   async findAll(
     @CurrentOrgId() orgId: string,
     @CurrentUserId() userId: string,
-    @Query('mode') modeQuery: string,
     @Query() query: FindAllPatientsQuery,
   ): Promise<PaginatedArrayDto<PatientResponseDto>> {
     query.organizationId = orgId;
     query.userId = userId;
-    query.mode = modeQuery;
     return await this.dispatcher.dispatch(query);
   }
 

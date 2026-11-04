@@ -75,12 +75,12 @@ A menudo el propio DTO de entrada (`@Body() command: XCommand`) es el comando.
 | Controlador | Ruta base | Guard aplicado |
 |---|---|---|
 | AuthController | `v1/auth` (`login` público, `logout`) | `AuthGuard` |
-| ActivityController | `activity` (CRUD) | `JwtAuthGuard` |
+| ActivityController | `activity` (CRUD; GET y POST con `@UsesViewMode()`) | guards globales |
 | ProductionController | `my-production` | ninguno (solo `ApiKeyGuard` = siempre true) |
 | ReportingController | `work-items/reporting/{daily,debtors,monthly}` | ninguno |
-| DashboardController | `dashboard/{kpis,chart,payers}` | `AuthGuard` |
-| PatientsController | `v1/patients` (+ `:id/debt`, `:id/summary`, `:id/merge`) | `AuthGuard` |
-| SettlementsController | `settlements` (+ `calculate`, `:id/details`) | ninguno |
+| DashboardController | `dashboard/{kpis,chart,payers}` | guards globales; `@UsesViewMode({ orgRole: 'ADMIN' })` |
+| PatientsController | `v1/patients` (+ `:id/debt`, `:id/summary`, `:id/merge`); el listado con `@UsesViewMode()` | guards globales |
+| SettlementsController | `settlements` (+ `calculate`, `:id/details`) | guards globales; `calculate` con `@RequireOrgRole('ADMIN')` |
 | ConfigController | Eliminado en el feature 007 (el front usa `org/*`) | — |
 | OrgController | `org/*` (organización, categorías, presets, staff, activity-types) | `AuthGuard` + `OrgRoleGuard` en escrituras |
 | ProController | `pro/{context,memberships,profile,payers}` | `AuthGuard` |
@@ -89,13 +89,16 @@ A menudo el propio DTO de entrada (`@Body() command: XCommand`) es el comando.
 | FeeRulesController | `fee-rules` | `AuthGuard` |
 | ProfessionalCategoryController | `fee-engine/professional-categories` | ninguno |
 
-Ver `RIESGOS.md`: ninguno de estos guards valida realmente la firma del JWT.
+Ver `RIESGOS.md`. (Nota: desde el 005 el JWT se verifica en el guard global; las columnas "ninguno" de otras filas son anteriores al 005.)
 
-### Contexto de tenant / usuario
-El backend toma el contexto **de headers enviados por el cliente**:
-`x-org-id`, `x-user-id`, `x-mode` (y a veces `?mode=` en query). Los valores `PROFESSIONAL`/`pro`
-activan "modo profesional" (`isProfessionalMode()` en `domain/constants/app.constants.ts`).
-Solo `ActivityController` usa `request.userId` derivado (sin verificar) del JWT.
+### Contexto de tenant / usuario (actualizado por el feature 009)
+Hay tres `APP_GUARD` globales, en este orden: autenticación (verifica el JWT), organización (valida `x-org-id` contra
+las membresías) y modo (`ViewModeGuard`). La organización y el usuario salen de `RequestContext`
+(`@CurrentOrgId()` / `@CurrentUserId()`). `x-mode` y `?mode=` son una preferencia que solo lee `ViewModeGuard`
+(`view-mode.ts` resuelve la matriz vínculos x modo pedido); las rutas marcadas con `@UsesViewMode()` reciben
+`ctx.view` y sus handlers lo exigen con `requireViewScope(ctx)`. Modo que no corresponde: 403; valor inválido: 400
+`invalid-mode`. Detalle en `docs/features/009-modo-desde-rol/03-diseno-tecnico.md`.
+(Las demás filas de esta tabla de guards describen el estado previo al 005 y siguen sin revisar.)
 
 ### Modelo de datos (Prisma, `prisma/schema.prisma`)
 Entidades principales: `Organization` (tipo `SOLO_PRACTICE` | `CLINIC`, `settings` JSON),

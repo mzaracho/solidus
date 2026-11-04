@@ -145,12 +145,12 @@ describe('ActivityService.createActivity', () => {
     );
     await s.service.createActivity(
       dto({ professionalId: undefined }),
-      'org',
+      'pro',
       s.scopeOf(null),
     );
     const data = s.writes.workItemCreate.mock.calls[0][0].data;
     expect(data.professional).toEqual({ connect: { id: ownId } });
-    // con x-mode distinto el resultado es el mismo
+    // indicando su propio professionalId el resultado es el mismo
     const s2 = setup();
     s2.prisma.professional.findFirst.mockImplementation(async (a: any) =>
       a.where.userId === me
@@ -179,7 +179,7 @@ describe('ActivityService.createActivity', () => {
     );
     await s.service.createActivity(
       dto({ professionalId: undefined }),
-      'org',
+      'pro',
       s.scopeOf(null),
     );
     const ownLookup = s.prisma.professional.findFirst.mock.calls
@@ -193,7 +193,7 @@ describe('ActivityService.createActivity', () => {
     });
   });
 
-  it.each(['org', 'pro'])(
+  it.each(['org', 'pro'] as const)(
     'profesional con canLoadActivities=false: 403 y ninguna escritura (mode %s)',
     async (mode) => {
       const s = setup();
@@ -216,7 +216,7 @@ describe('ActivityService.createActivity', () => {
     const s = setup();
     s.prisma.professional.findFirst.mockResolvedValue(null);
     const e = await errorOf(() =>
-      s.service.createActivity(dto(), 'org', s.scopeOf(null)),
+      s.service.createActivity(dto(), 'pro', s.scopeOf(null)),
     );
     expect(e.getResponse()).toEqual(FORBIDDEN_BODY);
     noWrites(s);
@@ -231,12 +231,46 @@ describe('ActivityService.createActivity', () => {
     const e = await errorOf(() =>
       s.service.createActivity(
         dto({ professionalId: randomUUID() }),
-        'org',
+        'pro',
         s.scopeOf(null),
       ),
     );
     expect(e.getResponse()).toEqual(FORBIDDEN_BODY);
     noWrites(s);
+  });
+
+  it('modo org sin membresia en la organizacion destino: 403 sin lecturas ni escrituras (aunque tenga canLoadActivities)', async () => {
+    const s = setup();
+    s.prisma.professional.findFirst.mockResolvedValue({
+      id: randomUUID(),
+      canLoadActivities: true,
+    });
+    const e = await errorOf(() =>
+      s.service.createActivity(dto(), 'org', s.scopeOf(null)),
+    );
+    expect(e).toBeInstanceOf(ForbiddenException);
+    expect(e.getResponse()).toEqual(FORBIDDEN_BODY);
+    noWrites(s);
+    // la regla va antes de cualquier lectura
+    expect(s.prisma.professional.findFirst).not.toHaveBeenCalled();
+    expect(s.prisma.patient.findFirst).not.toHaveBeenCalled();
+    expect(s.prisma.organization.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('modo pro de un profesional con canLoadActivities sin membresia: carga a su Professional', async () => {
+    const s = setup();
+    const own = randomUUID();
+    s.prisma.professional.findFirst.mockImplementation(async (a: any) =>
+      a.where.userId
+        ? { id: own, canLoadActivities: true }
+        : { id: a.where.id },
+    );
+    await s.service.createActivity(
+      dto({ professionalId: undefined }),
+      'pro',
+      s.scopeOf(null),
+    );
+    expect(s.writes.workItemCreate).toHaveBeenCalledTimes(1);
   });
 
   it('organización destino fuera del scope: 403 org-access-denied', async () => {

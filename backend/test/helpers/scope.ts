@@ -12,6 +12,15 @@ export function makeCtx(opts: {
   userId?: string;
   roles: Record<string, Role>;
   primaryOrgId?: string;
+  /** Vista efectiva (lo que dejaria ViewModeGuard); sin esto, ctx.view es null. */
+  view?: {
+    mode: 'org' | 'pro';
+    professionals?: Array<{
+      id: string;
+      organizationId: string;
+      canLoadActivities?: boolean;
+    }>;
+  };
 }): RequestContext {
   const orgIds = Object.keys(opts.roles);
   const userId = opts.userId ?? randomUUID();
@@ -22,6 +31,16 @@ export function makeCtx(opts: {
       primaryOrgId: opts.primaryOrgId ?? orgIds[0],
       roles: opts.roles,
     },
+    viewAccess: opts.view
+      ? {
+          mode: opts.view.mode,
+          requested: opts.view.mode,
+          professionals: (opts.view.professionals ?? []).map((p) => ({
+            canLoadActivities: false,
+            ...p,
+          })),
+        }
+      : undefined,
   } as any);
 }
 

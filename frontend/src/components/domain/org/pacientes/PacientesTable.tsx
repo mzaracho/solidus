@@ -43,7 +43,7 @@ export function PacientesTable() {
             setLoading(true)
             const [items, rulesData] = await Promise.all([
                 getWorkItems(orgSlug, 'ORGANIZATION'),
-                getFeeRules(orgSlug, 'ORGANIZATION')
+                getFeeRules(orgSlug)
             ])
 
             // Map raw items to Table Type

@@ -4,8 +4,6 @@ export class DashboardKpiQueryDto {
   organizationId: string;
   startDate?: string;
   endDate?: string;
-  mode?: 'ORGANIZATION' | 'PROFESSIONAL';
-  userId?: string;
   @IsOptional()
   @IsString()
   basis?: 'ACCRUED' | 'CASH';

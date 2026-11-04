@@ -47,3 +47,24 @@ test('las escrituras no tragan el error (un 403/404 no debe verse como exito)', 
     assert.equal(/return (null|false|\{ success: false)/.test(catchPart), false, `${name} devuelve un valor de fallo en el catch`)
   }
 })
+
+// Feature 009: el modo es una preferencia; la vista efectiva la decide el backend.
+test('x-mode solo se manda en createWorkItem', () => {
+  const assignments = source.match(/\['x-mode'\]/g) ?? []
+  assert.equal(assignments.length, 1)
+  assert.ok(functionBody('createWorkItem').includes("['x-mode']"))
+})
+
+test('getFeeRules no manda ?mode=', () => {
+  assert.equal(functionBody('getFeeRules').includes('mode='), false)
+})
+
+test('calculateSettlements no manda organizationId en la query', () => {
+  assert.equal(functionBody('calculateSettlements').includes('organizationId='), false)
+})
+
+test('createWorkItem no manda mode en el body', () => {
+  const body = functionBody('createWorkItem')
+  assert.equal(body.includes('JSON.stringify(data)'), false)
+  assert.ok(body.includes('const { mode, ...body }'))
+})

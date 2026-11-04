@@ -3,7 +3,7 @@ import { ActivityParticipantDto, CreateActivityDto } from '../Dtos/create-activi
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
 import { Injectable } from '@nestjs/common';
-import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
+import { requireOrgScope, requireViewScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 import { ActivityService } from '@src/infrastructure/features/activity/activity.service';
 import { WorkItem } from '@src/domain/features/activity/WorkItem.entity';
 
@@ -112,10 +112,6 @@ export class CreateActivityCommand implements IRequest<WorkItem> {
   @IsString()
   attendance?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  mode?: string;
 }
 
 @RequestHandler(CreateActivityCommand)
@@ -128,6 +124,8 @@ export class CreateActivityCommandHandler implements IRequestHandler<
 
   async execute(command: CreateActivityCommand, ctx: RequestContext): Promise<WorkItem> {
     const scope = requireOrgScope(ctx);
+    // El modo lo resolvio ViewModeGuard (la preferencia del cliente no decide); un `mode` del body se ignora.
+    const { mode } = requireViewScope(ctx);
     const dto: CreateActivityDto = {
       organizationId: command.organizationId,
       date: command.date,
@@ -149,6 +147,6 @@ export class CreateActivityCommandHandler implements IRequestHandler<
       attendance: command.attendance,
       serviceType: command.serviceType,
     };
-    return this.activityService.createActivity(dto, command.mode ?? 'org', scope);
+    return this.activityService.createActivity(dto, mode, scope);
   }
 }

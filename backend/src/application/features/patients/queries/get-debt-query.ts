@@ -9,6 +9,7 @@ import {
   requireOrgScope,
   RequestContext,
 } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
+import { assertPatientReadable } from '../patient-read-access';
 import {
   foundOr404,
   inScope,
@@ -38,12 +39,13 @@ export class GetDebtQueryHandler implements IRequestHandler<
   async execute(query: GetDebtQuery, ctx: RequestContext): Promise<number> {
     const scope = requireOrgScope(ctx);
     const id = requireId(query.id);
-    await foundOr404(
+    const patient = await foundOr404(
       this.prisma.patient.findFirst({
         where: { id, ...inScope(scope) },
-        select: { id: true },
+        select: { id: true, organizationId: true },
       }),
     );
-    return this.patientService.getDebt(id);
+    const ownIds = await assertPatientReadable(this.prisma, scope, patient);
+    return this.patientService.getDebt(id, ownIds ?? undefined);
   }
 }

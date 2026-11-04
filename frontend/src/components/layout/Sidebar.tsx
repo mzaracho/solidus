@@ -14,8 +14,9 @@ import {
     DropdownMenuTrigger,
     DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
-import { useEffect, useState } from 'react'
-import { ROUTES } from '@/lib/constants'
+import { useEffect, useMemo, useState } from 'react'
+import { ROUTES, VIEW_MODE, APP_ROLE_CODE } from '@/lib/constants'
+import { allowedViewModes, pickViewMode, canSeeRestrictedLinks } from '@/lib/view-mode'
 import { clearSessionCookie } from '@/lib/session'
 
 function getNameFromToken(): string {
@@ -41,6 +42,12 @@ export function Sidebar() {
             setOrgSlug(params.orgSlug as string)
         }
     }, [params?.orgSlug, storeOrgSlug, setOrgSlug])
+
+    // Vistas que el usuario puede pedir segun sus vinculos (solo presentacion: el backend decide y responde 403).
+    const allowedModes = useMemo(
+        () => allowedViewModes({ orgRole, roles: availableRoles }),
+        [orgRole, availableRoles],
+    )
 
     const userName = typeof document !== 'undefined' ? getNameFromToken() : 'Usuario'
 
@@ -82,28 +89,24 @@ export function Sidebar() {
 
     const links = viewMode === 'ORGANIZATION' ? orgLinks : proLinks
 
-    // Redirect Logic for MEMBER — applies in both org and pro modes
+    // Redirect: los enlaces financieros de la organizacion (restricted) son solo para ADMIN.
     useEffect(() => {
-        if (orgRole !== 'MEMBER') return
-        const currentLinks = viewMode === 'ORGANIZATION' ? orgLinks : proLinks
+        if (!orgRole || canSeeRestrictedLinks(orgRole)) return
+        const currentLinks = viewMode === VIEW_MODE.ORGANIZATION ? orgLinks : proLinks
         const isRestricted = currentLinks.some(link => link.restricted && pathname.startsWith(link.href))
         if (isRestricted) {
             // Use slug from current URL path (store orgSlug may be empty)
             const slugFromPath = pathname.split('/')[1] || orgSlug
-            const fallback = viewMode === 'ORGANIZATION' ? `/${slugFromPath}/org/admisiones` : `/${slugFromPath}/pro/atenciones`
+            const fallback = viewMode === VIEW_MODE.ORGANIZATION ? `/${slugFromPath}/org/admisiones` : `/${slugFromPath}/pro/atenciones`
             router.push(fallback)
         }
     }, [pathname, orgRole, viewMode, orgSlug, router])
 
-    // Auto-switch ViewMode if only one role is available
+    // Si la vista guardada no esta permitida (p. ej. un profesional sin membresia con ORGANIZATION persistida), se corrige.
     useEffect(() => {
-        if (availableRoles.length === 1) {
-            const soleRole = availableRoles[0].code as 'ORGANIZATION' | 'PROFESSIONAL'
-            if (viewMode !== soleRole) {
-                setViewMode(soleRole)
-            }
-        }
-    }, [availableRoles, viewMode, setViewMode])
+        const next = pickViewMode(viewMode, allowedModes)
+        if (next !== viewMode) setViewMode(next)
+    }, [allowedModes, viewMode, setViewMode])
 
     return (
         <div className="flex h-screen w-64 flex-col border-r bg-muted/10">
@@ -117,8 +120,8 @@ export function Sidebar() {
             <div className="flex-1 py-4">
                 <nav className="space-y-1 px-3">
                     {links.map((link) => {
-                        // Permissions Check — hide restricted links for MEMBER in any mode
-                        if (orgRole === 'MEMBER' && (link as any).restricted) {
+                        // Permissions Check — hide restricted links for any non-ADMIN
+                        if (orgRole && !canSeeRestrictedLinks(orgRole) && (link as any).restricted) {
                             return null;
                         }
 
@@ -153,23 +156,23 @@ export function Sidebar() {
                                         <p className="font-medium text-foreground">{userName}</p>
                                         <span className="text-[10px] text-muted-foreground">
                                             Modo: {viewMode === 'ORGANIZATION'
-                                                ? (availableRoles.find(r => r.code === 'ORGANIZATION')?.name || 'Organización')
-                                                : (availableRoles.find(r => r.code === 'PROFESSIONAL')?.name || 'Profesional')}
+                                                ? (availableRoles.find(r => r.code === APP_ROLE_CODE.ORGANIZATION)?.name || 'Organización')
+                                                : (availableRoles.find(r => r.code === APP_ROLE_CODE.PROFESSIONAL)?.name || 'Profesional')}
                                         </span>
                                     </div>
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-56">
-                                {availableRoles.length > 1 && (
+                                {allowedModes.length > 1 && (
                                     <>
-                                        {availableRoles.find(r => r.code === 'ORGANIZATION') && (
-                                            <DropdownMenuItem onClick={() => setViewMode('ORGANIZATION')}>
-                                                Ver como {availableRoles.find(r => r.code === 'ORGANIZATION')?.name || 'Organización'}
+                                        {allowedModes.includes(VIEW_MODE.ORGANIZATION) && (
+                                            <DropdownMenuItem onClick={() => setViewMode(VIEW_MODE.ORGANIZATION)}>
+                                                Ver como {availableRoles.find(r => r.code === APP_ROLE_CODE.ORGANIZATION)?.name || 'Organización'}
                                             </DropdownMenuItem>
                                         )}
-                                        {availableRoles.find(r => r.code === 'PROFESSIONAL') && (
-                                            <DropdownMenuItem onClick={() => setViewMode('PROFESSIONAL')}>
-                                                Ver como {availableRoles.find(r => r.code === 'PROFESSIONAL')?.name || 'Profesional'}
+                                        {allowedModes.includes(VIEW_MODE.PROFESSIONAL) && (
+                                            <DropdownMenuItem onClick={() => setViewMode(VIEW_MODE.PROFESSIONAL)}>
+                                                Ver como {availableRoles.find(r => r.code === APP_ROLE_CODE.PROFESSIONAL)?.name || 'Profesional'}
                                             </DropdownMenuItem>
                                         )}
                                         <DropdownMenuSeparator />

@@ -14,6 +14,13 @@
  *  (f) Rutas eliminadas: 404.
  *  (g) Contrato del frontend contra org/*.
  *  (h) Lookup por CUIT acotado a la organización.
+ *
+ * Feature 009 (modo org/pro decidido en el servidor):
+ *  (j) Matriz por HTTP: vínculos x modo pedido x ruta (GET activity, GET dashboard/kpis, GET v1/patients, POST activity).
+ *  (k) Financieros solo para ADMIN, con valores conocidos (dashboard en org y settlements/calculate).
+ *  (l) Estructural: el conjunto de rutas con @UsesViewMode y los roles exigidos.
+ *  (m) Valores de modo inválidos y rutas que ignoran el modo.
+ *  (n) Lecturas por id de un profesional sin membresía, y vista pro multi-organización.
  */
 import { INestApplication, RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
@@ -28,6 +35,11 @@ import { configurePipes } from '@src/infrastructure.bootstrap/config/app/pipes-c
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { OrgAccessService } from '@src/infrastructure/features/auth/services/org-access.service';
 import { REQUIRED_ORG_ROLE_KEY } from '@src/infrastructure.bootstrap/guards/org-role-guard';
+import { VIEW_MODE_KEY } from '@src/infrastructure.bootstrap/config/core/authentication/view-mode-decorator';
+import {
+  resolveViewMode,
+  ViewLinks,
+} from '@src/infrastructure.bootstrap/config/core/authentication/view-mode';
 import { OrgController } from '@src/api/controllers/v1/config/org-controller';
 import { createFakePrisma } from './helpers/fake-prisma';
 
@@ -35,12 +47,17 @@ import { createFakePrisma } from './helpers/fake-prisma';
 const id = () => randomUUID();
 const orgA = id();
 const orgB = id();
+const orgC = id(); // SOLO_PRACTICE
 const U = {
   admin: id(),
   member: id(),
   pro: id(),
   proNoLoad: id(),
   stranger: id(),
+  adminPro: id(), // ADMIN de A con Professional en A y en B
+  memberPro: id(), // MEMBER de A con Professional en A
+  soloAdmin: id(), // ADMIN de C (SOLO_PRACTICE) sin Professional
+  proDeleted: id(), // Professional activo en A y dado de baja en B
 };
 const I = {
   proA: id(), // Professional de U.pro en A (canLoadActivities = true)
@@ -66,6 +83,19 @@ const I = {
   wiNullOther: id(),
   wiPro: id(),
   wiB: id(),
+  staffC: id(), // staff de C sin usuario
+  proAdminA: id(),
+  proAdminB: id(),
+  proMemberA: id(),
+  proDelA: id(),
+  proDelB: id(),
+  ptC: id(),
+  wk1: id(), // A, feb: bruto 100, PAGADA; ORG 30, proAdminA 50, proMemberA 20
+  wk2: id(), // A, feb: bruto 200, IMPAGA; proMemberA 120 (sin split ORG: remanente 80)
+  wkB2: id(), // B, feb: bruto 40, IMPAGA; ORG 15, proAdminB 25; participa proAdminB
+  wkNoLoad: id(), // A, mar: del Professional sin permiso de carga
+  wkOtherOnPtA2: id(), // A: mismo paciente que wkNoLoad (ptA2) pero de OTRO profesional (staffA)
+  wkDelB: id(), // B, mar: de un Professional dado de baja
 };
 const CUIT = {
   proA: '20111111111',
@@ -98,6 +128,7 @@ const seed = () => ({
   organization: [
     { id: orgA, type: 'CLINIC', settings: null, name: 'Org A' },
     { id: orgB, type: 'CLINIC', settings: null, name: 'Org B' },
+    { id: orgC, type: 'SOLO_PRACTICE', settings: null, name: 'Org C' },
   ],
   professional: [
     {
@@ -150,11 +181,78 @@ const seed = () => ({
       deletedAt: null,
       categoryId: null,
     },
+    {
+      id: I.staffC,
+      organizationId: orgC,
+      userId: null,
+      canLoadActivities: false,
+      displayName: 'Staff C',
+      cuit: null,
+      status: 'ACTIVE',
+      deletedAt: null,
+      categoryId: null,
+    },
+    {
+      id: I.proAdminA,
+      organizationId: orgA,
+      userId: U.adminPro,
+      canLoadActivities: true,
+      displayName: 'Pro Admin A',
+      cuit: null,
+      status: 'ACTIVE',
+      deletedAt: null,
+      categoryId: null,
+    },
+    {
+      id: I.proAdminB,
+      organizationId: orgB,
+      userId: U.adminPro,
+      canLoadActivities: true,
+      displayName: 'Pro Admin B',
+      cuit: null,
+      status: 'ACTIVE',
+      deletedAt: null,
+      categoryId: null,
+    },
+    {
+      id: I.proMemberA,
+      organizationId: orgA,
+      userId: U.memberPro,
+      canLoadActivities: false,
+      displayName: 'Pro Member A',
+      cuit: null,
+      status: 'ACTIVE',
+      deletedAt: null,
+      categoryId: null,
+    },
+    {
+      id: I.proDelA,
+      organizationId: orgA,
+      userId: U.proDeleted,
+      canLoadActivities: true,
+      displayName: 'Pro Baja A',
+      cuit: null,
+      status: 'ACTIVE',
+      deletedAt: null,
+      categoryId: null,
+    },
+    {
+      id: I.proDelB,
+      organizationId: orgB,
+      userId: U.proDeleted,
+      canLoadActivities: true,
+      displayName: 'Pro Baja B',
+      cuit: null,
+      status: 'ACTIVE',
+      deletedAt: new Date(),
+      categoryId: null,
+    },
   ],
   patient: [
     { id: I.ptA1, organizationId: orgA, firstName: 'Ana', lastName: 'Uno' },
     { id: I.ptA2, organizationId: orgA, firstName: 'Ana', lastName: 'Dos' },
     { id: I.ptB, organizationId: orgB, firstName: 'Beto', lastName: 'Tres' },
+    { id: I.ptC, organizationId: orgC, firstName: 'Cora', lastName: 'Cuatro' },
   ],
   professionalCategory: [
     { id: I.catA, organizationId: orgA, name: 'Cat A', percentage: 60 },
@@ -227,8 +325,68 @@ const seed = () => ({
       payerId: I.payerB,
       createdByUserId: U.stranger,
     }),
+    // 009: montos conocidos (febrero) y datos para la vista pro multi-organización
+    wi(I.wk1, {
+      professionalId: I.proAdminA,
+      paymentStatus: 'PAID',
+      paymentDate: new Date('2026-02-05T12:00:00Z'),
+      grossAmount: 100,
+      occurredAt: new Date('2026-02-05T12:00:00Z'),
+    }),
+    wi(I.wk2, {
+      professionalId: I.proMemberA,
+      grossAmount: 200,
+      occurredAt: new Date('2026-02-06T12:00:00Z'),
+    }),
+    wi(I.wkB2, {
+      organizationId: orgB,
+      patientId: I.ptB,
+      professionalId: I.proB,
+      payerId: I.payerB,
+      grossAmount: 40,
+      occurredAt: new Date('2026-02-07T12:00:00Z'),
+    }),
+    wi(I.wkNoLoad, {
+      patientId: I.ptA2,
+      professionalId: I.proNoLoadA,
+      grossAmount: 30,
+      occurredAt: new Date('2026-03-03T12:00:00Z'),
+    }),
+    wi(I.wkOtherOnPtA2, {
+      patientId: I.ptA2,
+      professionalId: I.staffA,
+      grossAmount: 7777,
+      occurredAt: new Date('2026-03-05T12:00:00Z'),
+    }),
+    wi(I.wkDelB, {
+      organizationId: orgB,
+      patientId: I.ptB,
+      professionalId: I.proDelB,
+      payerId: I.payerB,
+      grossAmount: 15,
+      occurredAt: new Date('2026-03-04T12:00:00Z'),
+    }),
   ],
-  organizationMember: [],
+  workItemSplit: [
+    { workItemId: I.wk1, beneficiaryType: 'ORG', beneficiaryId: null, amount: 30 },
+    { workItemId: I.wk1, beneficiaryType: 'PROFESSIONAL', beneficiaryId: I.proAdminA, amount: 50 },
+    { workItemId: I.wk1, beneficiaryType: 'PROFESSIONAL', beneficiaryId: I.proMemberA, amount: 20 },
+    { workItemId: I.wk2, beneficiaryType: 'PROFESSIONAL', beneficiaryId: I.proMemberA, amount: 120 },
+    { workItemId: I.wkB2, beneficiaryType: 'ORG', beneficiaryId: null, amount: 15 },
+    { workItemId: I.wkB2, beneficiaryType: 'PROFESSIONAL', beneficiaryId: I.proAdminB, amount: 25 },
+  ].map((r) => ({ id: id(), ...r })),
+  workItemParticipant: [
+    {
+      id: id(),
+      workItemId: I.wkB2,
+      professionalId: I.proAdminB,
+      roleLabel: 'Coadmisor',
+      feeAmount: 25,
+    },
+  ],
+  organizationMember: [
+    { id: id(), organizationId: orgC, userId: U.soloAdmin, role: 'ADMIN' },
+  ],
   feeRule: [
     {
       id: id(),
@@ -254,6 +412,10 @@ const ACCESS: Record<string, Record<string, 'ADMIN' | 'MEMBER' | null>> = {
   [U.member]: { [orgA]: 'MEMBER' },
   [U.pro]: { [orgA]: null },
   [U.proNoLoad]: { [orgA]: null },
+  [U.adminPro]: { [orgA]: 'ADMIN' },
+  [U.memberPro]: { [orgA]: 'MEMBER' },
+  [U.soloAdmin]: { [orgC]: 'ADMIN' },
+  [U.proDeleted]: { [orgA]: null },
 };
 
 // ─── (a) Tabla de rutas con parámetro ─────────────────────────────────────────
@@ -478,6 +640,23 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
             ? { allowed: false, memberRole: null }
             : { allowed: true, memberRole: role };
         },
+        // Derivados del seed con las mismas columnas que la consulta real (status, deletedAt).
+        getActiveProfessionals: async (userId: string) =>
+          fake
+            .rows('professional')
+            .filter(
+              (r) =>
+                r.userId === userId &&
+                r.status === 'ACTIVE' &&
+                r.deletedAt === null,
+            )
+            .map((r) => ({
+              id: r.id,
+              organizationId: r.organizationId,
+              canLoadActivities: !!r.canLoadActivities,
+            })),
+        getOrgType: async (orgId: string) =>
+          fake.rows('organization').find((o) => o.id === orgId)?.type ?? null,
       })
       .compile();
     app = moduleRef.createNestApplication();
@@ -763,8 +942,8 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
       ...over,
     });
 
-    it('profesional con canLoadActivities=true carga a su Professional, con cualquier x-mode', async () => {
-      for (const mode of ['org', 'pro', undefined]) {
+    it('profesional con canLoadActivities=true carga a su Professional con x-mode pro o sin header; con x-mode org: 403', async () => {
+      for (const mode of ['pro', undefined]) {
         fake.reset();
         const res = await call(U.pro, 'post', p('/activity'), {
           body: body(),
@@ -780,6 +959,15 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
         expect(created?.professionalId).toBe(I.proA);
         expect(created?.organizationId).toBe(orgA);
       }
+      // 009: sin membresía no se usa la rama org (criterio 3)
+      fake.reset();
+      const denied = await call(U.pro, 'post', p('/activity'), {
+        body: body(),
+        mode: 'org',
+      });
+      expect(denied.status).toBe(403);
+      expect(denied.body.code).toBe('forbidden');
+      expect(fake.writeCount()).toBe(0);
     });
 
     it('profesional con canLoadActivities=false: 403 forbidden sin escrituras, con cualquier x-mode', async () => {
@@ -1305,6 +1493,423 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
         expect({ body, status: res.status }).toEqual({ body, status: 400 });
         expect(fake.writeCount()).toBe(0);
       }
+    });
+  });
+
+  // ─── 009: modo org/pro decidido en el servidor ─────────────────────────────
+  // Vínculos de cada perfil en la organización de la URL (X). La tabla de resultados sale de resolveViewMode,
+  // el mismo código que la matriz del diseño (§4.2) cubre con it.each en view-mode.spec.ts.
+  type Profile = {
+    user: string;
+    org: string;
+    links: ViewLinks;
+  };
+  const PROFILES: Record<string, Profile> = {
+    admin: {
+      user: U.admin,
+      org: orgA,
+      links: { role: 'ADMIN', hasProfessional: false, soloPracticeAdmin: false },
+    },
+    member: {
+      user: U.member,
+      org: orgA,
+      links: { role: 'MEMBER', hasProfessional: false, soloPracticeAdmin: false },
+    },
+    pro: {
+      user: U.pro,
+      org: orgA,
+      links: { role: null, hasProfessional: true, soloPracticeAdmin: false },
+    },
+    adminPro: {
+      user: U.adminPro,
+      org: orgA,
+      links: { role: 'ADMIN', hasProfessional: true, soloPracticeAdmin: false },
+    },
+    memberPro: {
+      user: U.memberPro,
+      org: orgA,
+      links: { role: 'MEMBER', hasProfessional: true, soloPracticeAdmin: false },
+    },
+    soloAdmin: {
+      user: U.soloAdmin,
+      org: orgC,
+      links: { role: 'ADMIN', hasProfessional: false, soloPracticeAdmin: true },
+    },
+  };
+  const QUERY_MODES: Array<['ORGANIZATION' | 'PROFESSIONAL' | undefined, 'org' | 'pro' | null]> = [
+    ['ORGANIZATION', 'org'],
+    ['PROFESSIONAL', 'pro'],
+    [undefined, null],
+  ];
+  const FEB = 'startDate=2026-02-01&endDate=2026-02-28';
+
+  describe('(j) matriz por HTTP: vínculos x modo pedido x ruta', () => {
+    type RouteCase = {
+      name: string;
+      financial: boolean;
+      run: (pf: Profile, qm?: string) => any;
+      okStatus: number;
+    };
+    const getWith = (pf: Profile, path: string, qm?: string) =>
+      call(pf.user, 'get', p(`${path}${qm ? (path.includes('?') ? '&' : '?') + 'mode=' + qm : ''}`), {
+        org: pf.org,
+      });
+    const routes: RouteCase[] = [
+      {
+        name: 'GET activity',
+        financial: false,
+        okStatus: 200,
+        run: (pf, qm) => getWith(pf, '/activity', qm),
+      },
+      {
+        name: 'GET v1/patients',
+        financial: false,
+        okStatus: 200,
+        run: (pf, qm) => getWith(pf, '/v1/patients', qm),
+      },
+      {
+        name: 'GET dashboard/kpis',
+        financial: true,
+        okStatus: 200,
+        run: (pf, qm) => getWith(pf, `/dashboard/kpis?${FEB}`, qm),
+      },
+    ];
+
+    for (const route of routes) {
+      for (const [pname, pf] of Object.entries(PROFILES)) {
+        it(`${route.name} - ${pname}`, async () => {
+          for (const [qm, requested] of QUERY_MODES) {
+            fake.reset();
+            const expected = resolveViewMode(
+              requested,
+              pf.links,
+              route.financial ? { orgRole: 'ADMIN' } : {},
+            );
+            const res = await route.run(pf, qm);
+            expect({ pname, qm, status: res.status }).toEqual({
+              pname,
+              qm,
+              status: expected ? route.okStatus : 403,
+            });
+            if (!expected) {
+              expect(res.body.code).toBe('forbidden');
+              expect(fake.writeCount()).toBe(0);
+            }
+          }
+        });
+      }
+    }
+
+    for (const [pname, pf] of Object.entries(PROFILES)) {
+      it(`POST activity - ${pname}`, async () => {
+        const patientId = pf.org === orgC ? I.ptC : I.ptA1;
+        for (const [header, requested] of [
+          ['org', 'org'],
+          ['pro', 'pro'],
+          [undefined, null],
+        ] as const) {
+          fake.reset();
+          const expected = resolveViewMode(requested, pf.links);
+          // En org se carga con un profesional de la organización; en pro, a su propio Professional.
+          const orgStaff = pf.org === orgC ? I.staffC : I.staffA;
+          const res = await call(pf.user, 'post', p('/activity'), {
+            body: {
+              date: '2026-03-01',
+              organizationId: pf.org,
+              patientId,
+              ...(expected === 'org' ? { professionalId: orgStaff } : {}),
+            },
+            mode: header,
+            org: pf.org,
+          });
+          if (expected) {
+            expect({ pname, header, status: res.status, body: res.body.code }).toEqual({
+              pname,
+              header,
+              status: 201,
+              body: undefined,
+            });
+          } else {
+            expect({ pname, header, status: res.status }).toEqual({
+              pname,
+              header,
+              status: 403,
+            });
+            expect(res.body.code).toBe('forbidden');
+            expect(fake.writeCount()).toBe(0);
+          }
+        }
+      });
+    }
+
+    it('en pro, GET activity solo devuelve atenciones del propio Professional (propias o como participante)', async () => {
+      for (const pname of ['pro', 'adminPro', 'memberPro']) {
+        const pf = PROFILES[pname];
+        const own = fake
+          .rows('professional')
+          .filter((r) => r.userId === pf.user && r.status === 'ACTIVE' && r.deletedAt === null)
+          .map((r) => r.id);
+        const parts = fake
+          .rows('workItemParticipant')
+          .filter((r) => own.includes(r.professionalId))
+          .map((r) => r.workItemId);
+        const allowed = fake
+          .rows('workItem')
+          .filter((r) => own.includes(r.professionalId) || parts.includes(r.id))
+          .map((r) => r.id)
+          .sort();
+        const res = await getWith(pf, '/activity', 'PROFESSIONAL');
+        expect(res.status).toBe(200);
+        expect(res.body.items.map((x: any) => x.id).sort()).toEqual(allowed);
+      }
+    });
+
+    it('en pro, GET v1/patients: con permiso de carga ve la organización; sin él, solo los que atendió', async () => {
+      const withLoad = await getWith(PROFILES.pro, '/v1/patients', 'PROFESSIONAL');
+      const ids = withLoad.body.items.map((x: any) => x.id);
+      expect(ids).toEqual(expect.arrayContaining([I.ptA1, I.ptA2]));
+      expect(ids).not.toContain(I.ptB);
+      expect(ids).not.toContain(I.ptC);
+
+      const noLoad = await call(U.proNoLoad, 'get', p('/v1/patients?mode=PROFESSIONAL'));
+      expect(noLoad.status).toBe(200);
+      // atendió a ptA2 (wkNoLoad) y a nadie más; ptA1 es de la organización pero no lo atendió
+      expect(noLoad.body.items.map((x: any) => x.id)).toEqual([I.ptA2]);
+    });
+  });
+
+  describe('(k) financieros de la organización: solo ADMIN', () => {
+    const dash = (user: string, kind: string, extra: string, mode = 'ORGANIZATION') =>
+      call(user, 'get', p(`/dashboard/${kind}?${FEB}&groupBy=day&mode=${mode}${extra}`));
+
+    it.each(['admin', 'adminPro'])('%s: dashboard org con los valores conocidos', async (pname) => {
+      const user = PROFILES[pname].user;
+      const kpis = await dash(user, 'kpis', '');
+      expect(kpis.status).toBe(200);
+      expect(kpis.body).toEqual({
+        accruedGross: 300,
+        accruedNet: 110,
+        pending: 200,
+        cashGross: 100,
+        cashNet: 30,
+      });
+      const chart = await dash(user, 'chart', '');
+      expect(chart.status).toBe(200);
+      expect(chart.body).toEqual([
+        { date: '2026-02-05', gross: 100, net: 30 },
+        { date: '2026-02-06', gross: 200, net: 80 },
+      ]);
+      const payers = await dash(user, 'payers', '');
+      expect(payers.status).toBe(200);
+      expect(payers.body).toEqual([{ name: 'Particular', value: 300 }]);
+    });
+
+    it.each(['member', 'memberPro', 'pro'])('%s: 403 en kpis, chart y payers con mode=ORGANIZATION', async (pname) => {
+      for (const kind of ['kpis', 'chart', 'payers']) {
+        fake.reset();
+        const res = await dash(PROFILES[pname].user, kind, '');
+        expect({ kind, status: res.status, code: res.body.code }).toEqual({
+          kind,
+          status: 403,
+          code: 'forbidden',
+        });
+        expect(JSON.stringify(res.body)).not.toContain('accrued');
+      }
+    });
+
+    it('vista pro: montos del propio Professional (adminPro en dos organizaciones, memberPro)', async () => {
+      const a = await dash(U.adminPro, 'kpis', '', 'PROFESSIONAL');
+      expect(a.status).toBe(200);
+      expect(a.body).toEqual({
+        accruedGross: 140, // wk1 (100) + wkB2 (40, participa en B)
+        accruedNet: 75, // 50 + 25
+        pending: 25, // wkB2 impaga
+        cashGross: 100,
+        cashNet: 50,
+      });
+      const m = await dash(U.memberPro, 'kpis', '', 'PROFESSIONAL');
+      expect(m.status).toBe(200);
+      expect(m.body).toEqual({
+        accruedGross: 200,
+        accruedNet: 120,
+        pending: 120,
+        cashGross: 0,
+        cashNet: 0,
+      });
+      const chart = await dash(U.memberPro, 'chart', '', 'PROFESSIONAL');
+      expect(chart.body).toEqual([{ date: '2026-02-06', gross: 200, net: 120 }]);
+    });
+
+    it('settlements/calculate: ADMIN 200 (con o sin organizationId propio); MEMBER y profesional 403', async () => {
+      const ok = await call(U.admin, 'get', p('/settlements/calculate?month=2026-02'));
+      expect(ok.status).toBe(200);
+      expect(Array.isArray(ok.body)).toBe(true);
+      const own = await call(
+        U.admin,
+        'get',
+        p(`/settlements/calculate?month=2026-02&organizationId=${orgA}`),
+      );
+      expect(own.status).toBe(200);
+      const both = await call(U.adminPro, 'get', p('/settlements/calculate?month=2026-02'));
+      expect(both.status).toBe(200);
+      for (const user of [U.member, U.memberPro, U.pro]) {
+        const res = await call(user, 'get', p('/settlements/calculate?month=2026-02'));
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('forbidden');
+      }
+    });
+
+    it('settlements/calculate con organizationId de otra organización: 403 del guard y sin datos', async () => {
+      const res = await call(
+        U.admin,
+        'get',
+        p(`/settlements/calculate?month=2026-02&organizationId=${orgB}`),
+      );
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('org-access-denied');
+    });
+  });
+
+  describe('(l) estructural: rutas con @UsesViewMode', () => {
+    it('el conjunto es exactamente el esperado, con orgRole ADMIN en las tres del dashboard', () => {
+      const marked = allRoutes
+        .filter((r) => Reflect.getMetadata(VIEW_MODE_KEY, r.handler) !== undefined)
+        .map((r) => ({
+          key: r.key,
+          options: Reflect.getMetadata(VIEW_MODE_KEY, r.handler),
+        }))
+        .sort((a, b) => a.key.localeCompare(b.key));
+      expect(marked).toEqual(
+        [
+          { key: 'get /api/activity', options: {} },
+          { key: 'post /api/activity', options: {} },
+          { key: 'get /api/dashboard/chart', options: { orgRole: 'ADMIN' } },
+          { key: 'get /api/dashboard/kpis', options: { orgRole: 'ADMIN' } },
+          { key: 'get /api/dashboard/payers', options: { orgRole: 'ADMIN' } },
+          { key: 'get /api/v1/patients', options: {} },
+        ].sort((a, b) => a.key.localeCompare(b.key)),
+      );
+    });
+
+    it('settlements/calculate exige ADMIN por metadata', () => {
+      const route = allRoutes.find((r) => r.key === 'get /api/settlements/calculate');
+      expect(route).toBeDefined();
+      expect(Reflect.getMetadata(REQUIRED_ORG_ROLE_KEY, route!.handler)).toBe('ADMIN');
+    });
+  });
+
+  describe('(m) valores de modo', () => {
+    it.each([
+      ['?mode=xyz', '/activity?mode=xyz', undefined],
+      ['?mode=a&mode=b', '/activity?mode=a&mode=b', undefined],
+      ['header pro con query ORGANIZATION', '/activity?mode=ORGANIZATION', 'pro'],
+    ])('%s: 400 invalid-mode', async (_n, path, header) => {
+      const res = await call(U.adminPro, 'get', p(path), { mode: header });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('invalid-mode');
+    });
+
+    it('header y query equivalentes (pro / PROFESSIONAL): 200', async () => {
+      const res = await call(U.adminPro, 'get', p('/activity?mode=PROFESSIONAL'), {
+        mode: 'pro',
+      });
+      expect(res.status).toBe(200);
+    });
+
+    it('?mode=org en GET fee-rules (ruta sin decorador): 200, se ignora', async () => {
+      const res = await call(U.admin, 'get', p('/fee-rules?mode=org'));
+      expect(res.status).toBe(200);
+      const garbage = await call(U.admin, 'get', p('/fee-rules?mode=xyz'));
+      expect(garbage.status).toBe(200);
+    });
+  });
+
+  describe('(n) lecturas por id de un profesional sin membresía y vista pro multi-organización', () => {
+    it('GET activity/:id: propias 200; de otro profesional el mismo 404 que un id inexistente', async () => {
+      for (const own of [I.wiPro, I.wiNullPro]) {
+        const ok = await call(U.pro, 'get', p(`/activity/${own}`));
+        expect({ own, status: ok.status }).toEqual({ own, status: 200 });
+      }
+      const foreign = await call(U.pro, 'get', p(`/activity/${I.wiMember}`));
+      const missing = await call(U.pro, 'get', p(`/activity/${id()}`));
+      expect(foreign.status).toBe(404);
+      expect(missing.status).toBe(404);
+      expect(foreign.text).toBe(missing.text);
+      expect(foreign.body.code).toBe('not-found');
+      // un MEMBER sigue leyendo cualquier atención de su organización
+      const member = await call(U.member, 'get', p(`/activity/${I.wiNullOther}`));
+      expect(member.status).toBe(200);
+    });
+
+    it('patients/:id/summary y /debt: con permiso de carga, los de la organización; de otra organización: 404', async () => {
+      for (const kind of ['summary', 'debt']) {
+        const ok = await call(U.pro, 'get', p(`/v1/patients/${I.ptA1}/${kind}`));
+        expect({ kind, status: ok.status }).toEqual({ kind, status: 200 });
+        const other = await call(U.pro, 'get', p(`/v1/patients/${I.ptB}/${kind}`));
+        const missing = await call(U.pro, 'get', p(`/v1/patients/${id()}/${kind}`));
+        expect(other.status).toBe(404);
+        expect(other.text).toBe(missing.text);
+      }
+    });
+
+    it('sin permiso de carga: solo pacientes que atendió; el resto, el mismo 404', async () => {
+      for (const kind of ['summary', 'debt']) {
+        const attended = await call(U.proNoLoad, 'get', p(`/v1/patients/${I.ptA2}/${kind}`));
+        expect({ kind, status: attended.status }).toEqual({ kind, status: 200 });
+        const notAttended = await call(U.proNoLoad, 'get', p(`/v1/patients/${I.ptA1}/${kind}`));
+        const missing = await call(U.proNoLoad, 'get', p(`/v1/patients/${id()}/${kind}`));
+        expect(notAttended.status).toBe(404);
+        expect(notAttended.text).toBe(missing.text);
+      }
+      const act = await call(U.proNoLoad, 'get', p(`/activity/${I.wkNoLoad}`));
+      expect(act.status).toBe(200);
+      const actForeign = await call(U.proNoLoad, 'get', p(`/activity/${I.wiPro}`));
+      expect(actForeign.status).toBe(404);
+    });
+
+    it('MEDIA-1: paciente atendido por dos profesionales; sin membresía solo ve lo suyo (resumen, deuda, listado)', async () => {
+      const summary = await call(U.proNoLoad, 'get', p(`/v1/patients/${I.ptA2}/summary`));
+      expect(summary.status).toBe(200);
+      expect(summary.body.pendingItems.map((x: any) => x.id)).toEqual([I.wkNoLoad]);
+      expect(summary.body.totalDebt).toBe(30);
+      expect(summary.text).not.toContain('7777');
+      const debt = await call(U.proNoLoad, 'get', p(`/v1/patients/${I.ptA2}/debt`));
+      expect(debt.status).toBe(200);
+      expect(Number(debt.text)).toBe(30);
+      // el miembro sigue viendo todo
+      const member = await call(U.member, 'get', p(`/v1/patients/${I.ptA2}/summary`));
+      expect(member.body.totalDebt).toBe(30 + 7777);
+      expect(Number((await call(U.member, 'get', p(`/v1/patients/${I.ptA2}/debt`))).text)).toBe(30 + 7777);
+      // con permiso de carga, sin membresía: tampoco ve lo ajeno
+      const withLoad = await call(U.pro, 'get', p(`/v1/patients/${I.ptA2}/summary`));
+      expect(withLoad.status).toBe(200);
+      expect(withLoad.text).not.toContain('7777');
+    });
+
+    it('miembro: lee pacientes y atenciones de su organización sin restricción adicional', async () => {
+      for (const user of [U.member, U.admin]) {
+        const res = await call(user, 'get', p(`/v1/patients/${I.ptA1}/summary`));
+        expect(res.status).toBe(200);
+      }
+    });
+
+    it('adminPro en pro (x-org-id A) ve su atención de B como externa y no las de B de otros', async () => {
+      const res = await call(U.adminPro, 'get', p('/activity?mode=PROFESSIONAL'));
+      expect(res.status).toBe(200);
+      const byId = new Map(res.body.items.map((x: any) => [x.id, x]));
+      expect([...byId.keys()].sort()).toEqual([I.wk1, I.wkB2].sort());
+      expect((byId.get(I.wkB2) as any).isExternal).toBe(true);
+      expect((byId.get(I.wkB2) as any).netAmount).toBe(25);
+      expect((byId.get(I.wk1) as any).isExternal).toBe(false);
+      expect((byId.get(I.wk1) as any).netAmount).toBe(50);
+      expect(byId.has(I.wiB)).toBe(false);
+    });
+
+    it('proDeleted en pro no ve las atenciones de su Professional dado de baja', async () => {
+      const res = await call(U.proDeleted, 'get', p('/activity?mode=PROFESSIONAL'));
+      expect(res.status).toBe(200);
+      expect(res.body.items.map((x: any) => x.id)).not.toContain(I.wkDelB);
+      expect(res.body.items).toEqual([]);
     });
   });
 });

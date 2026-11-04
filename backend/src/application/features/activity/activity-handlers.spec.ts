@@ -35,8 +35,9 @@ const baseItem = (over: Record<string, unknown> = {}) => ({
 });
 
 describe('FindActivityByIdQueryHandler', () => {
-  const full = (id: string) => ({
+  const full = (id: string, over: Record<string, unknown> = {}) => ({
     id,
+    organizationId: orgA,
     occurredAt: new Date('2026-01-02T12:00:00Z'),
     serviceType: 'session',
     patient: { firstName: 'Ana', lastName: 'Prueba' },
@@ -46,6 +47,7 @@ describe('FindActivityByIdQueryHandler', () => {
     splits: [],
     grossAmount: 10,
     professionalId: randomUUID(),
+    ...over,
   });
 
   it('propia: 200 y el where filtra por las organizaciones del scope', async () => {
@@ -80,6 +82,84 @@ describe('FindActivityByIdQueryHandler', () => {
     expect(e1).toBeInstanceOf(NotFoundException);
     expect(e1.getResponse()).toEqual(NOT_FOUND_BODY);
     expect(e2.getResponse()).toEqual(e1.getResponse());
+  });
+
+  describe('vinculo solo de Professional (decision 7 del 009)', () => {
+    const ME = randomUUID();
+    const proCtx = makeCtx({ roles: { [orgA]: null } });
+    const setup = (
+      activity: Record<string, unknown>,
+      own: string[],
+      participates: boolean,
+    ) => {
+      const prisma: any = {
+        workItem: { findFirst: jest.fn().mockResolvedValue(activity) },
+        professional: {
+          findMany: jest.fn().mockResolvedValue(own.map((id) => ({ id }))),
+        },
+        workItemParticipant: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValue(participates ? { id: randomUUID() } : null),
+        },
+      };
+      return { prisma, handler: new FindActivityByIdQueryHandler(prisma) };
+    };
+
+    it('atencion de su Professional: 200', async () => {
+      const id = randomUUID();
+      const { prisma, handler } = setup(full(id, { professionalId: ME }), [ME], false);
+      const res = await handler.execute(new FindActivityByIdQuery(id), proCtx);
+      expect(res.id).toBe(id);
+      expect(prisma.professional.findMany.mock.calls[0][0].where).toEqual({
+        userId: proCtx.org!.userId,
+        organizationId: orgA,
+        status: 'ACTIVE',
+        deletedAt: null,
+      });
+      expect(prisma.workItemParticipant.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('atencion donde participa: 200', async () => {
+      const id = randomUUID();
+      const { prisma, handler } = setup(full(id), [ME], true);
+      const res = await handler.execute(new FindActivityByIdQuery(id), proCtx);
+      expect(res.id).toBe(id);
+      expect(prisma.workItemParticipant.findFirst.mock.calls[0][0].where).toEqual({
+        workItemId: id,
+        professionalId: { in: [ME] },
+      });
+    });
+
+    it('atencion ajena (otro profesional, sin participar): el mismo 404 generico', async () => {
+      const id = randomUUID();
+      const { handler } = setup(full(id), [ME], false);
+      const e = await errorOf(() =>
+        handler.execute(new FindActivityByIdQuery(id), proCtx),
+      );
+      expect(e).toBeInstanceOf(NotFoundException);
+      expect(e.getResponse()).toEqual(NOT_FOUND_BODY);
+    });
+
+    it('sin Professional activo en la organizacion: 404 sin consultar participaciones', async () => {
+      const id = randomUUID();
+      const { prisma, handler } = setup(full(id), [], true);
+      const e = await errorOf(() =>
+        handler.execute(new FindActivityByIdQuery(id), proCtx),
+      );
+      expect(e.getResponse()).toEqual(NOT_FOUND_BODY);
+      expect(prisma.workItemParticipant.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('con membresia: sin consultas extra', async () => {
+      const id = randomUUID();
+      const { prisma, handler } = setup(full(id), [], false);
+      await handler.execute(
+        new FindActivityByIdQuery(id),
+        makeCtx({ roles: { [orgA]: 'MEMBER' } }),
+      );
+      expect(prisma.professional.findMany).not.toHaveBeenCalled();
+    });
   });
 
   it('id que no es UUID: 404 sin llamar a Prisma', async () => {

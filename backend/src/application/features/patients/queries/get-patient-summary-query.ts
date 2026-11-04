@@ -4,6 +4,10 @@ import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
+import {
+  assertPatientReadable,
+  ownProfessionalsFilter,
+} from '../patient-read-access';
 import { foundOr404, inScope, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 
 export interface PatientSummaryItem {
@@ -38,16 +42,18 @@ export class GetPatientSummaryQueryHandler
   ): Promise<PatientSummary> {
     const scope = requireOrgScope(ctx);
     const patientId = requireId(query.patientId);
-    await foundOr404(
+    const patient = await foundOr404(
       this.prisma.patient.findFirst({
         where: { id: patientId, ...inScope(scope) },
-        select: { id: true },
+        select: { id: true, organizationId: true },
       }),
     );
+    const ownIds = await assertPatientReadable(this.prisma, scope, patient);
     const items = await this.prisma.workItem.findMany({
       where: {
         patientId,
         paymentStatus: { not: 'PAID' },
+        ...(ownIds ? ownProfessionalsFilter(ownIds) : {}),
       },
       include: {
         payer: true,

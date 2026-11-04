@@ -1,13 +1,16 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../Prisma/prisma.service';
 import { Prisma, PaymentStatus, BeneficiaryType } from '@prisma/client';
-import { isProfessionalMode, FEE_STRATEGY, FeeStrategy } from '@src/domain/constants/app.constants';
+import { FEE_STRATEGY, FeeStrategy } from '@src/domain/constants/app.constants';
 import { FeeResolutionService } from '../fee-engine/fee-resolution.service';
 import { CreateActivityDto } from '@src/application/features/activity/Dtos/create-activity.dto';
 import { WorkItem } from '@src/domain/features/activity/WorkItem.entity';
 import { parseOrgSettings } from '@src/domain/features/organization/org-settings';
 import { OrgScope, roleIn } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
-import { AUTH_ERROR_CODE } from '@src/infrastructure.bootstrap/config/core/authentication/auth-context';
+import {
+  AUTH_ERROR_CODE,
+  ViewModeValue,
+} from '@src/infrastructure.bootstrap/config/core/authentication/auth-context';
 import {
   forbiddenAction,
   foundOr404,
@@ -39,7 +42,7 @@ export class ActivityService {
    */
   async createActivity(
     data: CreateActivityDto,
-    mode: string,
+    mode: ViewModeValue,
     scope: OrgScope,
   ): Promise<WorkItem> {
     const date = new Date(data.date);
@@ -55,7 +58,12 @@ export class ActivityService {
     }
     const orgFilter = inOrg(orgId);
 
-    // ── 2. Permiso de carga (no depende de ningún id) ─────────────────────────
+    // ── 2. Modo y permiso de carga (no dependen de ningún id) ─────────────────
+    // `mode` lo resolvió ViewModeGuard contra la organización de la URL. La rama org (valores del tipo de
+    // actividad, sin la regla de primera carga) exige membresía en la organización DESTINO.
+    if (mode === 'org' && roleIn(scope, orgId) === null) {
+      throw forbiddenAction();
+    }
     // Solo vínculo de Professional (sin membresía): necesita canLoadActivities y carga solo a su nombre.
     let ownProfessionalId: string | null = null;
     if (roleIn(scope, orgId) === null) {
@@ -132,7 +140,7 @@ export class ActivityService {
     }
 
     // Profesional propio del usuario en modo pro (si no vino uno explícito).
-    if (!professionalId && isProfessionalMode(mode)) {
+    if (!professionalId && mode === 'pro') {
       const existingOwnPro = await this.prisma.professional.findFirst({
         where: { userId, organizationId: orgId, deletedAt: null },
         select: { id: true },
@@ -141,7 +149,7 @@ export class ActivityService {
     }
 
     // Regla de primera carga (solo modo pro, solo si el profesional ya se conoce)
-    if (isProfessionalMode(mode) && patientRecord && professionalId) {
+    if (mode === 'pro' && patientRecord && professionalId) {
       // Bypass this rule for Virtual Orgs (SOLO_PRACTICE) since the professional is the only admin
       if (org.type !== 'SOLO_PRACTICE') {
         // Check if professional is an active member of this org with canLoadActivities=true
@@ -184,7 +192,7 @@ export class ActivityService {
     let amountBase = new Prisma.Decimal(0);
     let amountCard: Prisma.Decimal | null = null;
 
-    if (isProfessionalMode(mode)) {
+    if (mode === 'pro') {
       amountBase = new Prisma.Decimal(data.amountBase ?? data.amount ?? 0);
       amountCard = data.amountCard != null ? new Prisma.Decimal(data.amountCard) : null;
     } else {
@@ -227,7 +235,7 @@ export class ActivityService {
       }
 
       // Auto-create Professional record if missing in a Virtual Org (SOLO_PRACTICE)
-      if (!professionalId && isProfessionalMode(mode) && org.type === 'SOLO_PRACTICE') {
+      if (!professionalId && mode === 'pro' && org.type === 'SOLO_PRACTICE') {
         const user = await tx.user.findUnique({ where: { id: userId } });
         if (user) {
           const pro = await tx.professional.create({
@@ -318,7 +326,7 @@ export class ActivityService {
 
       let splits: any[];
 
-      if (isProfessionalMode(mode) && isPrivate) {
+      if (mode === 'pro' && isPrivate) {
         const proPct = orgSettings.proModePrivatePatientPct / 100;
         this.logger.debug(`[CreateActivity] Private patient in pro mode (SOLO_PRACTICE): ${orgSettings.proModePrivatePatientPct}% to professional`);
         splits = [{

@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../Prisma/prisma.service';
-import { OrgRoleValue } from '@src/infrastructure.bootstrap/config/core/authentication/auth-context';
+import {
+  OrgRoleValue,
+  OwnProfessional,
+} from '@src/infrastructure.bootstrap/config/core/authentication/auth-context';
+import { OrgType } from '@prisma/client';
 
 export interface OrgAccessResult {
   allowed: boolean;
@@ -44,5 +48,35 @@ export class OrgAccessService {
       allowed: true,
       memberRole: (org.members[0]?.role as OrgRoleValue | undefined) ?? null,
     };
+  }
+
+  /**
+   * Professional del usuario con vínculo activo (ACTIVE, no eliminado, usuario no dado de baja), en cualquier
+   * organización. Es la misma regla de getAccess, y la base de la vista pro (009).
+   */
+  async getActiveProfessionals(userId: string): Promise<OwnProfessional[]> {
+    const rows = await this.prisma.professional.findMany({
+      where: {
+        userId,
+        status: 'ACTIVE',
+        deletedAt: null,
+        user: { deletedAt: null },
+      },
+      select: { id: true, organizationId: true, canLoadActivities: true },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      organizationId: r.organizationId,
+      canLoadActivities: r.canLoadActivities,
+    }));
+  }
+
+  /** Tipo de la organización (solo para la excepción SOLO_PRACTICE del modo efectivo). */
+  async getOrgType(orgId: string): Promise<OrgType | null> {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { type: true },
+    });
+    return org?.type ?? null;
   }
 }

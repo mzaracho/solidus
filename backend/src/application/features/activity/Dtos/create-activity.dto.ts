@@ -117,8 +117,4 @@ export class CreateActivityDto {
   @IsString()
   attendance?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  mode?: string;
 }

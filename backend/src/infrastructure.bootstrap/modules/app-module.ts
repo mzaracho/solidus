@@ -18,6 +18,7 @@ import {
 import {
   AuthenticationGuardProvider,
   OrgAccessGuardProvider,
+  ViewModeGuardProvider,
 } from '../config/providers/guard-provider';
 import { LoggerModule } from '../config/modules/logger-module';
 import { OrgAccessService } from '@src/infrastructure/features/auth/services/org-access.service';
@@ -47,9 +48,10 @@ import { ConfigModule as FeatureConfigModule } from '../config/config-module';
     AxiosFilterProvider,
     HttpFilterProvider,
     OrgAccessService,
-    // El orden es el de ejecución: autenticación primero, pertenencia después.
+    // El orden es el de ejecución: autenticación, pertenencia y vista (modo) efectiva.
     AuthenticationGuardProvider,
     OrgAccessGuardProvider,
+    ViewModeGuardProvider,
   ],
 })
 export class AppModule {}

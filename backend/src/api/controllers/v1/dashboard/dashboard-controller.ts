@@ -1,11 +1,10 @@
 import { Controller, Get, Query, Inject } from '@nestjs/common';
-import { DashboardKpiQueryDto } from '@src/application/features/dashboard/Dtos/dashboard-kpi-query.dto';
 import { DashboardKpisResponseDto } from '@src/application/features/dashboard/Dtos/dashboard-kpis-response.dto';
 import { IDispatcher } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-dispatcher';
 import { GetDashboardKpisQuery } from '@src/application/features/dashboard/queries/get-dashboard-kpis-query';
 import { GetDashboardChartQuery } from '@src/application/features/dashboard/queries/get-dashboard-chart-query';
 import { BaseController } from '../../base/base-controller';
-import { CurrentUserId } from '@src/infrastructure.bootstrap/config/core/authentication/current-user-decorator';
+import { UsesViewMode } from '@src/infrastructure.bootstrap/config/core/authentication/view-mode-decorator';
 import { GetDashboardPayerDistributionQuery } from '@src/application/features/dashboard/queries/get-dashboard-payer-dist-query';
 import { CurrentOrgId } from '@src/infrastructure.bootstrap/config/core/authentication/current-org-decorator';
 
@@ -15,38 +14,34 @@ export class DashboardController extends BaseController {
     super();
   }
 
+  // Vista efectiva: ViewModeGuard (ctx.view). La vista org de estas rutas es financiera: solo ADMIN.
+  @UsesViewMode({ orgRole: 'ADMIN' })
   @Get('kpis')
   async getKpis(
     @CurrentOrgId() orgId: string,
-    @CurrentUserId() userId: string,
     @Query() query: GetDashboardKpisQuery,
   ): Promise<DashboardKpisResponseDto> {
     query.organizationId = orgId;
-    query.userId = userId; // Inject user ID for filtering if mode is Professional
     return this.dispatcher.dispatch(query);
   }
 
+  @UsesViewMode({ orgRole: 'ADMIN' })
   @Get('chart')
   async getChart(
     @CurrentOrgId() orgId: string,
-    @CurrentUserId() userId: string,
     @Query() query: GetDashboardChartQuery,
   ) {
     query.orgId = orgId;
-    query.userId = userId;
     return this.dispatcher.dispatch(query);
   }
 
+  @UsesViewMode({ orgRole: 'ADMIN' })
   @Get('payers')
   async getPayers(
     @CurrentOrgId() orgId: string,
-    @CurrentUserId() userId: string,
-    @Query() query: any // Use any or create DTO if strict, but reusing similar params
+    @Query() query: GetDashboardPayerDistributionQuery,
   ) {
-    const q = new GetDashboardPayerDistributionQuery();
-    Object.assign(q, query);
-    q.orgId = orgId;
-    q.userId = userId;
-    return this.dispatcher.dispatch(q);
+    query.orgId = orgId;
+    return this.dispatcher.dispatch(query);
   }
 }

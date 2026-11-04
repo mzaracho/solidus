@@ -75,7 +75,7 @@ export function AtencionesTable({ canLoadActivities = false, currentUserId }: Pr
             // Allow backend to handle filtering
             const [data, rulesData, payersData, orgConfigData, membershipsData] = await Promise.all([
                 getWorkItems(orgSlug, 'PROFESSIONAL', filters, page, limit),
-                getFeeRules(orgSlug, 'PROFESSIONAL'),
+                getFeeRules(orgSlug),
                 getPayers(orgSlug, 1, 100),
                 getOrgConfig(orgSlug),
                 getProfessionalMemberships(orgSlug),

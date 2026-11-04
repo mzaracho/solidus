@@ -109,3 +109,22 @@ export const SESSION_MESSAGES = {
     // Acción puntual rechazada (403)
     forbiddenAction: 'No tenés permiso para hacer esto en esta organización.',
 } as const
+
+// ─── Modo de vista (feature 009) ──────────────────────────────────────────────
+// El front pide una vista como preferencia; la vista efectiva la decide el backend segun los vinculos del usuario.
+export const VIEW_MODE = {
+    ORGANIZATION: 'ORGANIZATION',
+    PROFESSIONAL: 'PROFESSIONAL',
+} as const
+
+/** Rol de membresia en una organizacion (`orgRole` del token). */
+export const ORG_ROLE = {
+    ADMIN: 'ADMIN',
+    MEMBER: 'MEMBER',
+} as const
+
+/** Codigos de rol global del usuario (`roles` del token). */
+export const APP_ROLE_CODE = {
+    ORGANIZATION: 'ORGANIZATION',
+    PROFESSIONAL: 'PROFESSIONAL',
+} as const

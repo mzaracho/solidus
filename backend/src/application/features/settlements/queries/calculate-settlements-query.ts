@@ -3,8 +3,9 @@ import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, Matches } from 'class-validator';
+import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsString, Matches } from 'class-validator';
+import { requireOrgId } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 import { parseOrgSettings } from '@src/domain/features/organization/org-settings';
 
 export class CalculateSettlementsQuery implements IRequest<any[]> {
@@ -13,7 +14,9 @@ export class CalculateSettlementsQuery implements IRequest<any[]> {
     @Matches(/^\d{4}-\d{2}$/, { message: 'Month must be in YYYY-MM format' })
     month: string;
 
-    @ApiProperty()
+    /** La asigna el controlador desde @CurrentOrgId(); un valor del cliente se pisa. */
+    @ApiHideProperty()
+    @IsOptional()
     @IsString()
     organizationId: string;
 }
@@ -24,7 +27,9 @@ export class CalculateSettlementsQueryHandler implements IRequestHandler<Calcula
     constructor(private readonly prisma: PrismaService) { }
 
     async execute(query: CalculateSettlementsQuery): Promise<any[]> {
-        const { month, organizationId } = query;
+        const { month } = query;
+        // Falla cerrado (403) si la organizacion llega vacia: nunca se consulta sin filtro de organizacion.
+        const organizationId = requireOrgId(query.organizationId);
         const [year, monthNum] = month.split('-').map(Number);
 
         // Current month date range

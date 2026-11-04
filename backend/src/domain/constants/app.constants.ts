@@ -1,10 +1,12 @@
 // src/domain/constants/app.constants.ts
 
 // ─── User Mode ────────────────────────────────────────────────────────────────
-// Two values circulate for "professional mode":
-//   'PROFESSIONAL' — from the frontend store (ViewMode enum)
-//   'pro'          — from x-mode header on pro-specific routes
-// Use isProfessionalMode() everywhere instead of duplicating the || check.
+// Two values circulate for "professional mode" as a client PREFERENCE (never as a decision):
+//   'PROFESSIONAL' — from the frontend store (ViewMode enum), in ?mode=
+//   'pro'          — from the x-mode header on POST /activity
+// The effective mode is decided by the server (ViewModeGuard + @UsesViewMode, see view-mode.ts) and
+// reaches handlers as ctx.view (requireViewScope). Do NOT read the client's mode in handlers or services.
+// isProfessionalMode() only normalizes the user's role code at login.
 
 export const USER_MODE = {
   PROFESSIONAL: 'PROFESSIONAL',
@@ -15,7 +17,7 @@ export const USER_MODE = {
 
 export type UserMode = typeof USER_MODE[keyof typeof USER_MODE]
 
-/** Returns true for both 'PROFESSIONAL' and 'pro' mode values */
+/** Returns true for both 'PROFESSIONAL' and 'pro' values (login: role code of the user, not a client input) */
 export function isProfessionalMode(mode?: string | null): boolean {
   return mode === USER_MODE.PROFESSIONAL || mode === USER_MODE.PRO
 }

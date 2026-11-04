@@ -354,9 +354,9 @@ export async function getPatients(slug: string, search?: string, page: number = 
  * GET /fee-rules
  * Previously: /api/v1/orgs/:slug/config/rules
  */
-export async function getFeeRules(slug: string, mode: 'ORGANIZATION' | 'PROFESSIONAL', ctx?: ApiContext) {
+export async function getFeeRules(slug: string, ctx?: ApiContext) {
     try {
-        const res = await apiFetch(`${API_BASE_URL}/fee-rules?mode=${mode}`, {
+        const res = await apiFetch(`${API_BASE_URL}/fee-rules`, {
             headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });
@@ -378,18 +378,17 @@ export async function createWorkItem(slug: string, data: any, ctx?: ApiContext) 
     try {
         const headers = getHeaders(slug, ctx?.token);
 
-        // Backend ActivityController expects 'x-mode' header. 
-        // We assume 'mode' is inside data or needs to be passed. 
-        // For now, defaulting to ORGANIZATION or extracting from data if present.
-        // Ideally, the UI function call should pass 'mode' explicitly.
-        if (data.mode) {
-            (headers as any)['x-mode'] = data.mode;
+        // El modo (x-mode) es solo una preferencia: el backend decide la vista efectiva segun los vinculos del usuario.
+        // 'mode' viaja unicamente en el header, nunca en el body.
+        const { mode, ...body } = data ?? {};
+        if (mode) {
+            (headers as any)['x-mode'] = mode;
         }
 
         const res = await apiFetch(`${API_BASE_URL}/activity`, {
             method: 'POST',
             headers: headers,
-            body: JSON.stringify(data)
+            body: JSON.stringify(body)
         });
 
         if (!res.ok) {
@@ -965,38 +964,8 @@ export async function updateOrgPreset(slug: string, id: string, data: any, ctx?:
  */
 export async function calculateSettlements(slug: string, month: string, ctx?: ApiContext) {
     try {
-        const orgDetails = await getOrgDetails(slug, ctx); // We need the ID, not slug usually, but headers handle slug->UUID often? 
-        // Wait, the backend query expects 'organizationId'. 
-        // 'getHeaders' puts orgSlug/ID in 'x-org-id'.
-        // But the Query DTO has 'organizationId' property.
-        // We usually rely on the Controller to extract from Header or Body?
-        // Let's check Controller. 
-        // Controller: async calculate(@Query() query: CalculateSettlementsQuery)
-        // Query DTO has organizationId.
-        // Frontend must pass it in Query Params? 
-        // Yes, if the DTO expects it.
-        // Does getOrgDetails give us the UUID? Yes.
-
-        // Actually, let's reuse the pattern. If the backend expects it in query, we pass it.
-        // However, 'getHeaders' logic in 'data.ts' tries to handle 'x-org-id'.
-        // But the Query Object logic in NestJS with @Query maps from query string.
-        // We should pass organizationId in query string.
-
-        // We need to resolve slug to ID if we don't have it.
-        // Or assume slug IS the ID (if user puts UUID in URL).
-        // But usually slug is 'nombre-clinica'.
-        // We might need to fetch Org ID first or let the backend middleware handle it (if it did).
-        // The codebase seems to rely on 'x-org-id' header heavily, but this specific Query DTO demands it.
-        // Let's try to fetch org details first to be safe, or if we have it in context.
-        // ProfessionalPayouts receives 'slug' in URL.
-        // New Endpoint: /settlements/calculate?month=...&organizationId=...
-
-        let orgId = slug;
-        // Try to fetch real ID if slug seems like a slug
-        const details = await getOrgDetails(slug, ctx);
-        if (details && details.id) orgId = details.id;
-
-        const res = await apiFetch(`${API_BASE_URL}/settlements/calculate?month=${month}&organizationId=${orgId}`, {
+        // La organizacion la toma el backend de x-org-id (validado); no se manda organizationId en la query.
+        const res = await apiFetch(`${API_BASE_URL}/settlements/calculate?month=${encodeURIComponent(month)}`, {
             headers: getHeaders(slug, ctx?.token),
             cache: 'no-store'
         });

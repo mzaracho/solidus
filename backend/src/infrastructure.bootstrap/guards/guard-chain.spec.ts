@@ -20,10 +20,12 @@ import { AppModule } from '../modules/app-module';
 import {
   AuthenticationGuardProvider,
   OrgAccessGuardProvider,
+  ViewModeGuardProvider,
 } from '../config/providers/guard-provider';
 import { AuthenticationGuard } from './authentication-guard';
 import { OrgAccessGuard } from './org-access-guard';
 import { OrgRoleGuard, RequireOrgRole } from './org-role-guard';
+import { ViewModeGuard } from './view-mode-guard';
 
 @Controller('v1/chain')
 class ChainController {
@@ -92,6 +94,8 @@ describe('Cadena de guards globales (integración)', () => {
                 return { allowed: true, memberRole: 'MEMBER' };
               return { allowed: false, memberRole: null };
             },
+            getActiveProfessionals: async () => [],
+            getOrgType: async () => 'CLINIC',
           },
         },
         {
@@ -106,6 +110,7 @@ describe('Cadena de guards globales (integración)', () => {
         { provide: APP_FILTER, useClass: HttpFilter },
         AuthenticationGuardProvider,
         OrgAccessGuardProvider,
+        ViewModeGuardProvider,
       ],
     }).compile();
     app = moduleRef.createNestApplication();
@@ -208,11 +213,15 @@ describe('Cadena de guards globales (integración)', () => {
     expect(denied.body.code).toBe('forbidden');
   });
 
-  it('AppModule registra los dos APP_GUARD en orden: autenticación y luego pertenencia', () => {
+  it('AppModule registra los tres APP_GUARD en orden: autenticación, pertenencia y modo', () => {
     const providers: any[] = Reflect.getMetadata('providers', AppModule);
     const guards = providers
       .filter((p) => p && p.provide === APP_GUARD)
       .map((p) => p.useClass);
-    expect(guards).toEqual([AuthenticationGuard, OrgAccessGuard]);
+    expect(guards).toEqual([
+      AuthenticationGuard,
+      OrgAccessGuard,
+      ViewModeGuard,
+    ]);
   });
 });

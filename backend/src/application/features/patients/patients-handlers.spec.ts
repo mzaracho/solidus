@@ -9,6 +9,10 @@ import {
 } from '../../../../test/helpers/scope';
 import { GetDebtQuery, GetDebtQueryHandler } from './queries/get-debt-query';
 import {
+  FindAllPatientsQuery,
+  FindAllPatientsQueryHandler,
+} from './queries/find-all-patients-query';
+import {
   GetPatientSummaryQuery,
   GetPatientSummaryQueryHandler,
 } from './queries/get-patient-summary-query';
@@ -32,7 +36,7 @@ describe('GetDebtQueryHandler / GetPatientSummaryQueryHandler', () => {
     const patientService: any = { getDebt: jest.fn().mockResolvedValue(42) };
     const findFirst = jest
       .fn()
-      .mockResolvedValueOnce({ id })
+      .mockResolvedValueOnce({ id, organizationId: orgA })
       .mockResolvedValueOnce(null);
     const handler = new GetDebtQueryHandler(patientService, {
       patient: { findFirst },
@@ -56,7 +60,7 @@ describe('GetDebtQueryHandler / GetPatientSummaryQueryHandler', () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const findFirst = jest
       .fn()
-      .mockResolvedValueOnce({ id })
+      .mockResolvedValueOnce({ id, organizationId: orgA })
       .mockResolvedValueOnce(null);
     const handler = new GetPatientSummaryQueryHandler({
       patient: { findFirst },
@@ -74,6 +78,218 @@ describe('GetDebtQueryHandler / GetPatientSummaryQueryHandler', () => {
     );
     expect(e.getResponse()).toEqual(NOT_FOUND_BODY);
     expect(findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('Lecturas por id de un profesional sin membresia (decision 7 del 009)', () => {
+  const pid = randomUUID();
+  const proCtx = makeCtx({ roles: { [orgA]: null } });
+  const ME = randomUUID();
+
+  const prismaFor = (opts: {
+    own: Array<{ id: string; canLoadActivities: boolean }>;
+    attended?: boolean;
+  }) => {
+    const prisma: any = {
+      patient: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: pid, organizationId: orgA }),
+      },
+      professional: { findMany: jest.fn().mockResolvedValue(opts.own) },
+      workItem: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue(opts.attended ? { id: randomUUID() } : null),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    return prisma;
+  };
+  const handlers = (prisma: any) => ({
+    debt: new GetDebtQueryHandler(
+      { getDebt: jest.fn().mockResolvedValue(7) } as any,
+      prisma,
+    ),
+    summary: new GetPatientSummaryQueryHandler(prisma),
+  });
+
+  it('con membresia: sin consultas extra (como antes)', async () => {
+    const prisma = prismaFor({ own: [] });
+    const { debt, summary } = handlers(prisma);
+    await expect(debt.execute(new GetDebtQuery(pid), ctx)).resolves.toBe(7);
+    await summary.execute(new GetPatientSummaryQuery(pid), ctx);
+    expect(prisma.professional.findMany).not.toHaveBeenCalled();
+    expect(prisma.workItem.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('paciente que atendio (propio o participante): 200, consulta acotada a sus Professional', async () => {
+    const prisma = prismaFor({
+      own: [{ id: ME, canLoadActivities: false }],
+      attended: true,
+    });
+    const { debt, summary } = handlers(prisma);
+    await expect(debt.execute(new GetDebtQuery(pid), proCtx)).resolves.toBe(7);
+    await expect(
+      summary.execute(new GetPatientSummaryQuery(pid), proCtx),
+    ).resolves.toEqual({ totalDebt: 0, pendingItems: [] });
+    expect(prisma.professional.findMany.mock.calls[0][0].where).toEqual({
+      userId: proCtx.org!.userId,
+      organizationId: orgA,
+      status: 'ACTIVE',
+      deletedAt: null,
+    });
+    expect(prisma.workItem.findFirst.mock.calls[0][0].where).toEqual({
+      patientId: pid,
+      OR: [
+        { professionalId: { in: [ME] } },
+        { participants: { some: { professionalId: { in: [ME] } } } },
+      ],
+    });
+  });
+
+  it('MEDIA-1: sin membresia, la deuda y el resumen se acotan a sus Professional (aun con permiso de carga)', async () => {
+    const OTHER_PRO = randomUUID();
+    for (const canLoad of [false, true]) {
+      const prisma = prismaFor({
+        own: [{ id: ME, canLoadActivities: canLoad }],
+        attended: true,
+      });
+      // el "backend" devuelve solo lo que el filtro permite: atenciones de ME
+      prisma.workItem.findMany.mockImplementation(async (a: any) => {
+        const ids = a.where.OR?.[0]?.professionalId?.in ?? [];
+        const all = [
+          { id: 'w1', professionalId: ME, grossAmount: 10 },
+          { id: 'w2', professionalId: OTHER_PRO, grossAmount: 99 },
+        ].filter((w) => ids.includes(w.professionalId));
+        return all.map((w) => ({
+          ...w,
+          occurredAt: new Date(),
+          serviceType: 'S',
+          paymentStatus: 'PENDING',
+          payer: { name: 'P' },
+          professional: { displayName: 'Yo' },
+        }));
+      });
+      const getDebt = jest.fn().mockResolvedValue(10);
+      const debt = new GetDebtQueryHandler({ getDebt } as any, prisma);
+      await debt.execute(new GetDebtQuery(pid), proCtx);
+      expect(getDebt).toHaveBeenCalledWith(pid, [ME]);
+      const res = await new GetPatientSummaryQueryHandler(prisma).execute(
+        new GetPatientSummaryQuery(pid),
+        proCtx,
+      );
+      expect(res.totalDebt).toBe(10);
+      expect(res.pendingItems.map((i) => i.id)).toEqual(['w1']);
+    }
+  });
+
+  it('miembro: sin acotar (getDebt sin professionalIds)', async () => {
+    const prisma = prismaFor({ own: [] });
+    const getDebt = jest.fn().mockResolvedValue(7);
+    await new GetDebtQueryHandler({ getDebt } as any, prisma).execute(
+      new GetDebtQuery(pid),
+      ctx,
+    );
+    expect(getDebt).toHaveBeenCalledWith(pid, undefined);
+    await new GetPatientSummaryQueryHandler(prisma).execute(
+      new GetPatientSummaryQuery(pid),
+      ctx,
+    );
+    expect(prisma.workItem.findMany.mock.calls[0][0].where.OR).toBeUndefined();
+  });
+
+  it('paciente que no atendio y sin permiso de carga: el mismo 404 generico, sin calcular ni listar', async () => {
+    const prisma = prismaFor({
+      own: [{ id: ME, canLoadActivities: false }],
+      attended: false,
+    });
+    const getDebt = jest.fn();
+    const debt = new GetDebtQueryHandler({ getDebt } as any, prisma);
+    const summary = new GetPatientSummaryQueryHandler(prisma);
+    for (const run of [
+      () => debt.execute(new GetDebtQuery(pid), proCtx),
+      () => summary.execute(new GetPatientSummaryQuery(pid), proCtx),
+    ]) {
+      const e = await errorOf(run);
+      expect(e).toBeInstanceOf(NotFoundException);
+      expect(e.getResponse()).toEqual(NOT_FOUND_BODY);
+    }
+    expect(getDebt).not.toHaveBeenCalled();
+    expect(prisma.workItem.findMany).not.toHaveBeenCalled();
+  });
+
+  it('con permiso de carga en la organizacion: cualquier paciente de ella', async () => {
+    const prisma = prismaFor({
+      own: [{ id: ME, canLoadActivities: true }],
+      attended: false,
+    });
+    const { debt } = handlers(prisma);
+    await expect(debt.execute(new GetDebtQuery(pid), proCtx)).resolves.toBe(7);
+    expect(prisma.workItem.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('sin Professional activo en la organizacion: 404', async () => {
+    const prisma = prismaFor({ own: [] });
+    const { summary } = handlers(prisma);
+    const e = await errorOf(() =>
+      summary.execute(new GetPatientSummaryQuery(pid), proCtx),
+    );
+    expect(e.getResponse()).toEqual(NOT_FOUND_BODY);
+  });
+});
+
+describe('FindAllPatientsQueryHandler: includeCurrentOrg y vista (009)', () => {
+  const other = randomUUID();
+  const pro = (organizationId: string, canLoadActivities: boolean) => ({
+    id: randomUUID(),
+    organizationId,
+    canLoadActivities,
+  });
+  const run = async (
+    role: 'ADMIN' | 'MEMBER' | null,
+    view: Parameters<typeof makeCtx>[0]['view'],
+  ) => {
+    const findAll = jest.fn().mockResolvedValue({ items: [], total: 0 });
+    const handler = new FindAllPatientsQueryHandler({ findAll } as any);
+    const query = new FindAllPatientsQuery();
+    query.organizationId = orgA;
+    await handler.execute(query, makeCtx({ roles: { [orgA]: role }, view }));
+    return findAll.mock.calls[0];
+  };
+
+  it('miembro: true', async () => {
+    const [, view, opts] = await run('MEMBER', { mode: 'pro', professionals: [pro(orgA, false)] });
+    expect(view.mode).toBe('pro');
+    expect(opts).toEqual({ includeCurrentOrg: true });
+  });
+  it('miembro en org: true', async () => {
+    const [, , opts] = await run('ADMIN', { mode: 'org' });
+    expect(opts).toEqual({ includeCurrentOrg: true });
+  });
+  it('profesional con permiso de carga en la organizacion: true', async () => {
+    const [, , opts] = await run(null, { mode: 'pro', professionals: [pro(orgA, true)] });
+    expect(opts).toEqual({ includeCurrentOrg: true });
+  });
+  it('profesional sin permiso de carga: false', async () => {
+    const [, , opts] = await run(null, { mode: 'pro', professionals: [pro(orgA, false)] });
+    expect(opts).toEqual({ includeCurrentOrg: false });
+  });
+  it('permiso de carga solo en otra organizacion: false', async () => {
+    const [, , opts] = await run(null, {
+      mode: 'pro',
+      professionals: [pro(orgA, false), pro(other, true)],
+    });
+    expect(opts).toEqual({ includeCurrentOrg: false });
+  });
+  it('sin ctx.view: 403 forbidden', async () => {
+    const handler = new FindAllPatientsQueryHandler({ findAll: jest.fn() } as any);
+    const query = new FindAllPatientsQuery();
+    query.organizationId = orgA;
+    const e = await errorOf(() =>
+      handler.execute(query, makeCtx({ roles: { [orgA]: 'ADMIN' } })),
+    );
+    expect(e.getStatus()).toBe(403);
   });
 });
 
