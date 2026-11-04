@@ -266,14 +266,10 @@ describe('invariantes de seguridad', () => {
     'FindFeeRulesQuery.organizationId': 'controller',
     'FindFeeRulesQuery.userId': 'controller',
     'GetActivityTypesQuery.orgId': 'controller',
-    'GetDailyReportQuery.userId': 'controller',
     'GetDashboardChartQuery.orgId': 'controller',
     'GetDashboardKpisQuery.organizationId': 'controller',
     'GetDashboardPayerDistributionQuery.orgId': 'controller',
     'GetDebtQuery.id': 'verified',
-    'GetDebtorsReportQuery.userId': 'controller',
-    'GetMonthlyReportQuery.userId': 'controller',
-    'GetMyProductionQuery.userId': 'controller',
     'GetOrgConfigQuery.orgId': 'controller',
     'GetOrganizationQuery.orgId': 'controller',
     'GetPatientSummaryQuery.patientId': 'verified',
@@ -319,15 +315,6 @@ describe('invariantes de seguridad', () => {
     expect([...found].sort()).toEqual(Object.keys(ID_FIELDS).sort());
   });
 
-  // Clases con campos 'controller' cuyo controlador no está registrado en ningún módulo (011): justificadas.
-  // Su userId viene hoy de la query cruda; si se registran, hay que asignarlo desde @CurrentUserId().
-  const NOT_REGISTERED_ALLOWLIST: Record<string, string> = {
-    GetDailyReportQuery: 'ReportingController no está registrado (011)',
-    GetDebtorsReportQuery: 'ReportingController no está registrado (011)',
-    GetMonthlyReportQuery: 'ReportingController no está registrado (011)',
-    GetMyProductionQuery: 'ProductionController no está registrado (011)',
-  };
-
   it('009: cada campo "controller" de ID_FIELDS lo asigna el controlador que despacha la clase', () => {
     const controllers = sources.filter((s) =>
       s.file.startsWith('api/controllers/'),
@@ -336,7 +323,6 @@ describe('invariantes de seguridad', () => {
     for (const [key, kind] of Object.entries(ID_FIELDS)) {
       if (kind !== 'controller') continue;
       const [cls, field] = key.split('.');
-      if (cls in NOT_REGISTERED_ALLOWLIST) continue;
       const users = controllers.filter((c) =>
         new RegExp(`\\b${cls}\\b`).test(c.text),
       );
@@ -349,28 +335,6 @@ describe('invariantes de seguridad', () => {
       }
     }
     expect(missing).toEqual([]);
-  });
-
-  it('009: la lista blanca de controladores no registrados no acumula entradas obsoletas', () => {
-    const registered = sources
-      .filter((s) => s.file.startsWith('infrastructure.bootstrap/modules/'))
-      .map((s) => s.text)
-      .join('\n');
-    for (const cls of Object.keys(NOT_REGISTERED_ALLOWLIST)) {
-      // la clase sigue clasificada como 'controller' en ID_FIELDS
-      expect(
-        Object.keys(ID_FIELDS).some(
-          (k) => k.startsWith(`${cls}.`) && ID_FIELDS[k] === 'controller',
-        ),
-      ).toBe(true);
-      const ctrl = sources.find(
-        (s) =>
-          s.file.startsWith('api/controllers/') &&
-          new RegExp(`\\b${cls}\\b`).test(s.text),
-      )!;
-      const ctrlClass = /export class (\w+Controller)/.exec(ctrl.text)![1];
-      expect(registered).not.toContain(ctrlClass);
-    }
   });
 
   it('007: los comandos con ids verificados viven en archivos que usan org-resource o el contexto', () => {

@@ -11,14 +11,14 @@ Lo mantiene el PO. Los números con `#` son de `docs/auditoria/BACKLOG.md`.
 | 2 | 007-aislamiento-organizaciones | #3, #4, #5 | **Hecho** (`f69b73e`) |
 | 3 | 008-fix-tabla-work-items | Bug O-3 del 005, #44 | **Hecho** (`8f65cb5`) |
 | 4 | 009-modo-desde-rol | #2 (resto: `x-mode`), #41 | **Hecho** (`f2ecc50`) |
-| 5 | 010-logs-y-limites | #37, #38, #14 | **Hecho** (commit en curso) |
-| 6 | 011-controladores-huerfanos | #39 | En curso |
-| 7 | 012-rate-limiting-login | #11 (resto) | Pendiente |
+| 5 | 010-logs-y-limites | #37, #38, #14 | **Hecho** (`fad34cd`) |
+| 6 | 011-controladores-huerfanos | #39 | **Hecho** (commit en curso) |
+| 7 | 012-rate-limiting-login | #11 (resto) | En curso |
 | 8 | 013-errores-sin-details | #13, #42, #53, B-1 y B-2 del 006, I-4 del 010 | Pendiente |
 | 9 | 014-validation-whitelist | #12, #43 | Pendiente |
 | 10 | 015-transacciones | #16 | Pendiente |
 | 11 | 016-dinero-y-motor-honorarios | #17, #40, #45 | Pendiente |
-| 12 | 017-cookie-httponly | #10 | Pendiente |
+| 12 | 017-cookie-httponly | #10, #55 | Pendiente |
 | 13 | 018-test-suite-fuera-de-prod | #15 | Pendiente |
 | 14 | 019-docker-hardening | #19 | Pendiente |
 | 15 | 020-audit-fix | #36, #25 (`npm audit fix` sin cambios incompatibles) | Pendiente |
@@ -35,3 +35,7 @@ Lo mantiene el PO. Los números con `#` son de `docs/auditoria/BACKLOG.md`.
 
 El orden puede cambiar si una feature revela dependencias. El PO frena y consulta al usuario cuando una tarea
 requiere una decisión suya: reescribir el historial, acciones en GitHub o cambios de comportamiento visibles.
+
+Nota operativa: AVG bloqueó `scripts/dev-lib.tests.ps1` (lo puso en cuarentena 3 veces). El usuario agregó la
+exclusión de `C:\Repositorios\healthops-gem\scripts\` y lo sacó de la cuarentena (2026-11-04). Si vuelve a
+desaparecer, se puede mover el sandbox de los tests (hoy en `%TEMP%\solidus-dev-tests-<GUID>`) a `.dev\`.

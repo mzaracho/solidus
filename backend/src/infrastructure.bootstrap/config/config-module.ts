@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { OrgController } from '../../api/controllers/v1/config/org-controller';
 import { ProController } from '../../api/controllers/v1/config/pro-controller';
-import { ProfileController } from '../../api/controllers/v1/config/profile-controller';
 import { PrismaModule } from '../modules/features/prisma/prisma-module';
 import { GetOrgConfigQueryHandler } from '@src/application/features/config/queries/get-org-config-query';
 import { GetOrganizationQueryHandler } from '@src/application/features/config/queries/get-organization-query';
@@ -40,11 +39,7 @@ import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 
 @Module({
   imports: [PrismaModule],
-  controllers: [
-    OrgController,
-    ProController,
-    ProfileController,
-  ],
+  controllers: [OrgController, ProController],
   providers: [
     GetOrgConfigQueryHandler,
     GetOrganizationQueryHandler,

@@ -28,7 +28,7 @@ Origen: `docs/features/005-seguridad-backend/06-seguridad.md`. Ver los residuale
 | 36 | `npm audit fix` en el frontend (`source-map-js`) | H-3 | S |
 | 37 | **RESUELTO (feature 010).** Loguear requests fallidos (método, ruta, status, duración), incluidos los 401 y 403 de los guards, sin datos sensibles | B-3 | S |
 | 38 | **RESUELTO (feature 010).** Bajar el límite del body (hoy 50 MB) a 1–2 MB (queda `BODY_SIZE_LIMIT`, default 1mb, máx 10mb) | B-4 | S |
-| 39 | `ProductionController` y `ReportingController`: reemplazar `userId` por query con `@CurrentUserId()` (o borrarlos) y agregar un test que lo vigile | B-1 | S |
+| 39 | **RESUELTO (feature 011).** `ProductionController` y `ReportingController` (no registrados, tomaban `userId` de la query) borrados junto con sus queries; también se eliminó `PUT /api/profile` (`ProfileController`, mock no registrado; el front usa `PUT /pro/profile`). Guardia estructural: el test `(a2)` de `test/org-isolation.spec.ts` falla si un `@Controller` de `src/` no está registrado en un módulo | B-1 | S |
 
 Notas del feature 010 (`docs/features/010-logs-y-limites/06-seguridad.md`):
 - I-4: un error del parser con otro status o sin `type` cae en el manejador por defecto de Express (fuera de producción
@@ -67,6 +67,14 @@ Origen: `docs/features/009-modo-desde-rol/` (decisiones del PO en `00-estado.md`
 
 Nota para #12 (whitelist): con `forbidNonWhitelisted` el `?mode=` que manda el front en dashboard, work-items y pacientes daría 400
 (INFO-1 de seguridad del 009); declarar el campo en los DTOs de esas queries antes de activarlo.
+
+## Candidatos surgidos del feature 011
+
+Origen: `docs/features/011-controladores-huerfanos/06-seguridad.md`.
+
+| # | Ítem | Origen | Esfuerzo |
+|---|---|---|---|
+| 55 | `LogoutCommandHandler` (`auth/logout-command-handler.ts`) no lleva `@RequestHandler` ni está registrado: el endpoint de logout probablemente responde "Handler not found". Preexistente; resolver en el feature 017 (cookie `HttpOnly`, ítem 10 de P1), que rehace el logout | MENOR-3 (seguridad 011) | S |
 
 ## P1 — Endurecimiento y consistencia
 

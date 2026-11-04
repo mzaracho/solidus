@@ -14,8 +14,6 @@ Las APIs están aseguradas utilizando JWT (JSON Web Tokens). Se debe incluir un 
 
 ### Actividad y Reporting
 - `GET/POST /activity`: Gestiona la administración de servicios provistos (sesiones y admisiones).
-- `GET /my-production`: Obtiene las métricas en torno a la actividad y producción realizada por un profesional.
-- `GET /work-items/reporting`: Entrega información tabulada sobre los artículos de trabajo completados en forma condensada.
 
 ### Pacientes
 - `GET /v1/patients`: Obtiene un listado de perfiles de pacientes de la clínica.
@@ -28,7 +26,6 @@ Las APIs están aseguradas utilizando JWT (JSON Web Tokens). Se debe incluir un 
 - `GET /settlements`: Carga los perfiles monetarios emitidos en ciclos de facturación o cobros.
 
 ### Configuración y Perfiles
-- `GET /profile`: Captura todos los datos funcionales y asignaciones que identifican al propio operador logueado.
 - `GET/POST /org`: Expande la gestión estructural frente a datos referentes a toda la organización del servicio.
 - `GET/POST /config` y `/system`: Manipulan opciones administrativas fundamentales y listas maestras usadas globalmente.
 - `GET/POST /pro`: Expone funciones para la creación y manipulación de los perfiles de profesionales activos y pasivos.

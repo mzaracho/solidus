@@ -14,8 +14,6 @@ APIs are secured using JWT (JSON Web Tokens). A Bearer token must be included in
 
 ### Activity & Reporting
 - `GET/POST /activity`: Manage professional load assignments (sessions, admissions).
-- `GET /my-production`: Retrieve activity metrics and production reporting for a connected professional.
-- `GET /work-items/reporting`: Deliver summarized outcome variations of business work items.
 
 ### Patients
 - `GET /v1/patients`: Retrieve a list of active patients.
@@ -28,7 +26,6 @@ APIs are secured using JWT (JSON Web Tokens). A Bearer token must be included in
 - `GET /settlements`: Access settlement billing and generated payment cycles.
 
 ### Configuration & Profiles
-- `GET /profile`: Obtain the authenticated user internal profile attributes.
 - `GET/POST /org`: Manage overall configuration details for the global organization entity.
 - `GET/POST /config` & `/system`: Handle application-wide settings and administrative enumerations.
 - `GET/POST /pro`: Administer professional user directories and access settings.

@@ -76,15 +76,15 @@ A menudo el propio DTO de entrada (`@Body() command: XCommand`) es el comando.
 |---|---|---|
 | AuthController | `v1/auth` (`login` público, `logout`) | `AuthGuard` |
 | ActivityController | `activity` (CRUD; GET y POST con `@UsesViewMode()`) | guards globales |
-| ProductionController | `my-production` | ninguno (solo `ApiKeyGuard` = siempre true) |
-| ReportingController | `work-items/reporting/{daily,debtors,monthly}` | ninguno |
+| ProductionController | Eliminado en el feature 011 (código muerto, no registrado) | — |
+| ReportingController | Eliminado en el feature 011 (código muerto, no registrado) | — |
 | DashboardController | `dashboard/{kpis,chart,payers}` | guards globales; `@UsesViewMode({ orgRole: 'ADMIN' })` |
 | PatientsController | `v1/patients` (+ `:id/debt`, `:id/summary`, `:id/merge`); el listado con `@UsesViewMode()` | guards globales |
 | SettlementsController | `settlements` (+ `calculate`, `:id/details`) | guards globales; `calculate` con `@RequireOrgRole('ADMIN')` |
 | ConfigController | Eliminado en el feature 007 (el front usa `org/*`) | — |
 | OrgController | `org/*` (organización, categorías, presets, staff, activity-types) | `AuthGuard` + `OrgRoleGuard` en escrituras |
 | ProController | `pro/{context,memberships,profile,payers}` | `AuthGuard` |
-| ProfileController | `profile` (mock) | ninguno |
+| ProfileController | Eliminado en el feature 011 (mock no registrado; el front usa `pro/profile`) | — |
 | SystemController | `system/professionals` | `AuthGuard` |
 | FeeRulesController | `fee-rules` | `AuthGuard` |
 | ProfessionalCategoryController | `fee-engine/professional-categories` | ninguno |

@@ -58,6 +58,8 @@ salvo que el usuario lo pida.
   agregar el caso a `ID_ROUTE_CASES` de `test/org-isolation.spec.ts` (el test estructural falla si falta una ruta con
   parámetros) y clasificar los campos `*Id` nuevos en `security-invariants.spec.ts`. Si la ruta cambia qué datos
   devuelve según el modo org/pro: `@UsesViewMode()` en el controlador y `requireViewScope(ctx)` en el handler (009).
+- Todo `@Controller` debe estar registrado en el `controllers` de un módulo Nest: lo vigila el test `(a2)` de
+  `test/org-isolation.spec.ts` (011); un controlador huérfano responde 404 y no se debe dejar en el código.
 - Atenciones (007): ADMIN puede todo; MEMBER edita y cobra cualquier atención de su organización pero borra solo las
   propias (`createdByUserId`); quien solo tiene un `Professional` edita/borra lo suyo y necesita `canLoadActivities`
   para crear. Detalle: `docs/features/007-aislamiento-organizaciones/00-estado.md`.

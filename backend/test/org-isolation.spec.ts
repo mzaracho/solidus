@@ -22,12 +22,14 @@
  *  (m) Valores de modo inválidos y rutas que ignoran el modo.
  *  (n) Lecturas por id de un profesional sin membresía, y vista pro multi-organización.
  */
+import { randomUUID } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { INestApplication, RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { ModulesContainer } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import { randomUUID } from 'crypto';
 import request from 'supertest';
 import { AppModule } from '@src/infrastructure.bootstrap/modules/app-module';
 import { configureGlobalPrefix } from '@src/infrastructure.bootstrap/config/app/global-prefix-config';
@@ -616,6 +618,7 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
   let app: INestApplication;
   let jwt: JwtService;
   const fake = createFakePrisma(seed());
+  const registeredControllers = new Set<any>();
   const allRoutes: Array<{
     key: string;
     method: string;
@@ -671,6 +674,7 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
       for (const wrapper of mod.controllers.values()) {
         const ctrl = wrapper.metatype as any;
         if (!ctrl) continue;
+        registeredControllers.add(ctrl);
         const base: string = Reflect.getMetadata(PATH_METADATA, ctrl) ?? '';
         const proto = ctrl.prototype;
         for (const name of Object.getOwnPropertyNames(proto)) {
@@ -724,6 +728,62 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
       .map((r) => r.key)
       .sort();
     expect(withParams).toEqual(Object.keys(ID_ROUTE_CASES).sort());
+  });
+
+  // Feature 011: guardia estructural contra controladores huérfanos. Toda clase @Controller de
+  // src/** tiene que estar registrada en un módulo cargado por AppModule; si no,
+  // sus rutas responden 404 y nadie revisa que cumplan el aislamiento (005/007/009).
+  // Lista blanca (clase -> justificación). Hoy vacía: no hay controladores huérfanos a propósito.
+  const ORPHAN_CONTROLLERS_ALLOWLIST: Record<string, string> = {};
+
+  // Se recorre todo src/** (un controlador mal ubicado también cuenta). Se excluyen specs y .d.ts, y
+  // los puntos de entrada con efectos al importarse: api/main.ts (llama a bootstrap() y levanta el
+  // servidor) e infrastructure.bootstrap/bootstrap.ts (crea la app Nest). Ninguno declara controladores.
+  const SIDE_EFFECT_FILES = [
+    ['api', 'main.ts'],
+    ['infrastructure.bootstrap', 'bootstrap.ts'],
+  ].map((parts) => path.join(__dirname, '..', 'src', ...parts));
+
+  it('(a2) todo @Controller de src/** está registrado en un módulo de AppModule', () => {
+    const dir = path.join(__dirname, '..', 'src');
+    const walkTs = (d: string): string[] =>
+      fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+        const full = path.join(d, e.name);
+        if (e.isDirectory()) return walkTs(full);
+        return e.name.endsWith('.ts') &&
+          !e.name.endsWith('.spec.ts') &&
+          !e.name.endsWith('.d.ts') &&
+          !SIDE_EFFECT_FILES.includes(full)
+          ? [full]
+          : [];
+      });
+    const declared: Array<{ name: string; ctrl: any }> = [];
+    for (const file of walkTs(dir)) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mod = require(file);
+      for (const [name, exp] of Object.entries(mod)) {
+        // @Controller() guarda su path como metadata propia de la clase
+        if (
+          typeof exp === 'function' &&
+          Reflect.hasOwnMetadata(PATH_METADATA, exp)
+        ) {
+          declared.push({ name, ctrl: exp });
+        }
+      }
+    }
+    // la detección no puede quedar vacía por error (p. ej. un cambio de metadata de Nest)
+    expect(declared.length).toBeGreaterThan(0);
+    const registered = registeredControllers;
+    const orphans = declared
+      .filter((d) => !registered.has(d.ctrl))
+      .map((d) => d.name)
+      .filter((n) => !(n in ORPHAN_CONTROLLERS_ALLOWLIST))
+      .sort();
+    expect(orphans).toEqual([]);
+    // la lista blanca no acumula entradas obsoletas
+    for (const n of Object.keys(ORPHAN_CONTROLLERS_ALLOWLIST)) {
+      expect(declared.some((d) => d.name === n)).toBe(true);
+    }
   });
 
   // ─── (b) ────────────────────────────────────────────────────────────────────
