@@ -1,41 +1,42 @@
 # Estado del feature 016 (traspaso entre sesiones)
 
-Última actualización: 2026-11-04, por el PO.
+Última actualización: 2026-11-18, por el PO. **Feature cerrado** (ver `09-cierre.md`).
 
 ## Etapas
 | Etapa | Archivo | Estado |
 |---|---|---|
 | Spec | 01-spec.md | Lista |
 | UX/UI | — | Omitida |
-| Arquitecto | 03-diseno-tecnico.md | APROBADO. La base local del usuario ya coincide con el schema; hay 15 diferencias entre las migraciones y el schema; las pruebas se hicieron sobre copias |
-| Desarrollador | 04-implementacion.md | Pendiente: arranca **después del commit del 015** |
-| Revisor | 05-revision.md | Pendiente |
-| Seguridad | 06-seguridad.md | Pendiente |
-| Tester | 07-testing.md | Pendiente |
-| Documentador | 08-documentacion.md | Pendiente |
-| Cierre | 09-cierre.md | Pendiente |
+| Arquitecto | 03-diseno-tecnico.md | APROBADO. La base local del usuario ya coincide con el schema; hay 15 diferencias entre las migraciones y el schema |
+| Desarrollador | 04-implementacion.md | Completo: migración `20261104192244_align_schema_with_migrations`, `-CheckMigrations` y `-BaselineMigrations` (código 12). El PO aceptó hacer el respaldo después de la confirmación, porque sigue antes de la única escritura |
+| Revisor | 05-revision.md | APROBADO (feature y agregado) |
+| Seguridad | 06-seguridad.md | APROBADO (feature y agregado) |
+| Tester | 07-testing.md | APROBADO. Baseline ejecutado en la base real el 2026-11-18 con conteos iguales |
+| Documentador | 08-documentacion.md | Completo |
+| Cierre | 09-cierre.md | Hecho |
+
+Procedimiento: `10-procedimiento-baseline.md`. El camino recomendado es `.\dev.ps1 -BaselineMigrations`.
 
 ## Decisiones del PO sobre las aclaraciones del arquitecto (03)
-1. **Se aceptan los `DROP` de `WorkItem.coProfessionalId` y `eventRole`.** No existen en la base local del usuario, y
-   en las bases armadas solo con las migraciones viejas la migración falla entera, sin perder datos. Los volúmenes
-   huérfanos de composes viejos (`healthops_healthops_pgdata` e `infra_healthops_pg`) no se tocan.
+1. **Se aceptan los `DROP` de `WorkItem.coProfessionalId` y `eventRole`.** No existen en la base del usuario, y en las
+   bases armadas solo con las migraciones viejas la migración falla entera, sin perder datos.
 2. **El alcance incluye `Payer.cuit` y la FK `Professional.userId`.**
-3. **El Dockerfile corre `migrate deploy; start:prod` con `;`**, así que el backend arranca aunque la migración falle.
-   Va al BACKLOG y al feature 020 (endurecimiento de Docker).
-4. **Hay que registrar la migración nueva como aplicada en la base real del usuario** (`resolve --applied`). Requiere
-   su confirmación, porque es el único paso que escribe en esa base. Se lo pregunta el PO.
-   - Orden: primero el desarrollador crea la migración, después se hace el baseline en la base real (con
-     confirmación) y recién después el tester corre `.\dev.ps1`.
-   - Si alguien corre `.\dev.ps1` antes del baseline, el deploy falla con P3009 sin efectos en la base, y el mismo
-     procedimiento lo recupera.
-5. **La regla 6 de `CLAUDE.md`** la actualiza el documentador, como en los features anteriores. La documentación de
-   `CLAUDE.md` es parte de la spec aprobada.
+3. **Dockerfile con `migrate deploy; start:prod`** (con `;`): va al BACKLOG #77 y al feature 020.
+4. **Baseline en la base real:** ver "Decisiones del usuario".
+5. **La regla 6 de `CLAUDE.md`** la actualizó el documentador.
 
-## Pendiente del usuario
-- **Confirmar el baseline** (`resolve --applied`) en su base local, con el respaldo previo en `.dev/backups`.
-- **Borrar un volumen anónimo de prueba** que dejó el arquitecto. El sistema de permisos bloqueó su eliminación. Tiene
-  solo bases de prueba con datos ficticios:
-  `docker volume rm d9e4e4f6a7e029d0a57e27311f9dee0c4dc3f13e9fad338c015d240915b888a9`.
+## Decisiones del usuario
+- **2026-11-18: agregar `.\dev.ps1 -BaselineMigrations`.** Es un comando genérico que sirve para cualquier base armada
+  por fuera de las migraciones: hace el respaldo, verifica que la base coincide con el schema, pide confirmación y
+  controla los conteos.
+- **2026-11-18: el usuario autoriza que el tester ejecute el baseline en su base local real.** Usa
+  `.\dev.ps1 -BaselineMigrations -Yes`, o el procedimiento de `10-procedimiento-baseline.md` si el comando no estuviera
+  aprobado. La autorización alcanza **solo** el registro de la migración como aplicada (`prisma migrate resolve
+  --applied`), con el respaldo previo y la precondición de diff 0. Si el diff no da 0 o los conteos cambian, el tester
+  se detiene y avisa. **No autoriza** `migrate dev`, `reset`, `db push`, `TRUNCATE`, `DROP` ni la restauración del
+  respaldo. **Se ejecutó con código 0.**
+- **2026-11-18: limpieza de Docker.** Se borró el volumen de prueba `d9e4e4f6…`. Quedan los de otros proyectos, los
+  de composes viejos y dos anónimos que no son de prueba (`23a9e9ef…`, de Node, y `70aa28d1…`, de Redis).
 
 ## Decisiones vigentes del usuario
 - Commit y push autorizados al aprobarse cada feature, sin force. Después se empieza el siguiente feature de

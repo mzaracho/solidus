@@ -44,8 +44,22 @@ Rota JWT_SECRET: genera 32 bytes hex nuevos, cambia solo esa linea de .env, rege
 Docker esta corriendo, recrea solo ese servicio. No muestra el valor. INVALIDA las sesiones abiertas. Pide confirmacion
 (escribir ROTAR) o -Yes. Si el modo desarrollo esta levantado hay que reiniciarlo para que tome el secreto nuevo.
 
+.PARAMETER CheckMigrations
+Guardia: verifica que backend/prisma/migrations reproduzca exactamente backend/prisma/schema.prisma. Levanta un Postgres
+descartable (sin volumen, solo en 127.0.0.1, puerto efimero), corre prisma migrate diff --exit-code y lo elimina siempre.
+No toca la base local ni lee backend/.env. Sale con codigo 11 si divergen (y muestra el SQL que falta).
+
+.PARAMETER BaselineMigrations
+Para una base local armada por fuera de las migraciones (la base ya refleja schema.prisma pero _prisma_migrations no lo sabe;
+tipicos errores P3009/P3018 de prisma migrate deploy). Levanta solo la base, mira el estado de las migraciones y verifica
+que la base coincida con schema.prisma (prisma migrate diff = 0; si no, sale con 11 sin escribir). Si no hay nada pendiente, no
+hace nada. Si hay, muestra cuales va a marcar y pide escribir SI (o -Yes), hace un respaldo pg_dump en .dev/backups (datos de
+pacientes: borrarlo despues), cuenta filas por tabla, ejecuta prisma migrate resolve --applied (unico paso que escribe: filas de
+_prisma_migrations, sin ejecutar su SQL) y verifica estado limpio, diff 0 y conteos iguales (si no, sale con 12 e indica como
+revertir). Nunca usa migrate dev, reset, db push, TRUNCATE ni DROP, ni muestra credenciales.
+
 .PARAMETER Yes
-Con -RotateDbPassword, -RotateJwtSecret o -ExportCa: confirma sin preguntar (necesario sin consola interactiva).
+Con -RotateDbPassword, -RotateJwtSecret, -ExportCa o -BaselineMigrations: confirma sin preguntar (necesario sin consola interactiva).
 
 .PARAMETER Seed
 Con el modo desarrollo o -Docker, carga los seeds locales (truncate.sql, seed.sql, seed_test_users.sql)
@@ -61,7 +75,9 @@ Codigos de salida: 0 OK; 1 configuracion invalida (.env, BIND_ADDRESS, FRONTEND_
 puerto; 3 base de datos; 4 npm install; 5 backend/frontend no respondieron; 6 seed fallo; 7 prueba de humo fallo;
 8 el daemon de Docker no es local; 9 docker compose up --build fallo (build o arranque de contenedores);
 10 rotacion incompleta (la contrasena de la base o JWT_SECRET se roto pero no quedo aplicada del todo: el mensaje
-indica como recuperarse; con -RotateDbPassword la base puede tener una contrasena que no quedo guardada: volver a rotar).
+indica como recuperarse; con -RotateDbPassword la base puede tener una contrasena que no quedo guardada: volver a rotar);
+11 schema.prisma y las migraciones divergen (-CheckMigrations), o la base no coincide con schema.prisma (-BaselineMigrations, sin escribir);
+12 -BaselineMigrations: el baseline quedo a medias o no verifico (el mensaje indica como revertir y donde esta el respaldo).
 #>
 [CmdletBinding(DefaultParameterSetName = 'Dev')]
 param(
@@ -87,6 +103,12 @@ param(
     [Parameter(Mandatory, ParameterSetName = 'SmokeUser')]
     [switch]$CreateSmokeUser,
 
+    [Parameter(Mandatory, ParameterSetName = 'CheckMigrations')]
+    [switch]$CheckMigrations,
+
+    [Parameter(Mandatory, ParameterSetName = 'BaselineMigrations')]
+    [switch]$BaselineMigrations,
+
     [Parameter(Mandatory, ParameterSetName = 'Rotate')]
     [switch]$RotateDbPassword,
 
@@ -96,6 +118,7 @@ param(
     [Parameter(ParameterSetName = 'Rotate')]
     [Parameter(ParameterSetName = 'RotateJwt')]
     [Parameter(ParameterSetName = 'ExportCa')]
+    [Parameter(ParameterSetName = 'BaselineMigrations')]
     [switch]$Yes
 )
 
@@ -208,7 +231,10 @@ function Invoke-DevMode {
     Write-DevStep 'Migraciones y cliente Prisma'
     [void](Invoke-Native -FilePath 'npx.cmd' -ArgumentList @('prisma', 'migrate', 'deploy') -WorkingDirectory $BackendDir -Step 'prisma migrate deploy' -ExitCode 3 `
             -Hint 'Revisa la salida de Prisma y que la base este levantada.' `
-            -OutputHints @{ 'P1000' = 'Las credenciales de .env no coinciden con las del volumen de Postgres. Rotala de forma segura con .\dev.ps1 -RotateDbPassword (la aplica a la base y al .env sin necesitar la anterior).' })
+            -OutputHints @{
+                'P1000'        = 'Las credenciales de .env no coinciden con las del volumen de Postgres. Rotala de forma segura con .\dev.ps1 -RotateDbPassword (la aplica a la base y al .env sin necesitar la anterior).'
+                'P3009|P3018' = 'La base ya tiene cambios que una migracion intenta crear, o quedo una migracion fallida. No uses migrate reset ni migrate dev: corre .\dev.ps1 -BaselineMigrations (detalle en "Baseline de migraciones", docs/auditoria/COMANDOS.md).'
+            })
     [void](Invoke-Native -FilePath 'npx.cmd' -ArgumentList @('prisma', 'generate') -WorkingDirectory $BackendDir -Step 'prisma generate' -ExitCode 3 `
             -Hint 'Revisa la salida de Prisma.' `
             -OutputHints @{ 'EPERM' = 'Cerra los procesos node del backend (.\dev.ps1 -Stop) y reintenta.' })
@@ -319,6 +345,24 @@ function Invoke-RotateJwtMode {
     else { Write-Host 'No se cambio nada.' -ForegroundColor Yellow }
 }
 
+function Invoke-CheckMigrationsMode {
+    Write-DevStep 'Guardia de migraciones (schema.prisma vs migraciones)'
+    [void](Invoke-CheckMigrations -RootDir $RootDir)
+    Write-Host ''
+    Write-Host 'Listo. Las migraciones reproducen schema.prisma.' -ForegroundColor Green
+}
+
+function Invoke-BaselineMigrationsMode {
+    Write-DevStep 'Baseline de migraciones (base local armada por fuera de las migraciones)'
+    $r = Invoke-BaselineMigrations -RootDir $RootDir -AssumeYes:$Yes
+    Write-Host ''
+    switch ($r.Status) {
+        'Baselined' { Write-Host ('Listo. {0} migracion(es) registradas como aplicadas. Proba con .\dev.ps1 y .\dev.ps1 -Smoke; despues borra el respaldo ({1}).' -f $r.Migrations.Count, $r.Backup) -ForegroundColor Green }
+        'NothingToDo' { Write-Host 'Nada que hacer.' -ForegroundColor Green }
+        default { Write-Host 'No se cambio nada.' -ForegroundColor Yellow }
+    }
+}
+
 function Invoke-StopMode {
     Write-DevStep 'Deteniendo procesos de backend y frontend'
     $stateReadable = Test-DevStateReadable -RootDir $RootDir
@@ -365,6 +409,8 @@ try {
         'Stop' { Invoke-StopMode }
         'Init' { Invoke-InitMode }
         'ExportCa' { Invoke-ExportCaMode }
+        'CheckMigrations' { Invoke-CheckMigrationsMode }
+        'BaselineMigrations' { Invoke-BaselineMigrationsMode }
         'SmokeUser' { Invoke-SmokeUserMode }
         'Rotate' { Invoke-RotateMode }
         'RotateJwt' { Invoke-RotateJwtMode }

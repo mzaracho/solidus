@@ -167,3 +167,23 @@ Origen: `docs/features/015-transacciones/` (03-diseno-tecnico, 04-implementacion
 | 75 | Borrar un pagador con fee rules → reglas globales: decisión provisional 409; se resuelve en el feature 017 | 015 | S |
 | 76 | Borrado físico de un staff que es participante de atenciones (500) o beneficiario de splits: se resuelve en el feature 017 | 015 | S |
 | 77 | Dockerfile del backend: `migrate deploy; start:prod` con `;` (arranca aunque falle la migración); usar `&&` (al feature 020) | 015 | S |
+
+## Candidatos surgidos del feature 016
+
+Origen: `docs/features/016-schema-y-migraciones/` (05-revision, 06-seguridad, 07-testing). **RESUELTO en el 016:** la deriva entre
+`schema.prisma` y las migraciones (migración `20261104192244_align_schema_with_migrations`, guardia `-CheckMigrations`,
+baseline en la base local) y `User.cuit` sin migración (pendiente desde el 004). Los menores de `dev.ps1` (78, 79 y 81 a 86) se
+agrupan en el feature 024-dev-ps1-node-env, por tocar el mismo script. Todos de prioridad baja.
+
+| # | Ítem | Origen | Esfuerzo |
+|---|---|---|---|
+| 78 | Si falla el primer `resolve` de `-BaselineMigrations`, el hint de reversión sale vacío ("...desde backend: ."): decir que no se registró ninguna migración y conservar el aviso del respaldo | re-revisión 016, menor 1 | S |
+| 79 | El respaldo `pre-baseline-<yyyyMMdd-HHmmss>.dump` tiene resolución de segundos (dos corridas en el mismo segundo lo sobrescriben): agregar sufijo aleatorio | re-revisión 016, menor 2 | S |
+| 80 | `User.cuit` es dato personal con índice único: al usar la columna, validar formato y unicidad en el DTO, error genérico del contrato 013 sin revelar si existe y sin loguear el valor | seguridad 016, MENOR-2 | S |
+| 81 | Tras fallar la verificación de `-BaselineMigrations`, el hint lista todas las migraciones aunque alguna pudiera no haberse marcado (`--rolled-back` sobre una no aplicada da error): listar solo las marcadas | re-revisión 016, menor 3 | S |
+| 82 | Si `pg_dump` falla, queda un archivo parcial en `/tmp` del contenedor: ejecutar `rm -f` también en esa rama | seguridad 016, MENOR-5 | S |
+| 83 | Si `docker cp` falla y deja un archivo parcial en `.dev/backups`, no se borra: borrarlo o aplicar la ACL antes de comprobar | seguridad 016, MENOR-6 | S |
+| 84 | Regex de `dev-lib.migrations.ps1` con `$` (admite salto de línea final en .NET): usar `\z` | seguridad 016, MENOR-8 | S |
+| 85 | Carrera de arranque: `.\dev.ps1 -Smoke` justo después de `.\dev.ps1` falló una vez en el frontend (exit 7; con ~20 s de espera dio OK): darle al smoke un reintento corto | tester 016, anomalía A | S |
+| 86 | Ramas de `-BaselineMigrations` no ensayadas en base real: migración en estado fallido (P3018; ensayada solo en copia con el procedimiento manual) y salida 12 (solo tests de funciones puras) | tester 016, sección 8 | S |
+| 87 | Integrar `.\dev.ps1 -CheckMigrations` al CI cuando exista (la spec del 016 pidió documentarlo; ver #24) | revisión 016, sugerencia | S |

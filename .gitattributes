@@ -1,3 +1,6 @@
 # Los scripts de shell y los hooks siempre con LF (core.autocrlf=true los dejaria en CRLF y sh fallaria).
 *.sh text eol=lf
 .githooks/* text eol=lf
+# Las migraciones de Prisma siempre con LF: el checksum de _prisma_migrations se calcula sobre el archivo y no puede variar con core.autocrlf.
+backend/prisma/migrations/**/*.sql text eol=lf
+backend/prisma/migrations/migration_lock.toml text eol=lf

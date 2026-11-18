@@ -17,11 +17,15 @@ $script:BackendHealthPath = '/health/liveness'
 $script:ReservedPorts = @($script:DevPostgresPort, $script:BackendPort)
 $script:ExitCodeComposeUp = 9
 $script:ExitCodeRotateIncomplete = 10
+# -CheckMigrations: schema.prisma y las migraciones divergen.
+$script:ExitCodeMigrationDrift = 11
 $script:DefaultBindAddress = '127.0.0.1'
 $script:ExtraCaRelativePath = '.dev/certs/extra-ca.pem'
 $script:ExtraCaComposeFile = 'docker-compose.extra-ca.yml'
 # Imagen base de los builds (debe coincidir con el FROM de los dos Dockerfiles; lo verifica un test).
 $script:CaBaseImage = 'node:22-alpine'
+# Imagen del Postgres descartable de -CheckMigrations (debe coincidir con la del servicio db de docker-compose.yml; lo verifica un test).
+$script:PostgresImage = 'postgres:16.11-alpine'
 # Hosts que usa el build (apk, npm, Prisma, Google Fonts): se sondean para detectar una CA interceptora.
 $script:CaProbeHosts = @('registry.npmjs.org', 'dl-cdn.alpinelinux.org', 'fonts.googleapis.com', 'binaries.prisma.sh')
 # Salida de build que indica un problema de certificados (x509, apk TLS, Node, Turbopack).

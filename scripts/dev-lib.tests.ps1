@@ -1011,7 +1011,7 @@ try {
     Assert-True ($psets['RotateJwt'] -notcontains 'RotateDbPassword' -and $psets['Rotate'] -notcontains 'RotateJwtSecret') 'dev.ps1: -RotateDbPassword y -RotateJwtSecret son excluyentes'
 
     # --- Modulos de dev-lib (R-5, R-6) ---
-    $libModules = @('core', 'dotenv', 'env', 'docker', 'process', 'db', 'ca', 'hooks')
+    $libModules = @('core', 'dotenv', 'env', 'docker', 'process', 'db', 'ca', 'migrations', 'hooks')
     $loaderText = Read-Raw (Join-Path $PSScriptRoot 'dev-lib.ps1')
     foreach ($mod in $libModules) {
         $modFile = Join-Path $PSScriptRoot ('dev-lib.{0}.ps1' -f $mod)
@@ -1862,6 +1862,124 @@ try {
     Assert-Equal 'NoHook' (Enable-RepoHooks -RootDir $ehDir 6>$null) 'Hooks: sin .githooks/pre-commit avisa y no activa'
     Remove-Item function:Invoke-NativeCapture
     . (Join-Path $PSScriptRoot 'dev-lib.ps1')
+
+    # =====================================================================
+    # Feature 016: guardia de migraciones (-CheckMigrations)
+    # =====================================================================
+    $mcArgs = @(Get-MigrationCheckDockerArgs -Name 'solidus-migcheck-test')
+    Assert-True ($mcArgs -contains '--rm') 'Migraciones: el contenedor descartable lleva --rm'
+    Assert-True (($mcArgs -join ' ') -match '--tmpfs /var/lib/postgresql/data') 'Migraciones: los datos van en tmpfs (sin volumen)'
+    Assert-True (($mcArgs -join ' ') -match '-p 127\.0\.0\.1::5432') 'Migraciones: publica solo en 127.0.0.1 con puerto efimero'
+    Assert-Equal $script:PostgresImage $mcArgs[$mcArgs.Count - 1] 'Migraciones: la imagen es la constante PostgresImage'
+    Assert-True (@($mcArgs | Where-Object { $_ -match 'POSTGRES_PASSWORD=' }).Count -eq 0) 'Migraciones: la contrasena no va en la linea de comandos de docker'
+    Assert-True (@($mcArgs | Where-Object { $_ -match '^(-v|--volume)$' }).Count -eq 0) 'Migraciones: sin volumenes'
+
+    Assert-Equal 49153 (ConvertFrom-DockerPortOutput -Lines @('127.0.0.1:49153')) 'Migraciones: parsea 127.0.0.1:puerto'
+    Assert-Equal 49153 (ConvertFrom-DockerPortOutput -Lines @('[::]:49999', '127.0.0.1:49153')) 'Migraciones: ignora lineas IPv6'
+    Assert-True ((Get-ErrorCode { ConvertFrom-DockerPortOutput -Lines @() }) -eq -1) 'Migraciones: salida vacia lanza error'
+    Assert-True ((Get-ErrorCode { ConvertFrom-DockerPortOutput -Lines @('0.0.0.0:49153') }) -eq -1) 'Migraciones: rechaza otra interfaz que 127.0.0.1'
+
+    $mcPw = 'ab' * 16
+    $mcUrl = New-ShadowDatabaseUrl -Port 49153 -Password $mcPw
+    Assert-Equal "postgresql://postgres:$mcPw@127.0.0.1:49153/postgres" $mcUrl 'Migraciones: la URL de la shadow usa solo 127.0.0.1'
+    Assert-True ((Get-ErrorCode { New-ShadowDatabaseUrl -Port 5433 -Password $mcPw }) -eq -1) 'Migraciones: la shadow nunca usa el puerto 5433 (base del usuario)'
+    Assert-True ((Get-ErrorCode { New-ShadowDatabaseUrl -Port 8080 -Password $mcPw }) -eq -1) 'Migraciones: la shadow nunca usa el puerto 8080'
+    Assert-True ((Get-ErrorCode { New-ShadowDatabaseUrl -Port 80 -Password $mcPw }) -eq -1) 'Migraciones: rechaza puertos privilegiados'
+    Assert-True ((Get-ErrorCode { New-ShadowDatabaseUrl -Port 49153 -Password 'no-hex' }) -eq -1) 'Migraciones: rechaza una contrasena que no sea hexadecimal'
+    Assert-Equal 0 (Get-MigrationCheckOutcome -PrismaExitCode 0).ExitCode 'Migraciones: prisma 0 -> OK'
+    Assert-Equal 'InSync' (Get-MigrationCheckOutcome -PrismaExitCode 0).Status 'Migraciones: prisma 0 -> InSync'
+    Assert-Equal 11 (Get-MigrationCheckOutcome -PrismaExitCode 2).ExitCode 'Migraciones: prisma 2 -> codigo 11'
+    Assert-Equal 'Drift' (Get-MigrationCheckOutcome -PrismaExitCode 2).Status 'Migraciones: prisma 2 -> Drift'
+    Assert-Equal 3 (Get-MigrationCheckOutcome -PrismaExitCode 1).ExitCode 'Migraciones: otro codigo de prisma -> 3'
+    Assert-Equal 3 (Get-MigrationCheckOutcome -PrismaExitCode 127).ExitCode 'Migraciones: codigo 127 -> 3'
+    Assert-Equal 11 $script:ExitCodeMigrationDrift 'Migraciones: el codigo de salida de deriva es 11'
+    Assert-Equal 'ac' ((Remove-UrlLines -Lines @('a', 'b://x', 'c')) -join '') 'Migraciones: Remove-UrlLines quita las lineas con ://'
+
+    $composeText = Read-Raw (Join-Path $RepoRoot 'docker-compose.yml')
+    $composeImg = [regex]::Match($composeText, '(?m)^\s*image:\s*(postgres:\S+)').Groups[1].Value
+    Assert-Equal $composeImg $script:PostgresImage 'Migraciones: PostgresImage coincide con la imagen del servicio db de docker-compose.yml'
+    $migText = Read-Raw (Join-Path $PSScriptRoot 'dev-lib.migrations.ps1')
+    Assert-True ($migText -match "(?s)finally\s*\{[^}]*'rm',\s*'-f',\s*'-v'") 'Migraciones: Invoke-CheckMigrations elimina el contenedor (rm -f -v) en un finally'
+    Assert-True ((($migText -split "`r?`n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n" -notmatch '(?i)DATABASE_URL|backend[\/]\.env') 'Migraciones: la guardia no usa DATABASE_URL ni lee backend/.env'
+    $devText = Read-Raw (Join-Path $RepoRoot 'dev.ps1')
+    Assert-True ($devText -match "'P3009\|P3018'") 'Migraciones: dev.ps1 trae la pista P3009|P3018 en prisma migrate deploy'
+    Assert-True ($devText -match 'Baseline de migraciones') 'Migraciones: la pista remite a "Baseline de migraciones"'
+    Assert-True ($devText -match "ParameterSetName = 'CheckMigrations'") 'Migraciones: dev.ps1 define el parameter set CheckMigrations'
+    Assert-True ($devText -match "'CheckMigrations' \{ Invoke-CheckMigrationsMode \}") 'Migraciones: dev.ps1 despacha -CheckMigrations'
+    $gitAttr = Read-Raw (Join-Path $RepoRoot '.gitattributes')
+    Assert-True ($gitAttr -match '(?m)^backend/prisma/migrations/\*\*/\*\.sql text eol=lf\s*$') '.gitattributes: las migraciones .sql van con eol=lf'
+    $migDirs = @(Get-ChildItem -LiteralPath (Join-Path (Join-Path (Join-Path $RepoRoot 'backend') 'prisma') 'migrations') -Directory)
+    foreach ($md in $migDirs) {
+        $mb = [System.IO.File]::ReadAllBytes((Join-Path $md.FullName 'migration.sql'))
+        Assert-True (-not ($mb.Length -ge 3 -and $mb[0] -eq 0xEF -and $mb[1] -eq 0xBB -and $mb[2] -eq 0xBF) -and ($mb -notcontains 13)) ("Migraciones: {0} sin BOM ni CR" -f $md.Name)
+    }
+
+    # --- Feature 016: -BaselineMigrations (funciones puras) ---
+    $bm = '20261104192244_align_schema_with_migrations'
+    $stPending = @('Prisma schema loaded from prisma\schema.prisma', 'Datasource "db": PostgreSQL database "x", schema "public" at "localhost:5433"', '', '9 migrations found in prisma/migrations', '', 'Following migration have not yet been applied:', $bm, '', 'To apply migrations in development run prisma migrate dev.')
+    $p1 = ConvertFrom-MigrateStatus -Lines $stPending
+    Assert-Equal 1 $p1.Pending.Count 'Baseline: status con una pendiente'
+    Assert-Equal $bm $p1.Pending[0] 'Baseline: nombre de la pendiente'
+    Assert-Equal 0 $p1.Failed.Count 'Baseline: sin fallidas'
+    Assert-True (-not $p1.UpToDate) 'Baseline: pendiente no es up to date'
+    $p2 = ConvertFrom-MigrateStatus -Lines @('Following migrations have not yet been applied:', '20260101000000_a', '20260102000000_b', '', 'x')
+    Assert-Equal 2 $p2.Pending.Count 'Baseline: dos pendientes'
+    $p3 = ConvertFrom-MigrateStatus -Lines @('Following migration have failed:', $bm, '', 'During development you can run prisma migrate dev to reset the database.')
+    Assert-Equal 1 $p3.Failed.Count 'Baseline: status con una fallida'
+    Assert-Equal 0 $p3.Pending.Count 'Baseline: fallida no cuenta como pendiente'
+    $p4 = ConvertFrom-MigrateStatus -Lines @('9 migrations found in prisma/migrations', '', 'Database schema is up to date!')
+    Assert-True ($p4.UpToDate -and $p4.Pending.Count -eq 0 -and $p4.Failed.Count -eq 0) 'Baseline: up to date'
+    $p5 = ConvertFrom-MigrateStatus -Lines @('Following migration have not yet been applied:', 'no es un nombre; rm -rf', '')
+    Assert-Equal 0 $p5.Pending.Count 'Baseline: ignora nombres invalidos'
+    $p6 = ConvertFrom-MigrateStatus -Lines $null
+    Assert-Equal 0 $p6.Pending.Count 'Baseline: salida nula'
+
+    $dOk = Get-BaselineDecision -DiffExitCode 0 -Pending @($bm)
+    Assert-Equal 'Resolve' $dOk.Action 'Baseline: diff 0 con pendiente -> Resolve'
+    Assert-Equal $bm $dOk.Migrations[0] 'Baseline: marca la pendiente'
+    Assert-Equal 'NothingToDo' (Get-BaselineDecision -DiffExitCode 0).Action 'Baseline: diff 0 sin pendientes -> nada que hacer'
+    Assert-Equal 0 (Get-BaselineDecision -DiffExitCode 0).ExitCode 'Baseline: nada que hacer -> codigo 0'
+    Assert-Equal 'Drift' (Get-BaselineDecision -DiffExitCode 2 -Pending @($bm)).Action 'Baseline: diff 2 -> deriva, no escribe'
+    Assert-Equal 11 (Get-BaselineDecision -DiffExitCode 2 -Pending @($bm)).ExitCode 'Baseline: deriva -> codigo 11'
+    Assert-Equal 0 @((Get-BaselineDecision -DiffExitCode 2 -Pending @($bm)).Migrations).Count 'Baseline: con deriva no hay migraciones a marcar'
+    Assert-Equal 'Drift' (Get-BaselineDecision -DiffExitCode 2).Action 'Baseline: diff 2 sin pendientes tambien es deriva'
+    Assert-Equal 'Error' (Get-BaselineDecision -DiffExitCode 1 -Pending @($bm)).Action 'Baseline: diff 1 -> error'
+    Assert-Equal 3 (Get-BaselineDecision -DiffExitCode 127).ExitCode 'Baseline: diff con error -> codigo 3'
+    $dBoth = Get-BaselineDecision -DiffExitCode 0 -Pending @($bm, '20260101000000_a') -Failed @($bm)
+    Assert-Equal 2 @($dBoth.Migrations).Count 'Baseline: fallidas y pendientes sin repetir'
+    Assert-Equal '20260101000000_a' $dBoth.Migrations[0] 'Baseline: orden alfabetico (cronologico)'
+    Assert-Equal 12 $script:ExitCodeBaselineIncomplete 'Baseline: el codigo de baseline incompleto es 12'
+
+    Assert-True (Test-BaselineConfirmation -Answer 'SI') 'Baseline: SI confirma'
+    foreach ($bad in @('si', 'Si', 'sI', 'S', 'yes', 'y', 'SI ', ' SI', '', 'NO', 'SIGUE')) { Assert-True (-not (Test-BaselineConfirmation -Answer $bad)) ("Baseline: '{0}' no confirma" -f $bad) }
+    Assert-True (-not (Test-BaselineConfirmation -Answer $null)) 'Baseline: null no confirma'
+    Assert-True (Test-MigrationName -Name $bm) 'Baseline: nombre de migracion valido'
+    foreach ($bad in @('x', '2026_a', "$bm; calc", '..\x', "$bm --rolled-back", '')) { Assert-True (-not (Test-MigrationName -Name $bad)) ("Baseline: nombre invalido '{0}'" -f $bad) }
+    Assert-Equal 'pre-baseline-20261118-093005.dump' (New-BaselineBackupName -When ([datetime]'2026-11-18T09:30:05')) 'Baseline: nombre del respaldo con fecha y hora'
+    Assert-True ((New-BaselineBackupName -When (Get-Date)) -match '^pre-baseline-[0-9]{8}-[0-9]{6}\.dump$') 'Baseline: formato del nombre del respaldo'
+
+    Assert-Equal 0 @(Compare-TableCounts -Before @('A=1', 'B=2') -After @('A=1', 'B=2', '')).Count 'Baseline: conteos iguales'
+    Assert-Equal 2 @(Compare-TableCounts -Before @('A=1', 'B=2') -After @('A=1', 'B=3')).Count 'Baseline: conteo distinto'
+    Assert-Equal 1 @(Compare-TableCounts -Before @('A=1') -After @('A=1', 'C=0')).Count 'Baseline: tabla de mas'
+    Assert-True (Test-TableCountLines -Lines @('Patient=72', 'User=9')) 'Baseline: conteos validos'
+    Assert-True (-not (Test-TableCountLines -Lines @())) 'Baseline: conteos vacios no valen'
+    Assert-True (-not (Test-TableCountLines -Lines @('ERROR: algo'))) 'Baseline: salida de error no vale como conteos'
+    Assert-True ($script:BaselineCountSql -match "(?i)table_name <> '_prisma_migrations'") 'Baseline: el conteo excluye _prisma_migrations'
+    Assert-True ($script:BaselineCountSql -notmatch '(?i)\b(insert|update|delete|drop|truncate|alter)\b') 'Baseline: el SQL de conteo es solo lectura'
+    $rb = Get-BaselineRollbackHint -Migrations @($bm) -BackupPath '.dev/backups/x.dump'
+    Assert-True ($rb -match "--rolled-back $bm" -and $rb -match 'x\.dump') 'Baseline: la pista de reversion trae --rolled-back y el respaldo'
+
+    $blSrc = (($migText -split "`r?`n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+    $blSrc = $blSrc.Substring($blSrc.IndexOf('function ConvertFrom-MigrateStatus'))
+    Assert-True ($blSrc -notmatch "(?i)'(dev|reset)'|'push'|\bTRUNCATE\b|\bDROP\b|'down'") 'Baseline: no usa migrate dev/reset, db push, TRUNCATE, DROP ni down'
+    Assert-True ($blSrc -match "'resolve',\s*'--applied'") 'Baseline: el paso que escribe es resolve --applied'
+    Assert-Equal 1 ([regex]::Matches($blSrc, "'resolve'")).Count 'Baseline: un unico punto de escritura (resolve)'
+    Assert-True ($blSrc -notmatch '(?i)DATABASE_URL|Get-Content|Read-DotEnv') 'Baseline: no lee ni imprime DATABASE_URL ni .env'
+    Assert-True ($blSrc -match 'Set-OwnerOnlyDirectoryAcl' -and $blSrc -match 'Set-OwnerOnlyAcl -Path \$bkFile') 'Baseline: el respaldo y .dev/backups llevan ACL restringida'
+    Assert-True ($devText -match "ParameterSetName = 'BaselineMigrations'") 'Baseline: dev.ps1 define el parameter set BaselineMigrations'
+    Assert-True ($devText -match "'BaselineMigrations' \{ Invoke-BaselineMigrationsMode \}") 'Baseline: dev.ps1 despacha -BaselineMigrations'
+    Assert-True ($devText -match "'P3009\|P3018'\s*=\s*'[^']*-BaselineMigrations") 'Baseline: la pista P3009|P3018 remite a -BaselineMigrations'
+    Assert-True ($devText -match "(?s)ParameterSetName = 'BaselineMigrations'\)\]\s*\[switch\]\`$Yes") 'Baseline: -Yes se acepta con -BaselineMigrations'
 
     # --- Modulos de dev-lib: sin definiciones duplicadas (regresion: dev-lib.core.ps1 estuvo duplicado entero) ---
     $libFiles = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'dev-lib*.ps1' -File | Where-Object { $_.Name -ne 'dev-lib.tests.ps1' })

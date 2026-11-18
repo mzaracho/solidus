@@ -33,9 +33,11 @@ los permisos de los archivos con secretos y activa el hook `pre-commit` (ver má
 | `.\dev.ps1 -CreateSmokeUser` | Crea o actualiza el usuario de humo en la base local (ver "Usuario de humo") |
 | `.\dev.ps1 -RotateDbPassword [-Yes]` | Rota la contraseña de Postgres (ver "Rotaciones") |
 | `.\dev.ps1 -RotateJwtSecret [-Yes]` | Rota `JWT_SECRET` (ver "Rotaciones") |
+| `.\dev.ps1 -CheckMigrations` | Guardia de deriva: verifica que las migraciones reproduzcan `schema.prisma` (ver "Guardia de deriva") |
+| `.\dev.ps1 -BaselineMigrations [-Yes]` | Registra como aplicadas las migraciones de una base armada por fuera de ellas (ver "Baseline de migraciones") |
 
 `-Seed` solo se combina con el modo desarrollo o con `-Docker`; `-Yes` solo se combina con `-ExportCa`,
-`-RotateDbPassword` o `-RotateJwtSecret`. Las demás combinaciones las rechaza PowerShell.
+`-RotateDbPassword`, `-RotateJwtSecret` o `-BaselineMigrations`. Las demás combinaciones las rechaza PowerShell.
 
 Si la ExecutionPolicy bloquea el script:
 ```powershell
@@ -58,6 +60,8 @@ pwsh -File .\dev.ps1                                        # PowerShell 7, si e
 | 8 | El daemon de Docker no es local (contexto o `DOCKER_HOST` remotos); se aborta antes de tocar nada |
 | 9 | `docker compose up --build -d` falló (build o arranque de contenedores). Si la salida parece un error de certificados, la pista indica `.\dev.ps1 -ExportCa` (o revisar la CA extra si ya se usa) |
 | 10 | Rotación incompleta: la contraseña de la base o `JWT_SECRET` ya cambió pero no quedó aplicada del todo (ver "Rotaciones") |
+| 11 | `schema.prisma` y las migraciones divergen (`-CheckMigrations`), o la base no coincide con `schema.prisma` (`-BaselineMigrations`, sin escribir) |
+| 12 | `-BaselineMigrations`: el baseline quedó a medias o no verificó (el mensaje indica cómo revertir y dónde está el respaldo) |
 
 ### Qué archivo editar
 - Editar **solo el `.env` de la raíz** (única fuente de credenciales). `backend/.env` lo GENERA `dev.ps1`
@@ -298,10 +302,69 @@ npx prisma migrate deploy     # aplica migraciones (el README dice "db push": no
 npx prisma generate           # regenera el cliente si cambió el schema
 ```
 `backend/.env` debe existir (lo genera `.\dev.ps1 -Init`).
-Para crear una migración nueva tras editar `prisma/schema.prisma`:
-```bash
-npx prisma migrate dev --name <descripcion>
+Para crear una migración nueva tras editar `prisma/schema.prisma`: **no usar `npx prisma migrate dev` contra la base
+local con datos** (si detecta deriva propone resetear la base y borra todo). Seguir "Generar una migración sin migrate
+dev" y comprobar con `.\dev.ps1 -CheckMigrations`.
+
+### Baseline de migraciones
+Qué es: un registro único por instalación para bases armadas por fuera de las migraciones (por ejemplo con `db push` o
+seeds): la base ya tiene las columnas de `schema.prisma`, pero `_prisma_migrations` no lo sabe y `migrate deploy` falla con
+`P3009`/`P3018` (la pista de `dev.ps1` remite a esta sección). El baseline marca la migración como aplicada **sin
+ejecutar su SQL**. Las instalaciones nuevas no lo necesitan: usan solo `migrate deploy` y quedan idénticas al schema
+(feature 016, migración `20261104192244_align_schema_with_migrations`).
+
+`.\dev.ps1 -BaselineMigrations [-Yes]`, paso a paso:
+1. Verifica Docker (daemon local, si no código 8), Prisma instalado y `backend\.env` (si no, 2). Levanta solo la base
+   (`docker compose up -d db`, tope de 120 s; si no responde, 3).
+2. Lee `prisma migrate status` y compara la base con el schema (`migrate diff`). Si la base **no** coincide, sale con
+   11 mostrando la diferencia, sin escribir nada.
+3. Si no hay migraciones pendientes ni fallidas, dice "nada que hacer" y sale con 0, sin respaldo ni escritura.
+4. Muestra qué migraciones va a marcar y pide escribir `SI` (en mayúsculas) o `-Yes`. Sin consola interactiva y sin
+   `-Yes`, cancela con 0 sin cambiar nada.
+5. Respaldo `pg_dump -Fc` en `.dev/backups/pre-baseline-<yyyyMMdd-HHmmss>.dump` (acceso restringido al usuario actual) y
+   conteo de filas por tabla.
+6. Único paso que escribe: `prisma migrate resolve --applied <migración>`, solo filas de `_prisma_migrations`; no toca
+   tablas ni datos.
+7. Verifica estado limpio ("up to date"), diff 0 y conteos iguales. Si algo falla: código 12, con las instrucciones de
+   reversión y la ruta del respaldo.
+
+Respaldo: contiene datos de pacientes **sin cifrar**. Está ignorado por git, pero hay que borrarlo cuando todo funcione
+(`Remove-Item .dev\backups\pre-baseline-*.dump`) y no subirlo a ninguna nube.
+
+Reversión (solo toca `_prisma_migrations`), desde `backend/`:
+```powershell
+npx prisma migrate resolve --rolled-back <migración>
 ```
+Último recurso: restaurar el respaldo (reemplaza la base; pedir confirmación aparte, no lo hace el comando).
+Alternativa manual: `docs/features/016-schema-y-migraciones/10-procedimiento-baseline.md`.
+
+Prohibido sobre una base con datos: `migrate dev`, `migrate reset`, `db push`, `TRUNCATE`, `DROP` y
+`docker compose down -v`. Una base con atenciones y armada solo con las migraciones viejas **no** es la del baseline:
+la migración nueva borra `WorkItem.coProfessionalId` y `eventRole` y agrega `amountBase NOT NULL` sin default, por lo que
+puede fallar; respaldar y comprobar con el diff antes de cualquier `deploy` (no correrlo a ciegas).
+
+### Generar una migración sin migrate dev
+Con Docker y desde `backend/`, contra un Postgres descartable (nunca la base del usuario):
+```powershell
+docker run -d --rm --name solidus-shadow --tmpfs /var/lib/postgresql/data -e POSTGRES_PASSWORD=<aleatoria> -p 127.0.0.1::5432 postgres:16.11-alpine
+docker port solidus-shadow 5432        # puerto efímero asignado
+npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma `
+  --shadow-database-url "postgresql://postgres:<aleatoria>@127.0.0.1:<puerto>/postgres" --script -o <archivo.sql>
+docker rm -f -v solidus-shadow
+```
+Crear `prisma/migrations/<AAAAMMDDHHMMSS>_<nombre>/migration.sql` con ese SQL, sin editarlo a mano, y correr
+`npx prisma generate`. ADVERTENCIA: `--shadow-database-url` **resetea la base que recibe**; apuntarlo a la base del
+usuario (puerto 5433) borra todos sus datos. Si se usa `docker cp`, pasar rutas relativas: con una ruta absoluta de
+Windows (`C:\...`) interpreta la unidad como un contenedor y falla. Las migraciones deben quedar en UTF-8 sin BOM y con
+LF (`.gitattributes` lo fuerza para `*.sql` y `migration_lock.toml`, porque `_prisma_migrations` guarda su checksum).
+No editar migraciones ya aplicadas: se corrige con otra nueva.
+
+### Guardia de deriva
+`.\dev.ps1 -CheckMigrations` verifica que `backend/prisma/migrations` reproduzca exactamente `schema.prisma`: levanta un
+Postgres descartable (sin volumen, solo en `127.0.0.1`, puerto efímero), corre `prisma migrate diff --exit-code` y lo
+elimina siempre. No toca la base local ni lee `backend/.env`. Código 0: coinciden; 11: divergen (muestra el SQL que
+falta; generar la migración como arriba); 3: error de Prisma o del contenedor; 2/8: prerrequisitos. Correrlo antes de
+dar por terminado un cambio de schema. Integración con CI: pendiente (feature 026).
 
 ### Seeds (SQL en la raíz)
 Recomendado: `.\dev.ps1 -Seed` (o `.\dev.ps1 -Docker -Seed`). Aplica `truncate.sql` → `seed.sql` →

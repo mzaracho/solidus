@@ -47,7 +47,8 @@ salvo que el usuario lo pida.
   handler registrado en `providers` del módulo Nest de la feature. El controlador llama
   `this.dispatcher.dispatch(request)`. Si no se registra el handler: "Handler not found" en runtime.
 - Alias de imports `@src/*` → `src/*`.
-- Cambios de schema solo vía migración Prisma (`npx prisma migrate dev --name ...`), nunca `db push`.
+- Cambios de schema solo vía migración Prisma, nunca `db push`; NO `migrate dev` contra la base local con datos (016: ante
+  deriva propone resetearla). Generar la migración sin `migrate dev`: `docs/auditoria/COMANDOS.md` ("Generar una migración sin migrate dev").
 - Dinero: columnas `Decimal(10,2)`; preferir `Prisma.Decimal` en cálculos nuevos.
 - Constantes de dominio en `src/domain/constants/app.constants.ts`; usar `isProfessionalMode()`
   (acepta `PROFESSIONAL` y `pro`).
@@ -115,7 +116,13 @@ mano. Detalle, códigos de salida y errores comunes: `docs/auditoria/COMANDOS.md
   inspecciona TLS; `-Docker` la usa sola en los builds y no queda en las imágenes. Sin el PEM el build es el normal
 - `.\dev.ps1 -RotateDbPassword [-Yes]` / `-RotateJwtSecret [-Yes]` — rotan la contraseña de Postgres / `JWT_SECRET`
   (piden `ROTAR` o `-Yes`; código 10 si queda a medias, ver COMANDOS.md)
-- Códigos de salida: 0 a 10 (9 = falló `docker compose up --build`, 10 = rotación incompleta); tabla en COMANDOS.md.
+- `.\dev.ps1 -CheckMigrations` — guardia de deriva: las migraciones deben reproducir `schema.prisma` (Postgres descartable; no
+  toca la base local; 11 = divergen). Pendiente en CI (feature 026)
+- `.\dev.ps1 -BaselineMigrations [-Yes]` — registra como aplicadas las migraciones de una base armada por fuera de ellas
+  (errores `P3009`/`P3018`): verifica diff 0, respalda en `.dev/backups/pre-baseline-*.dump` (datos de pacientes sin cifrar:
+  borrarlo después), pide `SI` y solo escribe `_prisma_migrations`. Detalle en COMANDOS.md ("Baseline de migraciones")
+- Códigos de salida: 0 a 12 (9 = falló `docker compose up --build`, 10 = rotación incompleta, 11 = deriva schema/migraciones o
+  base distinta del schema, 12 = baseline a medias o sin verificar); tabla en COMANDOS.md.
 - Hook `pre-commit` (`.githooks/`, lo activa `-Init`): rechaza `.env`, `.bak`, `.sql` fuera de migraciones, claves y
   certificados, valores de secretos del `.env` local y patrones de secretos; no imprime valores. `--no-verify` existe
   pero no se usa con secretos. Segunda barrera pendiente: push protection de GitHub (acción del usuario).
@@ -136,7 +143,7 @@ mano. Detalle, códigos de salida y errores comunes: `docs/auditoria/COMANDOS.md
   Postgres siempre en 127.0.0.1). El modo desarrollo escucha solo en loopback: backend vía `LISTEN_HOST`
   (que `dev.ps1` genera en `backend/.env`; default 127.0.0.1, el compose lo fija en 0.0.0.0 dentro del contenedor)
   y `next dev -H`. En modo Docker `BIND_ADDRESS` debe ser IPv4 (IPv6: código 1).
-- Tests de `dev.ps1`: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dev-lib.tests.ps1`.
+- Tests de `dev.ps1`: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dev-lib.tests.ps1` (1133 aserciones).
 
 Manual, sin `dev.ps1`:
 
@@ -188,7 +195,10 @@ Seeds (archivos locales, no versionados): `.\dev.ps1 -Seed`; manual con `docker 
    `$transaction([...])` está prohibida). Dentro usar `tx`, nunca `this.prisma`; los servicios auxiliares reciben
    `db: Prisma.TransactionClient = this.prisma`. Lo vigila `src/transactions-invariants.spec.ts` (analizador
    `test/helpers/prisma-writes.ts`).
-6. Cambios de schema: migración Prisma + `prisma generate` + mencionar en la spec del feature.
+6. Cambios de schema: migración Prisma generada sin `migrate dev` contra la base del usuario (receta en COMANDOS.md; nunca
+   `migrate dev`/`reset`/`db push` ni `--shadow-database-url` apuntando a ella) + `prisma generate` + mencionar en la spec del
+   feature + `.\dev.ps1 -CheckMigrations` en 0 (016). Una base armada por fuera de las migraciones se regulariza con
+   `.\dev.ps1 -BaselineMigrations`.
 7. Antes de dar por terminado un cambio: `npx tsc --noEmit` en el repo afectado sin errores,
    lint sin errores nuevos en los archivos tocados, y tests del área (agregar tests si no existen).
 8. No ejecutar `npm run lint` del backend sin intención de reformatear (usa `--fix`).

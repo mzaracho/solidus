@@ -10,9 +10,10 @@
 #   dev-lib.process.ps1  puertos, npm install, ventanas y PIDs, prueba de humo
 #   dev-lib.db.ps1       Postgres, seeds, usuario de humo, rotaciones
 #   dev-lib.ca.ps1       CA extra para los builds y -ExportCa
+#   dev-lib.migrations.ps1 guardia -CheckMigrations (schema.prisma vs migraciones, Postgres descartable)
 #   dev-lib.hooks.ps1    activacion del hook pre-commit
 
-foreach ($devLibModule in 'core', 'dotenv', 'env', 'docker', 'process', 'db', 'ca', 'hooks') {
+foreach ($devLibModule in 'core', 'dotenv', 'env', 'docker', 'process', 'db', 'ca', 'migrations', 'hooks') {
     . (Join-Path $PSScriptRoot ('dev-lib.{0}.ps1' -f $devLibModule))
 }
 Remove-Variable -Name devLibModule -ErrorAction SilentlyContinue
