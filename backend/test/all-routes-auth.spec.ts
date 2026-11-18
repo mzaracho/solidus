@@ -51,6 +51,7 @@ describe('Todas las rutas del AppModule real (sin base de datos)', () => {
   beforeAll(async () => {
     process.env.JWT_SECRET = 'k'.repeat(40);
     process.env.NODE_ENV = 'test';
+    process.env.CORS_ORIGIN = 'http://localhost:3002';
     // Prisma mock: toda consulta devuelve "nada" (sin membresía, sin filas).
     const prismaMock: any = new Proxy(
       {},
@@ -203,6 +204,70 @@ describe('Todas las rutas del AppModule real (sin base de datos)', () => {
       if (res.status !== 401) bad.push(`${r.label} -> ${res.status}`);
     }
     expect(bad).toEqual([]);
+  });
+
+  it('018: con la cookie válida y sin Authorization, ninguna ruta no pública da 401', async () => {
+    const token = jwt.sign({ sub: randomUUID() });
+    const bad: string[] = [];
+    for (const r of routes.filter((x) => !x.isPublic)) {
+      const res = await (request(app.getHttpServer()) as any)
+        [r.method](r.path)
+        .set('Cookie', `solidus_session=${token}`)
+        .set('x-requested-with', 'solidus')
+        .set('Origin', 'http://localhost:3002')
+        .set('x-org-id', randomUUID())
+        .send({});
+      if (res.status === 401) bad.push(`${r.label} -> ${res.status}`);
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('018: con la cookie, TODA ruta no GET no pública sin x-requested-with da 403 (CSRF)', async () => {
+    const token = jwt.sign({ sub: randomUUID() });
+    const writes = routes.filter((x) => !x.isPublic && x.method !== 'get');
+    expect(writes.length).toBeGreaterThan(20);
+    const bad: string[] = [];
+    for (const r of writes) {
+      const res = await (request(app.getHttpServer()) as any)
+        [r.method](r.path)
+        .set('Cookie', `solidus_session=${token}`)
+        .set('Origin', 'http://localhost:3002')
+        .set('x-org-id', randomUUID())
+        .send({});
+      if (res.status !== 403) bad.push(`${r.label} -> ${res.status}`);
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('018: con la cookie, TODA ruta no GET no pública con Origin ajeno o ausente da 403', async () => {
+    const token = jwt.sign({ sub: randomUUID() });
+    const writes = routes.filter((x) => !x.isPublic && x.method !== 'get');
+    const bad: string[] = [];
+    for (const r of writes) {
+      for (const origin of [undefined, 'http://evil.example']) {
+        let req = (request(app.getHttpServer()) as any)
+          [r.method](r.path)
+          .set('Cookie', `solidus_session=${token}`)
+          .set('x-requested-with', 'solidus')
+          .set('x-org-id', randomUUID());
+        if (origin) req = req.set('Origin', origin);
+        const res = await req.send({});
+        if (res.status !== 403)
+          bad.push(`${r.label} ${origin} -> ${res.status}`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('018: el logout con la cookie y los datos CSRF responde 204 y borra la cookie', async () => {
+    const token = jwt.sign({ sub: randomUUID() });
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .set('Cookie', `solidus_session=${token}`)
+      .set('x-requested-with', 'solidus')
+      .set('Origin', 'http://localhost:3002');
+    expect(res.status).toBe(204);
+    expect(String(res.headers['set-cookie'])).toMatch(/Max-Age=0/);
   });
 
   it('un x-org-id que no es UUID (slug) da 403 en las rutas con organización', async () => {

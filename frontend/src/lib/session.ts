@@ -1,10 +1,14 @@
 // Helpers de sesión SIN imports: se usan en servidor, cliente y middleware (Edge), y se prueban con
 // `node --test` sin dependencias (ver session.test.mts). Solo sintaxis que Node puede "strip" (sin enums).
 
-export const AUTH_COOKIE_NAME = 'auth_token'
+/** Cookie de sesión HttpOnly que emite el backend (018). Debe coincidir con `AUTH_COOKIE_NAME` del backend. */
+export const AUTH_COOKIE_NAME = 'solidus_session'
+/** Cookie anterior (la escribía el navegador desde JS): ya no autentica; el middleware la borra. */
+export const LEGACY_AUTH_COOKIE_NAME = 'auth_token'
 export const SESSION_EXPIRED_REASON = 'session_expired'
-/** Duración máxima de la sesión (igual al `expiresIn` del backend): 8 h. */
-export const MAX_SESSION_SECONDS = 28800
+/** Header propio que el backend exige en las escrituras autenticadas con la cookie (CSRF). */
+export const CSRF_HEADER_NAME = 'x-requested-with'
+export const CSRF_HEADER_VALUE = 'solidus'
 
 const MAX_FROM_LENGTH = 200
 // Caracteres de control, incluido el salto de línea (se valida el valor ya decodificado).
@@ -30,19 +34,6 @@ export function decodeJwtPayload(token: string): Record<string, unknown> | null 
   } catch {
     return null
   }
-}
-
-/**
- * Segundos de vida de la cookie: lo que falta para `exp`, con tope de 8 h.
- * `null` si el token no se puede decodificar, no trae `exp` o ya venció.
- */
-export function getCookieMaxAgeSeconds(token: string, nowMs: number): number | null {
-  const payload = decodeJwtPayload(token)
-  const exp = payload?.exp
-  if (typeof exp !== 'number' || !Number.isFinite(exp)) return null
-  const remaining = Math.floor(exp - nowMs / 1000)
-  if (remaining <= 0) return null
-  return Math.min(remaining, MAX_SESSION_SECONDS)
 }
 
 /**
@@ -75,27 +66,83 @@ export function buildLoginPath(options: { reason?: string; from?: string | null 
   return query ? `/login?${query}` : '/login'
 }
 
-/** Borra la cookie de sesión. Solo en el navegador. */
-export function clearSessionCookie(): void {
-  if (typeof document === 'undefined') return
-  document.cookie = `${AUTH_COOKIE_NAME}=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:01 GMT; SameSite=Lax`
+/** Identidad para presentar la UI (nunca autoriza: el backend es la autoridad). Sale de los claims del JWT en el servidor. */
+export type SessionIdentity = {
+  userId: string | null
+  name: string | null
+  email: string | null
+  organizationId: string | null
+  orgRole: string | null
+  professionalId: string | null
+  roles: { code: string; name: string }[]
 }
 
-/** Lee el token de la cookie en el navegador. */
-export function readSessionToken(): string | null {
-  if (typeof document === 'undefined') return null
-  const match = document.cookie.match(new RegExp(`(?:^|; ?)${AUTH_COOKIE_NAME}=([^;]+)`))
-  return match ? match[1] : null
+export const EMPTY_SESSION_IDENTITY: SessionIdentity = {
+  userId: null,
+  name: null,
+  email: null,
+  organizationId: null,
+  orgRole: null,
+  professionalId: null,
+  roles: [],
 }
 
-/** Usuario y Professional propio según el token de la cookie (solo presentación; el backend decide los permisos). */
-export function readSessionIdentity(): { userId: string | null; professionalId: string | null } {
-  const token = readSessionToken()
-  const payload = token ? decodeJwtPayload(token) : null
-  return {
-    userId: typeof payload?.sub === 'string' ? payload.sub : null,
-    professionalId: typeof payload?.professionalId === 'string' ? payload.professionalId : null,
+const stringOrNull = (value: unknown): string | null =>
+  typeof value === 'string' && value.length > 0 ? value : null
+
+/** Valida los tipos de los claims decodificados; lo que no corresponde queda en null o []. */
+export function identityFromPayload(payload: Record<string, unknown> | null): SessionIdentity {
+  if (!payload) return { ...EMPTY_SESSION_IDENTITY, roles: [] }
+  const roles: { code: string; name: string }[] = []
+  if (Array.isArray(payload.roles)) {
+    for (const role of payload.roles) {
+      if (role !== null && typeof role === 'object') {
+        const { code, name } = role as Record<string, unknown>
+        if (typeof code === 'string') roles.push({ code, name: typeof name === 'string' ? name : code })
+      }
+    }
   }
+  return {
+    userId: stringOrNull(payload.sub),
+    name: stringOrNull(payload.name),
+    email: stringOrNull(payload.email),
+    organizationId: stringOrNull(payload.organizationId),
+    orgRole: stringOrNull(payload.orgRole),
+    professionalId: stringOrNull(payload.professionalId),
+    roles,
+  }
+}
+
+const LOOPBACK_HOSTS = ['localhost', '127.0.0.1']
+
+/**
+ * URL base de la API que usa el navegador. La cookie de sesión es host-only: si la página se abre en
+ * `127.0.0.1` y la API está configurada en `localhost` (o al revés), el navegador la descartaría y el
+ * login entraría en bucle. Solo entre alias de loopback se alinea el host de la API con el de la página;
+ * en cualquier otro caso (IP de LAN, URL inválida) queda igual.
+ */
+export function resolveBrowserApiBase(configured: string, pageHostname: string): string {
+  if (!LOOPBACK_HOSTS.includes(pageHostname)) return configured
+  try {
+    const url = new URL(configured)
+    if (!LOOPBACK_HOSTS.includes(url.hostname) || url.hostname === pageHostname) return configured
+    url.hostname = pageHostname
+    // URL#toString agrega una barra final si el path es vacío: se conserva el formato configurado.
+    const result = url.toString()
+    return configured.endsWith('/') || url.pathname !== '/' ? result : result.replace(/\/$/, '')
+  } catch {
+    return configured
+  }
+}
+
+/** Atributos de borrado de la cookie de sesión (mismos que al emitirla, con Max-Age=0). Lo usa el middleware. */
+export function sessionCookieDeletion(secure: boolean) {
+  return { httpOnly: true, sameSite: 'lax' as const, path: '/', secure, maxAge: 0 }
+}
+
+/** Borrado de la cookie vieja `auth_token` (la escribía el navegador sin HttpOnly). */
+export function legacyCookieDeletion(secure: boolean) {
+  return { path: '/', sameSite: 'lax' as const, secure, maxAge: 0 }
 }
 
 /** Tope razonable para `Retry-After` en el login (24 h); valores fuera de rango se descartan. */

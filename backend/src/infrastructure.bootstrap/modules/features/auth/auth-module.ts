@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { AuthController } from '@src/api/controllers/v1/auth/auth-controller';
 import { DispatcherProvider } from '@src/infrastructure.bootstrap/config/core/cqrs/dispatcher-provider';
 import { LoginQueryHandler } from '@src/application/features/auth/login-query-handler';
+import { LogoutCommandHandler } from '@src/application/features/auth/logout-command-handler';
 import { LoginRateLimiterProvider } from '@src/infrastructure.bootstrap/config/app/login-rate-limit-config';
 import { PrismaModule } from '../prisma/prisma-module';
 
@@ -10,6 +11,11 @@ import { PrismaModule } from '../prisma/prisma-module';
 @Module({
   imports: [PrismaModule],
   controllers: [AuthController],
-  providers: [DispatcherProvider, LoginQueryHandler, LoginRateLimiterProvider],
+  providers: [
+    DispatcherProvider,
+    LoginQueryHandler,
+    LogoutCommandHandler,
+    LoginRateLimiterProvider,
+  ],
 })
 export class AuthModule {}

@@ -18,21 +18,21 @@ Lo mantiene el PO. Los números con `#` son de `docs/auditoria/BACKLOG.md`.
 | 9 | 014-validation-whitelist | #12, #43 | **Hecho** (`9e7f321`) |
 | 10 | 015-transacciones | #16, #70 | **Hecho** (`dc0b31c`) |
 | 11 | 016-schema-y-migraciones | Schema y migraciones no coinciden (hallazgo del 015), `User.cuit` | **Hecho** (`07b43e0`; baseline aplicado en la base del usuario) |
-| 12 | 017-dinero-y-motor-honorarios | #17, #40, #45, #75, #76 | **Hecho** |
-| 13 | 018-cookie-httponly | #10, #55 | Pendiente |
-| 14 | 019-test-suite-fuera-de-prod | #15 | Pendiente |
-| 15 | 020-docker-hardening | #19, #56, #77, #104 | Pendiente |
-| 16 | 021-audit-fix | #36, #25 (`npm audit fix` sin cambios incompatibles), #61, #103 | Pendiente |
+| 12 | 017-dinero-y-motor-honorarios | #17, #40, #45, #75, #76 | **Hecho** (`f50651f`) |
+| 13 | 018-cookie-httponly | #10, #55 | **Hecho** (hash pendiente: lo agrega el PO al commitear) |
+| 14 | 021-audit-fix | #36, #25 (`npm audit fix` sin cambios incompatibles), #61, #103 | Pendiente (**siguiente**, adelantado) |
+| 15 | 019-test-suite-fuera-de-prod | #15 | Pendiente |
+| 16 | 020-docker-hardening | #19, #56, #77, #104 (incluye la prueba de Docker del 018) | Pendiente |
 | 17 | 022-upgrade-nest | #35, #25 (plan Nest/Prisma) | Pendiente |
 | 18 | 023-secretos-historial | #6 (requiere decisión del usuario sobre reescribir el historial) | Pendiente |
-| 19 | 024-dev-ps1-node-env | Normalizar `NODE_ENV` (H-1 del tester del 005), #78, #79, #81 a #86 (menores de `dev.ps1` del 016), #105 | Pendiente |
+| 19 | 024-dev-ps1-node-env | Normalizar `NODE_ENV` (H-1 del tester del 005), #78, #79, #81 a #86 (menores de `dev.ps1` del 016), #105, #109, #112, #113 | Pendiente |
 | 20 | 025-lint-verde | #23, #54, #64, #65, #71, #99 | Pendiente |
 | 21 | 026-ci | #24, #87 (`-CheckMigrations` en el CI) | Pendiente |
 | 22 | 027-tests-backend | #20, #21 | Pendiente |
-| 23 | 028-tests-frontend | #22 | Pendiente |
+| 23 | 028-tests-frontend | #22, #111 | Pendiente |
 | 24 | 029-permisos-finos | #47, #48, #49, #50, #51, #52, #59, #60, #62, #63, #66, #95, #96 | Pendiente |
 | 25 | 030-rate-limit-endurecido | #57, #58 | Pendiente |
-| 26 | 031 y siguientes | P3: #26 a #33, #46, #67, #68, #69, #72, #73, #74, #80, #88 a #94, #97, #98, #100 a #102 | Pendiente |
+| 26 | 031 y siguientes | P3: #26 a #33, #46, #67, #68, #69, #72, #73, #74, #80, #88 a #94, #97, #98, #100 a #102, #106, #107, #108, #110, #114 (#107 y #114 son de despliegue; #106 es prioridad MEDIA) | Pendiente |
 
 ## Decisiones del usuario para features futuros
 - **017 (2026-11-18): borrar un pagador que tiene fee rules** responde **409** con un mensaje que lo explica, mientras
@@ -40,6 +40,10 @@ Lo mantiene el PO. Los números con `#` son de `docs/auditoria/BACKLOG.md`.
 
 Nota: desde el 2026-11-04 los números de feature a partir del 016 se corrieron un lugar, porque se adelantó el feature
 de schema y migraciones.
+
+Nota (2026-11-18, decisión del PO): **021-audit-fix pasa a ser el siguiente**, inmediatamente después del 018 y antes del 019 y
+el 020, porque Next 16.4.3 corta el primer arranque del frontend (`SecurityFatalError`, #103) y hay una vulnerabilidad
+crítica en `proxy-addr` del backend. Se renumeró la columna "Orden"; el nombre del feature no cambia.
 
 El orden puede cambiar si una feature revela dependencias. El PO frena y consulta al usuario cuando una tarea
 requiere una decisión suya: reescribir el historial, acciones en GitHub o cambios de comportamiento visibles.

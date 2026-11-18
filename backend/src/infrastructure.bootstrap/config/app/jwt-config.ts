@@ -6,7 +6,8 @@ export const JWT_SECRET_MIN_LENGTH = 32;
 export const JWT_ALGORITHM = 'HS256';
 export const JWT_ISSUER = 'solidus-api';
 export const JWT_AUDIENCE = 'solidus-web';
-export const JWT_EXPIRES_IN = '8h';
+/** Vida del JWT (8 h). La cookie de sesión usa el mismo valor como Max-Age (018). */
+export const JWT_EXPIRES_IN_SECONDS = 28800;
 
 /**
  * Devuelve el secreto JWT o falla al arrancar si falta o es demasiado corto.
@@ -33,7 +34,7 @@ export function jwtModuleAsyncOptions(): JwtModuleAsyncOptions {
     useFactory: (config: ConfigService): JwtModuleOptions => ({
       secret: getRequiredJwtSecret(config),
       signOptions: {
-        expiresIn: JWT_EXPIRES_IN,
+        expiresIn: JWT_EXPIRES_IN_SECONDS,
         algorithm: JWT_ALGORITHM,
         issuer: JWT_ISSUER,
         audience: JWT_AUDIENCE,

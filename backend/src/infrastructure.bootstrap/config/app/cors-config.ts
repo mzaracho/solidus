@@ -21,6 +21,8 @@ export const CORS_ALLOWED_HEADERS = [
   'Content-Type',
   'x-org-id',
   'x-mode',
+  // CSRF de la cookie de sesión (018): obliga a un preflight limitado a la lista blanca.
+  'x-requested-with',
 ];
 /** Headers de respuesta legibles desde el navegador (el 429 del login informa Retry-After; feature 012). */
 export const CORS_EXPOSED_HEADERS = ['Retry-After'];
@@ -63,7 +65,8 @@ export function buildCorsOptions(config: ConfigService): CorsOptions {
     methods: CORS_METHODS,
     allowedHeaders: CORS_ALLOWED_HEADERS,
     exposedHeaders: CORS_EXPOSED_HEADERS,
-    credentials: false,
+    // La cookie de sesión HttpOnly viaja con credentials; el origen sigue siendo la lista explícita (nunca '*').
+    credentials: true,
     maxAge: CORS_MAX_AGE_SECONDS,
   };
 }

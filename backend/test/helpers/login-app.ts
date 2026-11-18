@@ -8,6 +8,7 @@ import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import { AuthController } from '@src/api/controllers/v1/auth/auth-controller';
 import { LoginQueryHandler } from '@src/application/features/auth/login-query-handler';
+import { LogoutCommandHandler } from '@src/application/features/auth/logout-command-handler';
 import { jwtModuleAsyncOptions } from '@src/infrastructure.bootstrap/config/app/jwt-config';
 import { configurePipes } from '@src/infrastructure.bootstrap/config/app/pipes-config';
 import { configureGlobalPrefix } from '@src/infrastructure.bootstrap/config/app/global-prefix-config';
@@ -20,6 +21,9 @@ import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 
 /** Secreto ficticio armado en ejecución (no se lee ningún .env). */
 export const TEST_JWT_SECRET = 'k'.repeat(40);
+/** Orígenes permitidos de las apps de prueba (CORS_ORIGIN, 018). */
+export const TEST_ALLOWED_ORIGIN = 'http://localhost:3002';
+export const TEST_ALLOWED_ORIGINS = `${TEST_ALLOWED_ORIGIN},http://127.0.0.1:3002`;
 
 export interface FakeUser {
   id: string;
@@ -63,17 +67,20 @@ export const makePrismaMock = (user: FakeUser) => {
 export async function createLoginApp(
   prisma: ReturnType<typeof makePrismaMock>,
   configure?: (app: INestApplication) => void,
+  extraControllers: any[] = [],
 ): Promise<INestApplication> {
   process.env.JWT_SECRET = TEST_JWT_SECRET;
+  process.env.CORS_ORIGIN = TEST_ALLOWED_ORIGINS;
   const moduleRef = await Test.createTestingModule({
     imports: [
       ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }),
       JwtModule.registerAsync({ global: true, ...jwtModuleAsyncOptions() }),
     ],
-    controllers: [AuthController],
+    controllers: [AuthController, ...extraControllers],
     providers: [
       DispatcherProvider,
       LoginQueryHandler,
+      LogoutCommandHandler,
       LoginRateLimiterProvider,
       { provide: PrismaService, useValue: prisma },
       { provide: ILogger, useValue: noopLogger },

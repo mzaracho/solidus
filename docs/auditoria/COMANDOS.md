@@ -27,7 +27,7 @@ los permisos de los archivos con secretos y activa el hook `pre-commit` (ver má
 | `.\dev.ps1 -Docker` | Stack completo con `docker compose up --build -d`; frontend en http://localhost:3001 (puerto fijo: si otro proceso lo ocupa, falla con código 2; liberarlo). Swagger deshabilitado (`NODE_ENV=production`). Si existe `.dev/certs/extra-ca.pem` lo usa en los builds (ver "CA extra"). Si hay un modo desarrollo vivo, aborta (código 2): correr `-Stop` antes. Si el build o el arranque fallan, sale con código 9 |
 | `.\dev.ps1 -Stop` | Cierra las ventanas que lanzó el script y detiene los contenedores (`docker compose stop`). No usa `down` ni borra volúmenes: los datos se conservan. Solo mata un proceso registrado si su línea de comandos corresponde a una ventana lanzada por `dev.ps1` (no confía solo en `.dev/processes.json`); si el registro no se puede leer, avisa y pide cerrar a mano las ventanas |
 | `.\dev.ps1 -Seed` | Con el modo desarrollo o con `-Docker`: carga los seeds locales (`truncate.sql` → `seed.sql` → `seed_test_users.sql`). Si la base puede tener datos pide confirmación (escribir `BORRAR` si hay un seed destructivo; sin consola interactiva cancela). `seed_activities.sql` y `seed_psicolsa.sql` no se cargan solos |
-| `.\dev.ps1 -Smoke` | Prueba de humo: backend (`GET /health/liveness`, pública y fuera de `/api`; `/` ya da 404), frontend y login con `SMOKE_USER`/`SMOKE_PASSWORD` del `.env` (si faltan, saltea el login: crearlos con `-CreateSmokeUser`). No escribe en la base |
+| `.\dev.ps1 -Smoke` | Prueba de humo: backend (`GET /health/liveness`, pública y fuera de `/api`; `/` ya da 404), frontend y login con `SMOKE_USER`/`SMOKE_PASSWORD` del `.env` (si faltan, saltea el login: crearlos con `-CreateSmokeUser`). El login se valida con `Set-Cookie` `solidus_session` con `HttpOnly` y `SameSite=Lax` y un cuerpo sin `token` (018; no imprime valores). No escribe en la base |
 | `.\dev.ps1 -Init` | Crea o sincroniza los `.env`, corrige permisos, activa el hook `pre-commit` y valida la configuración (incluido el compose con la CA extra, si existe); no levanta nada ni necesita el daemon de Docker |
 | `.\dev.ps1 -ExportCa [-Yes]` | Exporta la CA que intercepta HTTPS a `.dev/certs/extra-ca.pem` (ver "CA extra para builds Docker") |
 | `.\dev.ps1 -CreateSmokeUser` | Crea o actualiza el usuario de humo en la base local (ver "Usuario de humo") |
@@ -90,6 +90,8 @@ pwsh -File .\dev.ps1                                        # PowerShell 7, si e
 - `CORS_EXTRA_ORIGINS` — orígenes del navegador adicionales que la API acepta por CORS, separados por comas, con
   esquema y puerto (`http://host:puerto`), sin comodines ni rutas. Un valor inválido hace terminar a `dev.ps1` con
   código 1 sin mostrarlo. Se suma a los orígenes locales.
+- `AUTH_COOKIE_SECURE` — opcional, `true`/`false`: atributo `Secure` de la cookie de sesión (ver "Sesión en cookie"). En el
+  `.env` raíz solo la lee el compose (default `false` en Docker local); en desarrollo se pone a mano en `backend/.env`.
 - `EXTRA_CA_THUMBPRINT` — opcional: huella(s) SHA-1 de 40 hex, separadas por coma, de la CA que `-ExportCa` debe
   exportar en lugar de detectarla (ver "CA extra para builds Docker").
 - `NEXT_PUBLIC_API_BASE_URL` — URL de la API vista desde el navegador en modo Docker (default
@@ -101,7 +103,26 @@ pwsh -File .\dev.ps1                                        # PowerShell 7, si e
 - `dev.ps1` genera `CORS_ORIGIN` en `backend/.env` (no editarlo) con `http://localhost:<FRONTEND_PORT>` y
   `http://127.0.0.1:<FRONTEND_PORT>` más `CORS_EXTRA_ORIGINS`. El compose también la define para el backend.
 - El backend la lee como lista separada por comas, rechaza `*` y entradas con ruta (no arranca), y con
-  `NODE_ENV=production` no arranca si falta. `credentials` es `false` y `x-user-id` no es un header permitido.
+  `NODE_ENV=production` no arranca si falta. Desde el 018 `credentials` es `true` (la cookie de sesión viaja entre el front y la API) y `x-requested-with` es un header permitido; `x-user-id` no lo es.
+
+### Sesión en cookie `HttpOnly` (feature 018)
+- El login (`POST /api/v1/auth/login`) responde sin `token` en el cuerpo y emite la cookie `solidus_session`: `HttpOnly`,
+  `SameSite=Lax`, `Path=/`, sin `Domain`, `Max-Age=28800` (igual al JWT). `Secure` según `AUTH_COOKIE_SECURE`; sin definirla,
+  `Secure` en producción o si el `Origin` del login es https. Con un `NODE_ENV` inválido (p. ej. `local`) el backend actúa como
+  producción y la cookie sale `Secure` (Chrome y Firefox la aceptan en `localhost`; Safari no): usar `NODE_ENV=development`.
+- El guard acepta `Authorization: Bearer` (SSR, Swagger) o la cookie. Con `Authorization` presente no cae a la cookie.
+- CSRF: las escrituras (todo método salvo GET, HEAD y OPTIONS) autenticadas con cookie exigen el header
+  `x-requested-with: solidus` y un `Origin` de `CORS_ORIGIN`; si no, 403 `forbidden`. Con Bearer no aplica. El login rechaza
+  con 403 un `Origin` presente y ajeno; sin `Origin` (curl, smoke) pasa.
+- Swagger (`/docs`): para escribir con la cookie da 403 por CSRF; usar "Authorize" con el token (Bearer).
+- Logout (`POST /api/v1/auth/logout`): 204 y borra la cookie. El JWT sigue siendo válido hasta `exp` (sin revocación; BACKLOG 106).
+  Con la cookie vencida o inválida responde 401 y no borra (lo hace el middleware del front).
+- **Mismo host:** el front y la API deben abrirse en el mismo host (`localhost` con `localhost`, `127.0.0.1` con
+  `127.0.0.1`); el front iguala el host de la API al de la pestaña (`resolveBrowserApiBase`). Con hosts distintos
+  (subdominios), la cookie host-only no llega al middleware ni al SSR (BACKLOG 107).
+- La cookie vieja `auth_token` se borra sola; el usuario debe iniciar sesión una vez.
+- Rewrite `/api` de Next eliminado: el navegador llama directo al backend (la IP del rate limit es la del socket).
+- Docker del 018: no verificado (`docker compose up --build` falla por buildx/bake, BACKLOG 104).
 
 ### Bind en loopback
 - **Modo desarrollo:** `next dev` se lanza con `-H <BIND_ADDRESS>` (por defecto `127.0.0.1`) y el backend escucha
@@ -249,6 +270,8 @@ sistema de archivos no admite ACL, avisa y sigue. Se puede comprobar con `icacls
 | `/docs` da 404 y no hay logs debug en desarrollo | `backend/.env` tiene un `NODE_ENV` heredado distinto de `development`/`test` (por ejemplo `local`): el backend se comporta como producción (falla cerrado). Para desarrollo, `NODE_ENV=development` (no se corrige solo; revisar el archivo generado) |
 | `docker compose build` con el override de la CA falla por permisos de Bake (desde Git Bash) | Correrlo desde PowerShell con `COMPOSE_BAKE=false` |
 | `-Docker` falla con puerto ocupado (código 2) | El modo Docker usa el 3001 fijo; liberar el proceso que lo ocupa |
+| `-Smoke` da "Frontend FALLO" tras el primer `.\dev.ps1` (aviso `SecurityFatalError` de Next 16.4.3) | Next 16.4.3 puede abortar el primer arranque con un aviso de vulnerabilidad (BACKLOG 103). Correr `.\dev.ps1 -Stop` y luego `.\dev.ps1` de nuevo: un segundo `.\dev.ps1` sin `-Stop` no relanza (considera el entorno ya levantado por la ventana, no por el puerto; BACKLOG 113). **Nunca ejecutar `next upgrade` desde ese aviso** sin el feature correspondiente (021) |
+| Login responde 403 `forbidden` desde el navegador | El `Origin` de la pestaña no está en `CORS_ORIGIN` (otro puerto u host): abrir el front en un origen permitido o sumarlo a `CORS_EXTRA_ORIGINS` |
 | Código 7 en `-Smoke` | No hay nada levantado o el login falló (crear el usuario con `-CreateSmokeUser` o revisar `SMOKE_USER`/`SMOKE_PASSWORD`) |
 
 ### Archivos locales que deja `dev.ps1` (todos ignorados por git)
@@ -399,6 +422,7 @@ npm install
 #   (POSTGRES_* ya no van en backend/.env: viven solo en el .env de la raíz)
 #   BODY_SIZE_LIMIT (opcional; default 1mb, máximo 10mb; formato <número>[b|kb|mb], p. ej. 500kb, 2mb; un valor
 #     inválido hace que el backend no arranque). En modo Docker no se pasa al contenedor: queda en 1mb
+#   AUTH_COOKIE_SECURE (opcional, true/false; inválida = el backend no arranca; ver "Sesión en cookie HttpOnly")
 #   LOGIN_RATE_LIMIT_IP / LOGIN_RATE_LIMIT_USER / LOGIN_RATE_LIMIT_WINDOW (opcionales; ver "Rate limiting del login")
 #   NODE_TLS_REJECT_UNAUTHORIZED=0 está prohibida: el backend no arranca si vale 0 y `dev.ps1 -Init` la quita de backend/.env
 #   CORS_ORIGIN (lista por comas, sin comodines; lo genera dev.ps1; obligatoria con NODE_ENV=production)
@@ -483,7 +507,8 @@ $env:NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS = "1"; npm run build
 NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS=1 npm run build
 ```
 
-Tests: `npm test` (`node --no-warnings --test`; hoy cubre `lib/session`, 7 tests).
+Tests: `npm test` (`node --no-warnings --test`; hoy 148 tests, entre ellos la guardia `no-client-token.test.mts`).
+Desde el 018 el front no lee el token ni usa el rewrite `/api`; ver "Sesión en cookie `HttpOnly`".
 
 ## 5. Stack completo con Docker (raíz)
 ```bash

@@ -8,6 +8,7 @@ import {
   FakeUser,
   makeFakeUser,
   makePrismaMock,
+  TEST_ALLOWED_ORIGIN,
   TEST_JWT_SECRET,
 } from '../../../../test/helpers/login-app';
 import { LoginRateLimiter } from '@src/infrastructure/features/auth/services/login-rate-limiter';
@@ -127,17 +128,56 @@ describe('POST /api/v1/auth/login', () => {
     }
   });
 
-  it('200: devuelve un token HS256 con iss, aud y 8 h de vida', async () => {
+  const cookieOf = (res: request.Response): string => {
+    const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
+    expect(raw).toHaveLength(1);
+    return raw![0];
+  };
+
+  const withEnv = async (
+    vars: Record<string, string | undefined>,
+    fn: () => Promise<void>,
+  ) => {
+    const before: Record<string, string | undefined> = {};
+    for (const key of Object.keys(vars)) before[key] = process.env[key];
+    for (const [key, value] of Object.entries(vars)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    try {
+      await fn();
+    } finally {
+      for (const [key, value] of Object.entries(before)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  };
+
+  it('201: el JWT sale solo en la cookie HttpOnly (HS256, iss, aud, 8 h = Max-Age) y no en el cuerpo', async () => {
     const res = await login({ user: user.email, password: user.password });
     expect(res.status).toBe(201);
-    const token: string = res.body.token;
-    expect(typeof token).toBe('string');
+    // El token no llega al cuerpo.
+    expect(res.body.token).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toMatch(/eyJ/);
+    expect(res.body.id).toBe(user.id);
 
+    const cookie = cookieOf(res);
+    const attrs = cookie.split('; ');
+    expect(attrs[0].startsWith('solidus_session=')).toBe(true);
+    expect(attrs).toContain('Max-Age=28800');
+    expect(attrs).toContain('Path=/');
+    expect(attrs).toContain('HttpOnly');
+    expect(attrs).toContain('SameSite=Lax');
+    expect(attrs.some((a) => /^Domain=/i.test(a))).toBe(false);
+    // NODE_ENV=test y sin AUTH_COOKIE_SECURE: sin Secure.
+    expect(attrs).not.toContain('Secure');
+
+    const token = attrs[0].slice('solidus_session='.length);
     const header = JSON.parse(
       Buffer.from(token.split('.')[0], 'base64url').toString('utf8'),
     );
     expect(header.alg).toBe('HS256');
-
     const jwt = new JwtService({ secret: TEST_JWT_SECRET });
     const payload = jwt.verify<any>(token, {
       algorithms: ['HS256'],
@@ -146,5 +186,88 @@ describe('POST /api/v1/auth/login', () => {
     });
     expect(payload.sub).toBe(user.id);
     expect(payload.exp - payload.iat).toBe(28800);
+    expect(payload.exp - payload.iat).toBe(Number(attrs[1].split('=')[1]));
+  });
+
+  it('201: AUTH_COOKIE_SECURE=true agrega Secure', async () => {
+    await withEnv({ AUTH_COOKIE_SECURE: 'true' }, async () => {
+      const res = await login({ user: user.email, password: user.password });
+      expect(res.status).toBe(201);
+      expect(cookieOf(res).split('; ')).toContain('Secure');
+    });
+  });
+
+  it('201: un Origin https permitido agrega Secure aunque la variable diga false', async () => {
+    await withEnv(
+      {
+        AUTH_COOKIE_SECURE: 'false',
+        CORS_ORIGIN: 'https://app.example.test,http://localhost:3002',
+      },
+      async () => {
+        const res = await login({
+          user: user.email,
+          password: user.password,
+        }).set('Origin', 'https://app.example.test');
+        expect(res.status).toBe(201);
+        expect(cookieOf(res).split('; ')).toContain('Secure');
+        const http = await login({
+          user: user.email,
+          password: user.password,
+        }).set('Origin', 'http://localhost:3002');
+        expect(http.status).toBe(201);
+        expect(cookieOf(http).split('; ')).not.toContain('Secure');
+      },
+    );
+  });
+
+  it('201: con Origin permitido o sin Origin entra', async () => {
+    const allowed = await login({
+      user: user.email,
+      password: user.password,
+    }).set('Origin', TEST_ALLOWED_ORIGIN);
+    expect(allowed.status).toBe(201);
+    const none = await login({ user: user.email, password: user.password });
+    expect(none.status).toBe(201);
+  });
+
+  it('403: un Origin ajeno (o null) no emite cookie ni consume intentos', async () => {
+    for (const origin of [
+      'http://evil.example',
+      'null',
+      'http://localhost:3000',
+    ]) {
+      const res = await login({
+        user: user.email,
+        password: user.password,
+      }).set('Origin', origin);
+      expect(res.status).toBe(403);
+      expect(res.headers['set-cookie']).toBeUndefined();
+      expect(res.body.code).toBe('forbidden');
+      expect(res.body.errors).toHaveLength(1);
+    }
+    // Ni la base ni bcrypt ni el limitador vieron esos intentos.
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(compareSpy).not.toHaveBeenCalled();
+    // 5 intentos erróneos siguen dando 401 (el sexto sería 429 si los 403 hubieran contado).
+    for (let i = 0; i < 5; i++) {
+      const res = await login({ user: user.email, password: 'mala' });
+      expect(res.status).toBe(401);
+    }
+  });
+
+  it('403 con urlencoded desde otro sitio: no hay login CSRF', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .set('Origin', 'http://evil.example')
+      .type('form')
+      .send({ user: user.email, password: user.password });
+    expect(res.status).toBe(403);
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('el 401 no emite cookie', async () => {
+    const res = await login({ user: user.email, password: 'mala' });
+    expect(res.status).toBe(401);
+    expect(res.headers['set-cookie']).toBeUndefined();
   });
 });

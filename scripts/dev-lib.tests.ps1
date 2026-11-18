@@ -302,6 +302,28 @@ try {
     Assert-True (-not (Test-SmokeCredentialsDefined -EnvDict (Read-DotEnvText -Text 'SMOKE_USER=ficticio'))) 'Smoke: falta contrasena se saltea'
     Assert-True (Test-SmokeCredentialsDefined -EnvDict (Read-DotEnvText -Text "SMOKE_USER=ficticio`nSMOKE_PASSWORD=ficticia")) 'Smoke: definidos'
 
+    # --- Humo 018: login con cookie HttpOnly y sin token en el cuerpo ---
+    $goodCookie = 'solidus_session=aaa.bbb.ccc; Max-Age=28800; Path=/; Expires=Wed, 18 Nov 2026 20:00:00 GMT; HttpOnly; SameSite=Lax'
+    $goodBody = '{"id":"u1","type":"org","name":"Ficticio","roles":[],"orgRole":null}'
+    Assert-Equal 'OK' (Test-SmokeLoginResponse -StatusCode 201 -SetCookieHeaders @($goodCookie) -BodyJson $goodBody) 'Smoke 018: cookie correcta y cuerpo sin token da OK'
+    Assert-Equal 'OK' (Test-SmokeLoginResponse -StatusCode 200 -SetCookieHeaders @($goodCookie + '; Secure') -BodyJson '') 'Smoke 018: con Secure y sin cuerpo da OK'
+    Assert-Equal 'OK' (Test-SmokeLoginResponse -StatusCode 201 -SetCookieHeaders @('otra=1; Path=/, ' + $goodCookie) -BodyJson $goodBody) 'Smoke 018: cookies unidas por coma (PowerShell 5.1)'
+    Assert-Equal 'OK' (Test-SmokeLoginResponse -StatusCode 201 -SetCookieHeaders @('otra=1; HttpOnly', $goodCookie.ToLowerInvariant().Replace('solidus_session=aaa.bbb.ccc', 'solidus_session=aaa.bbb.ccc')) -BodyJson $goodBody) 'Smoke 018: varios Set-Cookie y atributos en minusculas'
+    Assert-True ((Test-SmokeLoginResponse -StatusCode 201 -SetCookieHeaders @() -BodyJson $goodBody) -match 'no emitio la cookie') 'Smoke 018: sin cookie es FALLO'
+    Assert-True ((Test-SmokeLoginResponse -StatusCode 201 -SetCookieHeaders @('auth_token=aaa.bbb.ccc; Path=/; HttpOnly; SameSite=Lax') -BodyJson $goodBody) -match 'no emitio la cookie') 'Smoke 018: la cookie vieja no cuenta'
+    Assert-True ((Test-SmokeLoginResponse -StatusCode 201 -SetCookieHeaders @('solidus_session=aaa.bbb.ccc; Path=/; SameSite=Lax') -BodyJson $goodBody) -match 'no es HttpOnly') 'Smoke 018: cookie sin HttpOnly es FALLO'
+    Assert-True ((Test-SmokeLoginResponse -StatusCode 201 -SetCookieHeaders @('solidus_session=aaa.bbb.ccc; Path=/; HttpOnly') -BodyJson $goodBody) -match 'SameSite=Lax') 'Smoke 018: cookie sin SameSite=Lax es FALLO'
+    Assert-True ((Test-SmokeLoginResponse -StatusCode 201 -SetCookieHeaders @('solidus_session=aaa.bbb.ccc; Path=/; HttpOnly; SameSite=Strict') -BodyJson $goodBody) -match 'SameSite=Lax') 'Smoke 018: SameSite=Strict no es Lax'
+    Assert-True ((Test-SmokeLoginResponse -StatusCode 201 -SetCookieHeaders @($goodCookie) -BodyJson '{"id":"u1","token":"x.y.z"}') -match 'token en el cuerpo') 'Smoke 018: token en el cuerpo es FALLO'
+    Assert-True ((Test-SmokeLoginResponse -StatusCode 201 -SetCookieHeaders @($goodCookie) -BodyJson '{"id":"u1","token":null}') -match 'token en el cuerpo') 'Smoke 018: la propiedad token, aun vacia, es FALLO'
+    Assert-Equal 'OK' (Test-SmokeLoginResponse -StatusCode 201 -SetCookieHeaders @($goodCookie) -BodyJson 'no es json') 'Smoke 018: cuerpo ilegible no cuenta como token'
+    Assert-True ((Test-SmokeLoginResponse -StatusCode 401 -SetCookieHeaders @($goodCookie) -BodyJson $goodBody) -match 'HTTP 401') 'Smoke 018: 401 con el mensaje actual'
+    Assert-True ((Test-SmokeLoginResponse -StatusCode 429 -SetCookieHeaders @() -BodyJson '') -match 'HTTP 429') 'Smoke 018: 429 es FALLO con su status'
+    Assert-True ((Test-SmokeLoginResponse -StatusCode 500 -SetCookieHeaders @() -BodyJson '') -match 'HTTP 500') 'Smoke 018: 5xx con el mensaje actual'
+    Assert-True ((Test-SmokeLoginResponse -StatusCode 0) -match 'backend caido') 'Smoke 018: sin respuesta es backend caido'
+    $smokeVerdict = Test-SmokeLoginResponse -StatusCode 201 -SetCookieHeaders @('solidus_session=secreto-ficticio.abc.def; Path=/; SameSite=Lax') -BodyJson '{"token":"otro-secreto-ficticio"}'
+    Assert-True ($smokeVerdict -notmatch 'secreto-ficticio') 'Smoke 018: el motivo nunca incluye valores de la cookie ni del cuerpo'
+
     # --- Procesos ---
     Assert-True (-not (Test-DevProcessAlive -ProcessId 999999 -StartTimeTicks 1)) 'Proceso inexistente no esta vivo'
     $me = Get-Process -Id $PID

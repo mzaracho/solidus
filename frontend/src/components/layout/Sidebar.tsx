@@ -17,18 +17,8 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { ROUTES, VIEW_MODE, APP_ROLE_CODE } from '@/lib/constants'
 import { allowedViewModes, pickViewMode, canSeeRestrictedLinks } from '@/lib/view-mode'
-import { clearSessionCookie } from '@/lib/session'
-
-function getNameFromToken(): string {
-    try {
-        const match = document.cookie.match(/(^| )auth_token=([^;]+)/)
-        if (!match) return 'Usuario'
-        const payload = JSON.parse(atob(match[2].split('.')[1]))
-        return payload.name || payload.email || 'Usuario'
-    } catch {
-        return 'Usuario'
-    }
-}
+import { useSessionIdentity } from '@/components/providers/SessionProvider'
+import { logout } from '@/services/data'
 
 export function Sidebar() {
     const pathname = usePathname()
@@ -49,11 +39,13 @@ export function Sidebar() {
         [orgRole, availableRoles],
     )
 
-    const userName = typeof document !== 'undefined' ? getNameFromToken() : 'Usuario'
+    const identity = useSessionIdentity()
+    const userName = identity.name ?? identity.email ?? 'Usuario'
 
-    const handleLogout = () => {
-        clearSessionCookie()
-        window.location.href = ROUTES.LOGIN
+    const handleLogout = async () => {
+        // El backend borra la cookie HttpOnly; replace evita que "Atras" vuelva a esta pagina.
+        await logout()
+        window.location.replace(ROUTES.LOGIN)
     }
 
     const orgLinks = [

@@ -78,7 +78,12 @@ describe('LoggingInterceptor', () => {
       .send({ user: user.email, password: user.password });
     expect(res.status).toBe(201);
 
-    const token: string = res.body.token;
+    // 018: el JWT sale solo en la cookie HttpOnly, no en el cuerpo.
+    expect(res.body.token).toBeUndefined();
+    const setCookie = (res.headers['set-cookie'] as unknown as string[]).find(
+      (c) => c.startsWith('solidus_session='),
+    )!;
+    const token = setCookie.slice('solidus_session='.length).split(';')[0];
     const signature = token.split('.')[2];
     const out = capture.text();
     expect(out).not.toContain(user.password);

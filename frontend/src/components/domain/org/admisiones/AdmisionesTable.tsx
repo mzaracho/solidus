@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { errorMessageOf } from '@/lib/api-errors'
 import { useStore } from '@/store/useStore'
-import { readSessionIdentity } from '@/lib/session'
+import { useSessionIdentity } from '@/components/providers/SessionProvider'
 import { canDeleteActivity } from '@/lib/activity-permissions'
 import {
     Select,
@@ -51,7 +51,7 @@ export function AdmisionesTable() {
 
     // Usuario y Professional propio (del token) para decidir qué botón Eliminar se muestra.
     // Es solo presentación: el backend decide quién puede borrar (403 si no corresponde).
-    const { userId: currentUserId, professionalId: currentProfessionalId } = readSessionIdentity()
+    const { userId: currentUserId, professionalId: currentProfessionalId } = useSessionIdentity()
 
     // ── Data ──────────────────────────────────────────────────────────────────
     const [loading, setLoading] = useState(true)

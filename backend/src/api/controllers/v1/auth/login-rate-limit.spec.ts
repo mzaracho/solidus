@@ -151,4 +151,20 @@ describe('POST /api/v1/auth/login: rate limiting (012)', () => {
     const res = await request(app.getHttpServer()).post('/api/v1/auth/logout');
     expect(res.status).toBe(401);
   });
+
+  it('una cookie de sesión en el login no altera el conteo (018)', async () => {
+    const cookie = { Cookie: 'solidus_session=aaa.bbb.ccc' };
+    for (let i = 0; i < 5; i++) {
+      const res = await login(
+        { user: 'nadie@example.test', password: 'x' },
+        cookie,
+      );
+      expect(res.status).toBe(401);
+    }
+    const res = await login(
+      { user: 'nadie@example.test', password: 'x' },
+      cookie,
+    );
+    expect(res.status).toBe(429);
+  });
 });

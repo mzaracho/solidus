@@ -1,12 +1,28 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { ROUTES } from '@/lib/constants'
-import { AUTH_COOKIE_NAME, SESSION_EXPIRED_REASON, buildLoginPath } from '@/lib/session'
+import {
+    AUTH_COOKIE_NAME,
+    SESSION_EXPIRED_REASON,
+    buildLoginPath,
+    decodeJwtPayload,
+    identityFromPayload,
+    type SessionIdentity,
+} from '@/lib/session'
 import { ApiForbiddenError, ApiUnauthorizedError } from '@/services/data'
 
 /** Token de la cookie de sesion (solo servidor). Esta funcion no hace llamadas a la API. */
 export async function getServerAuthToken(): Promise<string | null> {
     return (await cookies()).get(AUTH_COOKIE_NAME)?.value ?? null
+}
+
+/**
+ * Identidad de la sesion para presentar la UI (claims del JWT de la cookie, sin verificar la firma: la verificacion y
+ * la autorizacion son del backend). Sin cookie o con una cookie ilegible, la identidad vacia.
+ */
+export async function getServerSessionIdentity(): Promise<SessionIdentity> {
+    const token = await getServerAuthToken()
+    return identityFromPayload(token ? decodeJwtPayload(token) : null)
 }
 
 /**

@@ -29,6 +29,9 @@ services:
       NODE_ENV: "production"
       # Origenes del navegador permitidos (frontend Docker en 3001). Extra opcionales: CORS_EXTRA_ORIGINS en .env.
       CORS_ORIGIN: "http://localhost:3001,http://127.0.0.1:3001,${CORS_EXTRA_ORIGINS:-}"
+      # Cookie de sesion HttpOnly (018): el stack Docker local es HTTP, asi que va sin Secure (con Secure el navegador la
+      # descarta en silencio si se entra por una IP de LAN o con Safari). Con TLS delante, poner AUTH_COOKIE_SECURE=true.
+      AUTH_COOKIE_SECURE: "${AUTH_COOKIE_SECURE:-false}"
     depends_on:
       - db
 

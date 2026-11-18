@@ -108,3 +108,13 @@ test('deletePayer llama a DELETE /pro/payers/:id', () => {
   assert.ok(body.includes('${API_BASE_URL}/pro/payers/${id}'))
   assert.ok(body.includes("method: 'DELETE'"))
 })
+
+// Feature 018: el logout lo borra el backend (cookie HttpOnly) y no pasa por apiFetch (un 401 ahi no es "sesion vencida").
+test('logout llama a POST /v1/auth/logout con credenciales y sin apiFetch', () => {
+  const body = functionBody('logout')
+  assert.ok(body.includes('${API_BASE_URL}/v1/auth/logout'))
+  assert.ok(body.includes("method: 'POST'"))
+  assert.ok(body.includes("credentials: 'include'"))
+  assert.equal(body.includes('apiFetch('), false)
+  assert.ok(body.includes('catch'), 'logout no debe lanzar')
+})

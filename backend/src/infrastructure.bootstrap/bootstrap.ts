@@ -14,6 +14,7 @@ import {
   assertTlsVerificationEnabled,
   getRuntimeEnv,
 } from './config/app/runtime-env';
+import { getAuthCookieSecure } from './config/app/auth-cookie-config';
 import { createAccessLogMiddleware } from './config/app/access-log';
 import { finalErrorHandler } from './filters/final-error-handler';
 
@@ -35,6 +36,8 @@ export async function bootstrap() {
   configurePipes(app);
   configureNestInternalLogger(app, config);
   configureCors(app, config);
+  // Falla al arrancar si AUTH_COOKIE_SECURE es inválida (igual que BODY_SIZE_LIMIT).
+  getAuthCookieSecure(config);
   configureSwagger(app, config);
 
   // init() registra rutas, el 404 y el handler de error de Nest; el manejador final queda último en Express.

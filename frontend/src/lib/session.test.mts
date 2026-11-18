@@ -1,11 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  AUTH_COOKIE_NAME,
   buildLoginPath,
   decodeJwtPayload,
-  getCookieMaxAgeSeconds,
-  MAX_SESSION_SECONDS,
+  EMPTY_SESSION_IDENTITY,
+  identityFromPayload,
+  legacyCookieDeletion,
+  resolveBrowserApiBase,
   sanitizeFrom,
+  sessionCookieDeletion,
 } from './session.ts'
 
 // Tokens ficticios armados en el test, sin firma válida: solo se decodifica el payload.
@@ -56,17 +60,6 @@ test('sanitizeFrom rechaza esquemas, rutas bloqueadas y tipos que no son string'
   }
 })
 
-test('getCookieMaxAgeSeconds respeta exp y el tope de 8 h', () => {
-  const now = Date.UTC(2026, 0, 1, 12, 0, 0)
-  const nowSec = now / 1000
-  assert.equal(getCookieMaxAgeSeconds(fakeToken({ exp: nowSec + 3600 }), now), 3600)
-  assert.equal(getCookieMaxAgeSeconds(fakeToken({ exp: nowSec + 10 * 3600 }), now), MAX_SESSION_SECONDS)
-  assert.equal(getCookieMaxAgeSeconds(fakeToken({ exp: nowSec - 5 }), now), null)
-  assert.equal(getCookieMaxAgeSeconds(fakeToken({ sub: 'x' }), now), null)
-  assert.equal(getCookieMaxAgeSeconds('basura', now), null)
-  assert.equal(getCookieMaxAgeSeconds('a.b.c', now), null)
-})
-
 test('decodeJwtPayload decodifica UTF-8 y devuelve null con basura', () => {
   const payload = decodeJwtPayload(fakeToken({ name: 'María Ñandú', exp: 1 }))
   assert.equal(payload?.name, 'María Ñandú')
@@ -86,40 +79,65 @@ test('buildLoginPath codifica / como %2F y descarta from inseguro', () => {
   assert.equal(buildLoginPath({ reason: 'otra-cosa', from: '//ejemplo.com' }), '/login')
 })
 
-// readSessionIdentity (feature 008): lee la cookie del navegador; se simula `document`.
-import { readSessionIdentity } from './session.ts'
+test('el nombre de la cookie es solidus_session (la vieja auth_token ya no autentica)', () => {
+  assert.equal(AUTH_COOKIE_NAME, 'solidus_session')
+})
 
-const withCookie = (cookie: string | undefined, fn: () => void) => {
-  const g = globalThis as unknown as { document?: { cookie: string } }
-  const prev = g.document
-  if (cookie === undefined) delete g.document
-  else g.document = { cookie }
-  try {
-    fn()
-  } finally {
-    if (prev === undefined) delete g.document
-    else g.document = prev
-  }
-}
-
-test('readSessionIdentity devuelve sub y professionalId de la cookie', () => {
-  const t = fakeToken({ sub: 'u1', professionalId: 'p1' })
-  withCookie(`otra=1; auth_token=${t}`, () => {
-    assert.deepEqual(readSessionIdentity(), { userId: 'u1', professionalId: 'p1' })
+test('identityFromPayload extrae los claims de presentacion', () => {
+  const identity = identityFromPayload({
+    sub: 'u1',
+    name: 'Ana',
+    email: 'ana@example.test',
+    organizationId: 'org-1',
+    orgRole: 'MEMBER',
+    professionalId: 'p1',
+    roles: [{ code: 'PROFESSIONAL', name: 'Profesional' }],
+  })
+  assert.deepEqual(identity, {
+    userId: 'u1',
+    name: 'Ana',
+    email: 'ana@example.test',
+    organizationId: 'org-1',
+    orgRole: 'MEMBER',
+    professionalId: 'p1',
+    roles: [{ code: 'PROFESSIONAL', name: 'Profesional' }],
   })
 })
 
-test('readSessionIdentity sin professionalId o con tipos inválidos da null', () => {
-  withCookie(`auth_token=${fakeToken({ sub: 'u1' })}`, () => {
-    assert.deepEqual(readSessionIdentity(), { userId: 'u1', professionalId: null })
-  })
-  withCookie(`auth_token=${fakeToken({ sub: 5, professionalId: { a: 1 } })}`, () => {
-    assert.deepEqual(readSessionIdentity(), { userId: null, professionalId: null })
-  })
+test('identityFromPayload con tipos invalidos o sin payload deja null y []', () => {
+  assert.deepEqual(identityFromPayload(null), EMPTY_SESSION_IDENTITY)
+  assert.deepEqual(identityFromPayload({ sub: 5, professionalId: { a: 1 }, orgRole: 7, roles: 'x' }), EMPTY_SESSION_IDENTITY)
+  assert.deepEqual(identityFromPayload({ sub: '', roles: [null, 3, { name: 'sin code' }, { code: 'A' }] }).roles, [
+    { code: 'A', name: 'A' },
+  ])
+  assert.equal(identityFromPayload({ orgRole: null }).orgRole, null)
 })
 
-test('readSessionIdentity sin cookie, token basura o sin document da null', () => {
-  withCookie('', () => assert.deepEqual(readSessionIdentity(), { userId: null, professionalId: null }))
-  withCookie('auth_token=basura', () => assert.deepEqual(readSessionIdentity(), { userId: null, professionalId: null }))
-  withCookie(undefined, () => assert.deepEqual(readSessionIdentity(), { userId: null, professionalId: null }))
+test('identityFromPayload devuelve copias: no comparte el objeto vacio', () => {
+  const a = identityFromPayload(null)
+  a.roles.push({ code: 'X', name: 'X' })
+  assert.deepEqual(identityFromPayload(null).roles, [])
+})
+
+test('resolveBrowserApiBase alinea localhost y 127.0.0.1 en los dos sentidos', () => {
+  assert.equal(resolveBrowserApiBase('http://localhost:8080/api', '127.0.0.1'), 'http://127.0.0.1:8080/api')
+  assert.equal(resolveBrowserApiBase('http://127.0.0.1:8080/api', 'localhost'), 'http://localhost:8080/api')
+  assert.equal(resolveBrowserApiBase('http://localhost:8081/api', 'localhost'), 'http://localhost:8081/api')
+})
+
+test('resolveBrowserApiBase no toca hosts que no son localhost ni 127.0.0.1, dominios ni URLs invalidas', () => {
+  assert.equal(resolveBrowserApiBase('http://localhost:8080/api', '192.0.2.20'), 'http://localhost:8080/api')
+  assert.equal(resolveBrowserApiBase('http://192.0.2.20:8080/api', 'localhost'), 'http://192.0.2.20:8080/api')
+  assert.equal(resolveBrowserApiBase('https://api.example.test/api', '127.0.0.1'), 'https://api.example.test/api')
+  assert.equal(resolveBrowserApiBase('no es una url', '127.0.0.1'), 'no es una url')
+  assert.equal(resolveBrowserApiBase('http://localhost:8080', '127.0.0.1'), 'http://127.0.0.1:8080')
+})
+
+test('sessionCookieDeletion usa los mismos atributos que la cookie emitida, con Max-Age=0', () => {
+  assert.deepEqual(sessionCookieDeletion(false), { httpOnly: true, sameSite: 'lax', path: '/', secure: false, maxAge: 0 })
+  assert.equal(sessionCookieDeletion(true).secure, true)
+})
+
+test('legacyCookieDeletion borra auth_token en Path=/', () => {
+  assert.deepEqual(legacyCookieDeletion(false), { path: '/', sameSite: 'lax', secure: false, maxAge: 0 })
 })

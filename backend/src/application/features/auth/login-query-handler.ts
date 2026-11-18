@@ -40,6 +40,15 @@ const invalidCredentials = () =>
     message: 'Unauthorized',
   });
 
+/**
+ * Resultado interno del login: el JWT va solo al controlador, que lo pone en la cookie HttpOnly (018);
+ * nunca forma parte del cuerpo de la respuesta.
+ */
+export interface LoginResult {
+  response: LoginResponseDto;
+  token: string;
+}
+
 export class LoginQuery implements IRequest {
   constructor(
     readonly user: string,
@@ -51,7 +60,7 @@ export class LoginQuery implements IRequest {
 @RequestHandler(LoginQuery)
 export class LoginQueryHandler implements IRequestHandler<
   LoginQuery,
-  LoginResponseDto
+  LoginResult
 > {
   // Manual injection might be tricky depending on how Dispatcher works,
   // but usually Handlers are registered in Module providers.
@@ -64,7 +73,7 @@ export class LoginQueryHandler implements IRequestHandler<
     private readonly jwtService: JwtService,
   ) { }
 
-  public async execute(query: LoginQuery): Promise<LoginResponseDto> {
+  public async execute(query: LoginQuery): Promise<LoginResult> {
     if (!query.user || !query.password) {
       throw new BadRequestException({
         code: 'bad-request',
@@ -147,7 +156,7 @@ export class LoginQueryHandler implements IRequestHandler<
     const initialRole = roleCodes.length > 0 ? roleCodes[0] : ROLE_CODE.ADMIN;
     const type = isProfessionalMode(initialRole) ? 'pro' : 'org';
 
-    return {
+    const response: LoginResponseDto = {
       id: user.id,
       type: type,
       name: user.name,
@@ -156,7 +165,7 @@ export class LoginQueryHandler implements IRequestHandler<
       roles: roles,
       orgRole: orgRole,
       professionalId: professionalId, // Added to Response
-      token: this.jwtService.sign(payload),
     };
+    return { response, token: this.jwtService.sign(payload) };
   }
 }

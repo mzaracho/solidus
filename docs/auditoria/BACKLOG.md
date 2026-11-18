@@ -74,7 +74,7 @@ Origen: `docs/features/011-controladores-huerfanos/06-seguridad.md`.
 
 | # | Ítem | Origen | Esfuerzo |
 |---|---|---|---|
-| 55 | `LogoutCommandHandler` (`auth/logout-command-handler.ts`) no lleva `@RequestHandler` ni está registrado: el endpoint de logout probablemente responde "Handler not found". Preexistente; resolver en el feature 017 (cookie `HttpOnly`, ítem 10 de P1), que rehace el logout | MENOR-3 (seguridad 011) | S |
+| 55 | **RESUELTO (feature 018): handler registrado y test `cqrs-handlers.spec.ts`.** `LogoutCommandHandler` (`auth/logout-command-handler.ts`) no lleva `@RequestHandler` ni está registrado: el endpoint de logout probablemente responde "Handler not found". Preexistente; resolver en el feature 017 (cookie `HttpOnly`, ítem 10 de P1), que rehace el logout | MENOR-3 (seguridad 011) | S |
 
 ## Candidatos surgidos del feature 012
 
@@ -106,7 +106,7 @@ Origen: `docs/features/013-errores-sin-details/` (00-estado, 05-revision, 06-seg
 | # | Ítem | Esfuerzo |
 |---|---|---|
 | 9 | **RESUELTO (feature 005).** CORS desde `CORS_ORIGIN` (lista blanca), sin `origin: true` | S |
-| 10 | Sesión en cookie `HttpOnly; Secure; SameSite=Lax` emitida por el backend (o route handler de Next); eliminar `'mock_token'`; middleware que valide expiración | M |
+| 10 | **RESUELTO (feature 018): cookie `solidus_session` `HttpOnly` emitida por el backend, CSRF por header y `Origin`, logout real, token fuera del JS.** Sesión en cookie `HttpOnly; Secure; SameSite=Lax` emitida por el backend (o route handler de Next); eliminar `'mock_token'`; middleware que valide expiración | M |
 | 11 | **RESUELTO (features 005 y 012):** el 400 por campos faltantes es del 005; el rate limiting del login es del 012 (implementación propia sin `@nestjs/throttler`: 5 por IP + usuario y 20 por IP en 15 min, 429 con `Retry-After`; residuales en #56 a #58) | S |
 | 12 | **RESUELTO (feature 014): `RequestValidationPipe` global con `whitelist`, `forbidNonWhitelisted` en bodies y DTOs explícitos (fee rules y settings de organización incluidos).** `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true })`; DTOs explícitos para fee rules y settings de organización | M |
 | 13 | **RESUELTO (feature 013): contrato `{ code, errors }` sin `details`, `X-Error-Id` en 5xx, `axios-filter` borrado.** Filtros de error sin `details` hacia el cliente; mapear errores de negocio a 400/403/404/409 (`BadRequestException`, etc.) en lugar de `Error` | S |
@@ -210,6 +210,23 @@ Origen: `docs/features/017-dinero-y-motor-honorarios/` (04-implementacion, 05-re
 | 100 | Cobro múltiple en `AtencionesTable` y `AdmisionesTable`: ante un fallo parcial no refresca ni informa cuáles se cobraron (heredado; `DeudoresTable` ya lo resuelve con `bulk-payment.ts`) | MENOR-2 (revisión 017) | BAJA / S | 031 y siguientes |
 | 101 | El diálogo de cobro múltiple puede ofrecer una atención que otro usuario cobró mientras tanto | MENOR-10 (revisión 017) | BAJA / S | 031 y siguientes |
 | 102 | `test/nest-build-compat.spec.ts` no tiene control positivo (no prueba que la regla detecte un re-export con alias) | MENOR-1 (vuelta 2, 017) | BAJA / S | 031 y siguientes |
-| 103 | Next 16.4.3 a 16.4.6 (GHSA-mfr8-8qww-v76h, GHSA-vc7v-qv4w-wrv8; no explotables hoy) y `source-map-js` alto transitivo | INFO (seguridad 017, vuelta 2) | MEDIA / S | 021 |
-| 104 | `docker compose build backend` se corta con "additional privileges requested: --allow=fs.read" (buildx bake) en la máquina del usuario | tester 017 | BAJA / S | 020 |
+| 103 | Next 16.4.3 a 16.4.6 (GHSA-mfr8-8qww-v76h, GHSA-vc7v-qv4w-wrv8; no explotables hoy) y `source-map-js` alto transitivo. El 018 sumó: el aviso `SecurityFatalError` de Next 16.4.3 corta el primer `next build`/`next dev` (repetir funciona) y `npm audit` del backend marca `proxy-addr` (crítico), `body-parser`, `multer`, `path-to-regexp`, `express` y `qs` | INFO (seguridad 017, vuelta 2) | MEDIA / S | 021 |
+| 104 | `docker compose build backend` se corta con "additional privileges requested: --allow=fs.read" (buildx bake) en la máquina del usuario. El 018 tampoco pudo verificarse en Docker (`AUTH_COOKIE_SECURE=false` del compose, SSR con Bearer desde el contenedor): repetir esa prueba al resolverlo | tester 017 y 018 | BAJA / S | 020 |
 | 105 | El resumen de `dev.ps1` mostró una vez "Swagger: deshabilitado (NODE_ENV=production)" con el entorno ya levantado | tester 017 | BAJA / S | 024 |
+
+## Candidatos surgidos del feature 018
+
+Origen: `docs/features/018-cookie-httponly/` (04-implementacion, 05-revision, 06-seguridad, 07-testing). **RESUELTO en el 018:** #10 y #55.
+Las pruebas de Docker del 018 se suman al #104 y el aviso de Next 16.4.3 al #103 (no se duplican).
+
+| # | Ítem | Origen | Prioridad / esfuerzo | Feature sugerido |
+|---|---|---|---|---|
+| 106 | Revocación del JWT antes de `exp`: hoy el logout solo borra la cookie y el JWT (también como Bearer) vale hasta 8 h. Opciones: `User.sessionsRevokedAt` o `jti` contra `iat`. La baja de usuario sí corta (el guard consulta `deletedAt`) | P2 (diseño 018), INFO seguridad | MEDIA / M | 031 y siguientes |
+| 107 | Front y API en hosts distintos (subdominios en producción): la cookie host-only no llega al middleware ni al SSR. Resolver en el despliegue (Domain, proxy inverso o mismo host) | P4 (diseño 018) | MEDIA / M | despliegue (031 y siguientes) |
+| 108 | `GET /login?reason=session_expired` borra la cookie (cierra la sesión por un enlace ajeno). Borrar solo si el token venció o no se decodifica; para inválido-no-vencido usar un marcador de un solo uso | MENOR-1 seguridad / m-3 revisión 018 | BAJA / S | 031 y siguientes |
+| 109 | El borrado de la cookie desde el middleware sale sin `Secure` cuando el backend la emite con `Secure` (`NODE_ENV=local`): un navegador puede ignorarlo. Replicar el criterio del backend (probado: sin bucle, el login nuevo reemplaza la cookie) | MENOR-2 seguridad / m-1 revisión 018 | BAJA / S | 024 |
+| 110 | Logout con token vencido o inválido responde 401 y no borra la cookie: hacer el logout `@Public()` con la misma verificación de `Origin` que el login | MENOR-3 seguridad / m-2 revisión 018 | BAJA / S | 031 y siguientes |
+| 111 | El middleware y el `matcher` (`missing` de prefetch) no tienen test automático (se probaron con HTTP real) | m-4 revisión 018 | BAJA / S | 028 |
+| 112 | `frontend/AGENTS.md` lo regenera `next dev`: decidir si se versiona o se ignora | m-5 revisión 018 | BAJA / S | 024 |
+| 113 | `dev.ps1` considera el frontend "ya levantado" por la ventana y no por el puerto, y `Wait-Http` acepta un frontend que muere enseguida: un segundo `.\dev.ps1` no lo relanza | tester 018, hallazgo 2 | BAJA / S | 024 |
+| 114 | Las páginas SSR con nombre y email en el payload RSC no deben cachearse en caches compartidos (proxy/CDN) | INFO seguridad 018 | BAJA / S | despliegue (031 y siguientes) |

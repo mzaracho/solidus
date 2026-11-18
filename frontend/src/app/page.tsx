@@ -1,41 +1,21 @@
-'use client'
-
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import { ROUTES } from '@/lib/constants'
-import { decodeJwtPayload, readSessionToken } from '@/lib/session'
+import { getServerSessionIdentity } from '@/services/session.server'
 
-export default function Home() {
-  const router = useRouter()
+// Inicio: decide el destino segun la identidad de la cookie de sesion (leida en el servidor, sin verificar firma;
+// el backend es la autoridad). Sin sesion, login (el middleware ya lo cubre).
+export default async function Home() {
+  const identity = await getServerSessionIdentity()
+  if (!identity.userId) redirect(ROUTES.LOGIN)
 
-  useEffect(() => {
-    const token = readSessionToken()
-
-    if (!token) {
-      router.replace(ROUTES.LOGIN)
-      return
-    }
-
-    const payload = decodeJwtPayload(token)
-    const orgId = payload?.organizationId
-    const orgRole = payload?.orgRole
-    const roles = (Array.isArray(payload?.roles) ? payload.roles : []) as { code: string }[]
-
-    if (typeof orgId === 'string' && orgId) {
-      if (orgRole === 'MEMBER') {
-        const hasProfessionalRole = roles.some(r => r.code === 'PROFESSIONAL')
-        const fallback = hasProfessionalRole
-          ? `/${orgId}/pro/atenciones`
-          : `/${orgId}/org/admisiones`
-        router.replace(fallback)
-      } else {
-        router.replace(`/${orgId}/dashboard`)
-      }
-    } else {
-      // Sesión válida sin organización: pantalla explicativa en lugar del rebote mudo al login.
-      router.replace(ROUTES.NO_ACCESS)
-    }
-  }, [router])
-
-  return null
+  const orgId = identity.organizationId
+  if (!orgId) {
+    // Sesion valida sin organizacion: pantalla explicativa en lugar del rebote mudo al login.
+    redirect(ROUTES.NO_ACCESS)
+  }
+  if (identity.orgRole === 'MEMBER') {
+    const hasProfessionalRole = identity.roles.some((r) => r.code === 'PROFESSIONAL')
+    redirect(hasProfessionalRole ? `/${orgId}/pro/atenciones` : `/${orgId}/org/admisiones`)
+  }
+  redirect(`/${orgId}/dashboard`)
 }

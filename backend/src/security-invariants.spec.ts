@@ -431,6 +431,8 @@ describe('invariantes de seguridad', () => {
 describe('invariantes del feature 013 (errores sin details)', () => {
   it('new Error( solo en arranque/configuración y en el dispatcher (lista blanca)', () => {
     expect(filesMatching(/new Error\(/)).toEqual([
+      // AUTH_COOKIE_SECURE inválida (018)
+      'infrastructure.bootstrap/config/app/auth-cookie-config.ts',
       // BODY_SIZE_LIMIT inválido al arrancar
       'infrastructure.bootstrap/config/app/body-parser-config.ts',
       // CORS_ORIGIN inválido o ausente en producción
@@ -492,5 +494,52 @@ describe('invariantes del feature 014 (validación con whitelist)', () => {
     )!.text;
     expect(pipes).toMatch(/whitelist:\s*true/);
     expect(pipes).toMatch(/forbidNonWhitelisted:\s*true/);
+  });
+});
+
+describe('invariantes del feature 018 (cookie de sesión HttpOnly)', () => {
+  it('el header Cookie solo lo lee el guard de autenticación', () => {
+    expect(
+      filesMatching(/headers\??\.cookie|headers\[['"]cookie['"]\]/i),
+    ).toEqual(['infrastructure.bootstrap/guards/authentication-guard.ts']);
+  });
+
+  it('CSRF_HEADER solo aparece en la configuración de la cookie y en el guard', () => {
+    expect(filesMatching(/CSRF_HEADER\b/)).toEqual([
+      'infrastructure.bootstrap/config/app/auth-cookie-config.ts',
+      'infrastructure.bootstrap/guards/authentication-guard.ts',
+    ]);
+  });
+
+  it('el literal x-requested-with solo está en la configuración de la cookie y en CORS', () => {
+    expect(filesMatching(/x-requested-with/i)).toEqual([
+      'infrastructure.bootstrap/config/app/auth-cookie-config.ts',
+      'infrastructure.bootstrap/config/app/cors-config.ts',
+    ]);
+  });
+
+  it('res.cookie( solo en el controlador de auth', () => {
+    expect(filesMatching(/\bres\.cookie\(|\.clearCookie\(/)).toEqual([
+      'api/controllers/v1/auth/auth-controller.ts',
+    ]);
+  });
+
+  it('ningún DTO declara un campo token (el JWT no viaja en cuerpos)', () => {
+    const offenders = sources
+      .filter((s) => /\.dto\.ts$|-dto\.ts$/.test(s.file))
+      .filter((s) => /^\s*token\??\s*:/m.test(s.text))
+      .map((s) => s.file);
+    expect(offenders).toEqual([]);
+  });
+
+  it('la cookie de sesión es HttpOnly, SameSite=Lax, Path=/ y sin Domain', () => {
+    const text = sources.find(
+      (s) =>
+        s.file === 'infrastructure.bootstrap/config/app/auth-cookie-config.ts',
+    )!.text;
+    expect(text).toMatch(/httpOnly:\s*true/);
+    expect(text).toMatch(/sameSite:\s*'lax'/);
+    expect(text).toMatch(/path:\s*'\/'/);
+    expect(text).not.toMatch(/bdomain\s*:/);
   });
 });

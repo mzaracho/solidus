@@ -20,7 +20,7 @@ import { formatCurrency } from '@/lib/utils'
 import { PAYMENT_STATUS, PAYMENT_DATE_TEXTS, ACTIVITY_EDIT_TEXTS } from '@/lib/constants'
 import { canDeleteActivity, isActivityCollected } from '@/lib/activity-permissions'
 import { MarkPaidDialog } from '@/components/domain/payment/MarkPaidDialog'
-import { readSessionIdentity } from '@/lib/session'
+import { useSessionIdentity } from '@/components/providers/SessionProvider'
 import { useStore } from '@/store/useStore'
 import { RetroactiveModal } from './RetroactiveModal'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -63,6 +63,7 @@ const ActionsCell = ({ row }: { row: any }) => {
     const { orgSlug } = useParams() as { orgSlug: string }
     const router = useRouter()
     const { orgRole } = useStore()
+    const sessionIdentity = useSessionIdentity()
 
     const alreadyPaid = isPaidStatus(payment.status)
 
@@ -93,7 +94,7 @@ const ActionsCell = ({ row }: { row: any }) => {
     // La definicion de "cobrada" la fija el backend (isCollected); el front no la repite.
     const isRestrictedForDelete = isActivityCollected(payment)
     // MEMBER: solo borra lo propio (política del 007). Solo presentación: el backend responde 403 si no corresponde.
-    const canDelete = canDeleteActivity(orgRole, payment, readSessionIdentity())
+    const canDelete = canDeleteActivity(orgRole, payment, sessionIdentity)
     const deleteDisabled = isRestrictedForDelete || !canDelete
     const deleteTitle = !canDelete
         ? 'Solo podés eliminar tus propias atenciones'

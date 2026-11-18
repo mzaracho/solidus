@@ -92,8 +92,12 @@ salvo que el usuario lo pida.
 
 ## Convenciones — frontend
 - Rutas bajo `src/app/(dashboard)/[orgSlug]/...`; secciones `org/*` (organización) y `pro/*` (profesional).
-- Todo acceso a la API pasa por `src/services/data.ts` (`getHeaders()` agrega `Authorization`,
-  `x-org-id`, `x-user-id`).
+- Todo acceso a la API pasa por `src/services/data.ts`: `credentials: 'include'`, `getHeaders()` agrega `x-org-id` y
+  `x-requested-with: solidus` (CSRF); `Authorization` solo en el servidor (SSR), nunca en el cliente (018).
+- Sesión (018): el token nunca se lee ni se escribe en el cliente (guardia `no-client-token.test.mts`: sin
+  `document.cookie`/`localStorage`/`sessionStorage`/`jwt-decode`). La identidad de la UI sale del layout de servidor:
+  `SessionProvider` / `useSessionIdentity()`. Front y API se abren en el mismo host (`resolveBrowserApiBase` iguala
+  `localhost` y `127.0.0.1`).
 - Los bodies de escritura se arman con los builders de `src/lib/request-bodies.ts`, que espejan los DTOs del backend; un
   test de contrato manda esos bodies (fixture `backend/test/fixtures/frontend-request-bodies.json`) al pipe real. Si cambia
   un DTO, actualizar builder y fixture.
@@ -112,7 +116,7 @@ salvo que el usuario lo pida.
   `PaymentDateField` y `MarkPaidDialog` (`components/domain/payment/`). En edición solo viajan los campos cambiados
   (`src/lib/activity-edit.ts`). Cobro múltiple por id de atención con `src/lib/bulk-payment.ts` y `getRowId` en `DataTable`.
 - Permisos de UI de atenciones: `canDeleteActivity` en `src/lib/activity-permissions.ts` e identidad con
-  `readSessionIdentity()` en `src/lib/session.ts`; solo presentación (el backend es la autoridad).
+  `useSessionIdentity()`; solo presentación (el backend es la autoridad).
 
 ## Comandos
 Arranque rápido (raíz, Windows PowerShell 5.1 o 7): `.\dev.ps1`. Primera vez crea el `.env` de la raíz
@@ -145,6 +149,9 @@ mano. Detalle, códigos de salida y errores comunes: `docs/auditoria/COMANDOS.md
   `Unblock-File .\dev.ps1, .\scripts\*.ps1`.
 - CORS: `CORS_ORIGIN` (lista separada por comas, sin comodines; obligatoria con `NODE_ENV=production`) la genera
   `dev.ps1` en `backend/.env`; `CORS_EXTRA_ORIGINS` (opcional, `.env` raíz) agrega orígenes, p. ej. al usar `BIND_ADDRESS`.
+- `AUTH_COOKIE_SECURE` (opcional, `true`/`false`; inválida = el backend no arranca): atributo `Secure` de la cookie de
+  sesión. Sin definir: `Secure` en producción o con origen https; el compose local la fija en `false`. La vida del JWT
+  (`JWT_EXPIRES_IN_SECONDS`, 28800) es una constante de código, no una variable.
 - `BODY_SIZE_LIMIT` (opcional, `<número>[b|kb|mb]`, default 1mb, máx 10mb; inválido = el backend no arranca; en Docker queda en 1mb).
   `NODE_TLS_REJECT_UNAUTHORIZED=0` está prohibida: el backend no arranca y `-Init` la quita de `backend/.env`; ante
   TLS de antivirus/proxy usar `-ExportCa`. Todo request deja una línea de acceso `METHOD ruta STATUS Nms` (sin query ni datos).
@@ -158,7 +165,7 @@ mano. Detalle, códigos de salida y errores comunes: `docs/auditoria/COMANDOS.md
   Postgres siempre en 127.0.0.1). El modo desarrollo escucha solo en loopback: backend vía `LISTEN_HOST`
   (que `dev.ps1` genera en `backend/.env`; default 127.0.0.1, el compose lo fija en 0.0.0.0 dentro del contenedor)
   y `next dev -H`. En modo Docker `BIND_ADDRESS` debe ser IPv4 (IPv6: código 1).
-- Tests de `dev.ps1`: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dev-lib.tests.ps1` (1133 aserciones).
+- Tests de `dev.ps1`: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dev-lib.tests.ps1` (1151 aserciones).
 
 Manual, sin `dev.ps1`:
 
@@ -170,12 +177,12 @@ Backend (`cd backend`):
 - `npx tsc --noEmit` — type-check
 - `npx eslint "{src,apps,libs,test}/**/*.ts"` — lint sin modificar archivos
 - `npm run lint` — ATENCIÓN: aplica `--fix` y reescribe archivos
-- `npm test` — Jest (52 suites, 936 tests)
+- `npm test` — Jest (56 suites, 1020 tests)
 - `npm run build` — reescribe `dist/`
 
 Frontend (`cd frontend`):
 - `npm install` · `npm run dev` (http://localhost:3000; con `dev.ps1`, el puerto de `FRONTEND_PORT`)
-- `npx tsc --noEmit` · `npm run lint` · `npm test` (`node --test`, 129 tests)
+- `npx tsc --noEmit` · `npm run lint` · `npm test` (`node --test`, 148 tests)
 - `npm run build` — si falla la descarga de Google Fonts por TLS:
   `NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS=1 npm run build`
 - El build Docker (`apk`, `npm`, Prisma, Google Fonts) falla por TLS detrás de un antivirus/proxy que inspecciona
@@ -205,7 +212,12 @@ Seeds (archivos locales, no versionados): `.\dev.ps1 -Seed`; manual con `docker 
      `@UsesViewMode()` y sus handlers usan `requireViewScope(ctx)` (sin decorador: 403). El modo es una preferencia: si
      el pedido no corresponde a los vínculos del usuario, 403 sin degradar a otro modo; valor inválido: 400
      `invalid-mode`. Los datos financieros de la organización (dashboard en org, `settlements/calculate`) son solo ADMIN.
-   Pendiente (ver BACKLOG): cookie `HttpOnly`; el rate limit del login (012) tiene residuales (IP real tras proxy/Docker, almacén lleno).
+   - sesión (018): cookie `solidus_session` emitida por el backend (`HttpOnly`, `SameSite=Lax`, `Secure` según
+     `AUTH_COOKIE_SECURE`/entorno); el guard acepta Bearer (SSR, Swagger) o cookie. Las escrituras con cookie exigen
+     `x-requested-with: solidus` y un `Origin` de `CORS_ORIGIN` (CSRF, 403 `forbidden`); el login rechaza un `Origin`
+     ajeno. El login no devuelve el token en el cuerpo. Logout real (204, borra la cookie), pero el JWT sigue válido
+     hasta `exp` (8 h): revocación pendiente. Swagger: para escribir usar "Authorize" con el token (con la cookie da 403).
+   Pendiente (ver BACKLOG): revocación del JWT, front y API en hosts distintos; el rate limit del login (012) tiene residuales (IP real tras proxy/Docker, almacén lleno).
 5. Toda operación con 2 o más escrituras va en `prisma.$transaction(async (tx) => …)` (forma interactiva; la de arreglo
    `$transaction([...])` está prohibida). Dentro usar `tx`, nunca `this.prisma`; los servicios auxiliares reciben
    `db: Prisma.TransactionClient = this.prisma`. Lo vigila `src/transactions-invariants.spec.ts` (analizador

@@ -68,13 +68,14 @@ describe('buildCorsOptions', () => {
     expect(options.origin).toEqual([]);
   });
 
-  it('no usa credenciales ni comodines', () => {
+  it('usa credenciales con lista explícita y sin comodines', () => {
     const options = buildCorsOptions(
       cfg({ NODE_ENV: 'production', CORS_ORIGIN: 'http://localhost:3002' }),
     );
-    expect(options.credentials).toBe(false);
+    expect(options.credentials).toBe(true);
     expect(options.origin).toEqual(['http://localhost:3002']);
     expect(options.allowedHeaders).toContain('x-org-id');
+    expect(options.allowedHeaders).toContain('x-requested-with');
     expect(options.allowedHeaders).not.toContain('x-user-id');
     expect(options.maxAge).toBe(600);
   });
@@ -103,7 +104,7 @@ describe('CORS (integración)', () => {
     await app?.close();
   });
 
-  it('origen permitido recibe ACAO igual al origen y Vary: Origin; sin credenciales', async () => {
+  it('origen permitido recibe ACAO igual al origen y Vary: Origin; con credenciales', async () => {
     await start({
       NODE_ENV: 'production',
       CORS_ORIGIN: 'http://localhost:3002,http://127.0.0.1:3002',
@@ -115,7 +116,7 @@ describe('CORS (integración)', () => {
       'http://127.0.0.1:3002',
     );
     expect(res.headers['vary']).toMatch(/Origin/i);
-    expect(res.headers['access-control-allow-credentials']).toBeUndefined();
+    expect(res.headers['access-control-allow-credentials']).toBe('true');
     expect(res.headers['access-control-expose-headers']).toBe('Retry-After');
   });
 
@@ -132,7 +133,7 @@ describe('CORS (integración)', () => {
     }
   });
 
-  it('preflight permitido responde 204 con x-org-id y sin Allow-Credentials', async () => {
+  it('preflight permitido responde 204 con x-org-id, x-requested-with y Allow-Credentials', async () => {
     await start({
       NODE_ENV: 'production',
       CORS_ORIGIN: 'http://localhost:3002',
@@ -141,13 +142,19 @@ describe('CORS (integración)', () => {
       .options('/ping')
       .set('Origin', 'http://localhost:3002')
       .set('Access-Control-Request-Method', 'GET')
-      .set('Access-Control-Request-Headers', 'authorization,x-org-id');
+      .set(
+        'Access-Control-Request-Headers',
+        'authorization,x-org-id,x-requested-with',
+      );
     expect(res.status).toBe(204);
     expect(res.headers['access-control-allow-origin']).toBe(
       'http://localhost:3002',
     );
     expect(res.headers['access-control-allow-headers']).toMatch(/x-org-id/i);
-    expect(res.headers['access-control-allow-credentials']).toBeUndefined();
+    expect(res.headers['access-control-allow-headers']).toMatch(
+      /x-requested-with/i,
+    );
+    expect(res.headers['access-control-allow-credentials']).toBe('true');
     expect(res.headers['access-control-max-age']).toBe('600');
   });
 

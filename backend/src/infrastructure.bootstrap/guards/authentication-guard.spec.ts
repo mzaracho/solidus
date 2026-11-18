@@ -82,9 +82,14 @@ describe('AuthenticationGuard', () => {
       get: () => SECRET,
     });
     jwt = new JwtService(options);
-    guard = new AuthenticationGuard(new Reflector(), jwt, {
-      user: { findUnique },
-    } as any);
+    guard = new AuthenticationGuard(
+      new Reflector(),
+      jwt,
+      {
+        user: { findUnique },
+      } as any,
+      { get: () => undefined } as any,
+    );
   });
 
   const validClaims = () => {

@@ -5,7 +5,7 @@ import { ShieldAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ROUTES, SESSION_MESSAGES } from '@/lib/constants'
-import { clearSessionCookie } from '@/lib/session'
+import { logout } from '@/services/data'
 
 interface AccessDeniedProps {
     /** noAccess: sesión válida con organización, sin permiso. noOrg: sesión válida sin organizaciones. */
@@ -20,9 +20,10 @@ export function AccessDenied({ variant }: AccessDeniedProps) {
         headingRef.current?.focus()
     }, [])
 
-    const handleLogout = () => {
-        clearSessionCookie()
-        window.location.assign(ROUTES.LOGIN)
+    const handleLogout = async () => {
+        // El backend borra la cookie HttpOnly; replace evita que "Atras" vuelva a esta pagina.
+        await logout()
+        window.location.replace(ROUTES.LOGIN)
     }
 
     return (

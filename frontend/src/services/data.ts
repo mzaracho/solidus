@@ -2,12 +2,12 @@ import { format } from 'date-fns'
 import { API_ERROR_CODE, ROUTES, SESSION_MESSAGES } from '@/lib/constants'
 import { toApiError } from '@/lib/api-errors'
 import {
+    CSRF_HEADER_NAME,
+    CSRF_HEADER_VALUE,
     SESSION_EXPIRED_REASON,
     buildLoginPath,
-    clearSessionCookie,
-    getCookieMaxAgeSeconds,
     mapLoginFailure,
-    readSessionToken,
+    resolveBrowserApiBase,
 } from '@/lib/session'
 import {
     buildActivityTypeBody,
@@ -25,9 +25,11 @@ import {
 
 // En el servidor (SSR) el default es localhost (npm run dev fuera de Docker). En Docker lo define
 // docker-compose.yml con INTERNAL_API_URL=http://backend:8080/api.
+// En el navegador la sesion es una cookie HttpOnly host-only que emite el backend: el host de la API tiene que ser
+// el de la pagina (resolveBrowserApiBase alinea localhost y 127.0.0.1).
 const API_BASE_URL = typeof window === 'undefined'
     ? (process.env.INTERNAL_API_URL || 'http://localhost:8080/api')
-    : (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080/api');
+    : resolveBrowserApiBase(process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080/api', window.location.hostname);
 
 // --- MOCK DATA CONSTANTS (Kept for fallback or types if needed, but not used) ---
 
@@ -85,16 +87,18 @@ let navigating = false;
 const isBrowser = () => typeof window !== 'undefined';
 
 function getHeaders(orgSlug: string, token?: string | null) {
-    const resolved = token ?? (isBrowser() ? readSessionToken() : null);
-    // En el servidor no hay cookie accesible desde aqui: sin token no se llama a la API.
-    if (!resolved && !isBrowser()) throw new ApiUnauthorizedError();
+    // En el servidor el token viene de la cookie (session.server.ts) y se manda como Bearer. En el navegador no hay
+    // token accesible: la cookie HttpOnly viaja sola (credentials: 'include'). Sin token en el servidor no se llama a la API.
+    if (!token && !isBrowser()) throw new ApiUnauthorizedError();
 
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         // Organizacion de la URL: el backend verifica que el usuario pertenezca a ella.
         'x-org-id': orgSlug,
+        // CSRF: header propio que un formulario de otro sitio no puede enviar sin preflight CORS.
+        [CSRF_HEADER_NAME]: CSRF_HEADER_VALUE,
     };
-    if (resolved) headers['Authorization'] = `Bearer ${resolved}`;
+    if (token) headers['Authorization'] = `Bearer ${token}`;
     return headers;
 }
 
@@ -118,11 +122,12 @@ async function readErrorCode(res: Response): Promise<string | null> {
 
 /** Unico punto de clasificacion de respuestas: 401 y 403 se resuelven aqui; el resto lo maneja cada funcion. */
 async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
-    const res = await fetch(url, init);
+    // Navegador: la cookie de sesion HttpOnly viaja con credentials: 'include' (CORS con origen explicito).
+    const res = await fetch(url, isBrowser() ? { ...init, credentials: 'include' } : init);
 
     if (res.status === 401) {
         if (!isBrowser()) throw new ApiUnauthorizedError();
-        clearSessionCookie();
+        // JS no puede borrar una cookie HttpOnly: la borra el middleware al llegar a /login?reason=session_expired.
         return navigateOnce(buildLoginPath({
             reason: SESSION_EXPIRED_REASON,
             from: window.location.pathname + window.location.search,
@@ -149,7 +154,8 @@ function rethrowServerAuthError(error: unknown) {
 }
 
 export type LoginResult =
-    | { status: 'ok'; token: string; maxAge: number }
+    /** La sesion queda en la cookie HttpOnly que emite el backend: el token no llega al JavaScript. */
+    | { status: 'ok' }
     | { status: 'invalid' | 'bad-request' | 'server' | 'network' | 'unexpected' | 'other' }
     /** 429: demasiados intentos; `retryAfter` en segundos si el servidor lo informó (y el navegador pudo leerlo). */
     | { status: 'rate-limited'; retryAfter: number | null };
@@ -163,7 +169,9 @@ export async function login(user: string, password: string): Promise<LoginResult
     try {
         res = await fetch(`${API_BASE_URL}/v1/auth/login`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            // credentials: 'include' es obligatorio para que el navegador guarde el Set-Cookie de una respuesta cross-origin.
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json', [CSRF_HEADER_NAME]: CSRF_HEADER_VALUE },
             body: JSON.stringify({ user, password }),
         });
     } catch {
@@ -172,15 +180,23 @@ export async function login(user: string, password: string): Promise<LoginResult
     const failure = mapLoginFailure(res.status, res.headers.get('Retry-After'));
     if (failure) return failure;
 
+    // El cuerpo no se lee: el backend ya dejo la cookie y no devuelve el token.
+    return { status: 'ok' };
+}
+
+/**
+ * POST /v1/auth/logout: el backend borra la cookie de sesion (Max-Age=0). No usa apiFetch: un 401 aca no significa
+ * "sesion vencida". Nunca lanza: el resultado se ignora (con el backend caido la cookie vence sola).
+ */
+export async function logout(): Promise<void> {
     try {
-        const data = await res.json();
-        const token = typeof data?.token === 'string' ? data.token : '';
-        if (!token) return { status: 'unexpected' };
-        const maxAge = getCookieMaxAgeSeconds(token, Date.now());
-        if (maxAge === null) return { status: 'unexpected' };
-        return { status: 'ok', token, maxAge };
+        await fetch(`${API_BASE_URL}/v1/auth/logout`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { [CSRF_HEADER_NAME]: CSRF_HEADER_VALUE },
+        });
     } catch {
-        return { status: 'unexpected' };
+        // Sin red o backend caido: se sigue al login igual.
     }
 }
 

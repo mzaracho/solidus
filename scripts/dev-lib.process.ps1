@@ -333,6 +333,36 @@ function Test-SmokeCredentialsDefined {
     return $true
 }
 
+function Test-SmokeLoginResponse {
+    # Funcion pura (no imprime valores ni lee la red): evalua la respuesta del login (018). Devuelve 'OK' o el motivo del fallo.
+    # OK requiere a la vez: 2xx, una cookie solidus_session con HttpOnly y SameSite=Lax, y un cuerpo sin la propiedad token.
+    param(
+        [int]$StatusCode,
+        [string[]]$SetCookieHeaders = @(),
+        [string]$BodyJson = ''
+    )
+    if ($StatusCode -eq 0) { return 'Login sin respuesta: backend caido.' }
+    if ($StatusCode -eq 401) { return 'Login rechazado (HTTP 401). Revisa SMOKE_USER/SMOKE_PASSWORD en .env o crea el usuario con .\dev.ps1 -CreateSmokeUser.' }
+    if ($StatusCode -lt 200 -or $StatusCode -ge 300) { return "Login fallo (HTTP $StatusCode)." }
+    # Un cliente puede unir varios Set-Cookie con comas: se separan sin cortar el "Expires=Wed, 18 Nov ...".
+    $cookies = @()
+    foreach ($header in @($SetCookieHeaders)) {
+        if ([string]::IsNullOrEmpty($header)) { continue }
+        $cookies += @([regex]::Split($header, ',\s*(?=[A-Za-z0-9_-]+=)'))
+    }
+    $session = @($cookies | Where-Object { $_ -match '^\s*solidus_session=' })
+    if ($session.Count -eq 0) { return 'El login no emitio la cookie de sesion solidus_session.' }
+    $cookie = [string]$session[0]
+    if ($cookie -notmatch '(?i);\s*HttpOnly(\s*;|\s*$)') { return 'La cookie de sesion no es HttpOnly.' }
+    if ($cookie -notmatch '(?i);\s*SameSite=Lax(\s*;|\s*$)') { return 'La cookie de sesion no tiene SameSite=Lax.' }
+    if (-not [string]::IsNullOrWhiteSpace($BodyJson)) {
+        $body = $null
+        try { $body = ConvertFrom-Json -InputObject $BodyJson } catch { $body = $null }
+        if ($null -ne $body -and $null -ne $body.PSObject.Properties['token']) { return 'El login devolvio el token en el cuerpo.' }
+    }
+    return 'OK'
+}
+
 function Get-SmokeFrontendPort {
     # Modo Docker: 3001 fijo. Modo desarrollo: el FRONTEND_PORT configurado.
     param([int]$DevPort, [bool]$DockerFrontendRunning)
@@ -372,37 +402,32 @@ function Invoke-SmokeTest {
         $smokeUser = Get-DictValue $d 'SMOKE_USER'
         $smokePassword = Get-DictValue $d 'SMOKE_PASSWORD'
         $json = $null; $bytes = $null; $resp = $null
+        $status = 0; $setCookies = @(); $bodyText = ''
         try {
             $json = ConvertTo-Json -InputObject @{ user = $smokeUser; password = $smokePassword } -Compress
             $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-            $resp = Invoke-RestMethod -Method Post -Uri ($apiBase + '/api/v1/auth/login') -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 15
-            $tokenProp = $null
-            if ($null -ne $resp) { $tokenProp = $resp.PSObject.Properties['token'] }
-            if ($null -ne $tokenProp -and -not [string]::IsNullOrEmpty([string]$tokenProp.Value)) {
-                Write-DevOk 'Login OK'
-                $loginResult = 'OK'
-            }
-            else {
-                Write-Host 'FALLO El login respondio sin token.' -ForegroundColor Red
-                $loginResult = 'FALLO'; $failed = $true
-            }
+            # Sin Origin (no es un navegador): el login lo acepta. La sesion es la cookie HttpOnly, no un token en el cuerpo (018).
+            $resp = Invoke-WebRequest -UseBasicParsing -Method Post -Uri ($apiBase + '/api/v1/auth/login') -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 15
+            $status = [int]$resp.StatusCode
+            if ($resp.Headers.ContainsKey('Set-Cookie')) { $setCookies = @($resp.Headers['Set-Cookie']) }
+            $bodyText = [string]$resp.Content
         }
         catch {
-            $status = 0
-            try { $status = [int]$_.Exception.Response.StatusCode } catch { }
-            if ($status -eq 401) {
-                Write-Host 'FALLO Login rechazado (HTTP 401). Revisa SMOKE_USER/SMOKE_PASSWORD en .env o crea el usuario con .\dev.ps1 -CreateSmokeUser.' -ForegroundColor Red
-            }
-            elseif ($status -gt 0) {
-                Write-Host "FALLO Login fallo (HTTP $status)." -ForegroundColor Red
-            }
-            else {
-                Write-Host 'FALLO Login sin respuesta: backend caido.' -ForegroundColor Red
-            }
-            $loginResult = 'FALLO'; $failed = $true
+            try { $status = [int]$_.Exception.Response.StatusCode } catch { $status = 0 }
         }
         finally {
             $json = $null; $bytes = $null; $resp = $null; $smokePassword = $null; $smokeUser = $null
+        }
+        # Solo se evalua el estado, los atributos de Set-Cookie y la presencia de token: nunca se imprime un valor.
+        $verdict = Test-SmokeLoginResponse -StatusCode $status -SetCookieHeaders $setCookies -BodyJson $bodyText
+        $setCookies = $null; $bodyText = $null
+        if ($verdict -eq 'OK') {
+            Write-DevOk 'Login OK (cookie de sesion HttpOnly, sin token en el cuerpo)'
+            $loginResult = 'OK'
+        }
+        else {
+            Write-Host ('FALLO {0}' -f $verdict) -ForegroundColor Red
+            $loginResult = 'FALLO'; $failed = $true
         }
     }
     $summary = 'Backend {0} - Frontend {1} - Login {2}'

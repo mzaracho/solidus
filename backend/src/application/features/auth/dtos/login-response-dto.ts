@@ -8,5 +8,4 @@ export class LoginResponseDto {
   orgRole: string | null;
   cuit?: string;
   professionalId?: string | null;
-  token?: string;
 }

@@ -11,7 +11,7 @@ import { errorMessageOf } from '@/lib/api-errors'
 import { getPayers, getFeeRules, createPayer, createFeeRule, deletePayer, getProfessionalMemberships, isHandledApiError } from '@/services/data'
 import { PAYER_TEXTS, ORG_ROLE } from '@/lib/constants'
 import { buildPayerFeeRuleSplits, professionalPercentOf } from '@/lib/activity-edit'
-import { readSessionIdentity } from '@/lib/session'
+import { useSessionIdentity } from '@/components/providers/SessionProvider'
 import { useStore } from '@/store/useStore'
 import {
     Dialog,
@@ -61,12 +61,12 @@ export function PayerRulesManager() {
     const [payerToDelete, setPayerToDelete] = useState<CustomPayer | null>(null)
     const [deletingId, setDeletingId] = useState<string | null>(null)
     const { orgRole } = useStore()
+    const { professionalId: myProfessionalId } = useSessionIdentity()
 
     // "Eliminar pagador" lo ven ADMIN y el dueno del pagador, como autoriza el backend (loadPayerForWrite)
     const canDeletePayer = (payer: CustomPayer) => {
         if (orgRole === ORG_ROLE.ADMIN) return true
-        const mine = readSessionIdentity().professionalId
-        return !!mine && payer.professionalId === mine
+        return !!myProfessionalId && payer.professionalId === myProfessionalId
     }
 
     const fetchData = async () => {

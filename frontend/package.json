@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --no-warnings --test src/lib/session.test.mts src/services/api-routes.test.mts src/services/login-rate-limit.test.mts src/lib/activity-permissions.test.mts src/lib/view-mode.test.mts src/components/domain/workload/data-schema.test.mts src/lib/api-errors.test.mts src/lib/request-bodies.test.mts src/lib/payment-date.test.mts src/lib/activity-edit.test.mts src/lib/bulk-payment.test.mts"
+    "test": "node --no-warnings --test src/lib/session.test.mts src/lib/no-client-token.test.mts src/services/api-routes.test.mts src/services/login-rate-limit.test.mts src/lib/activity-permissions.test.mts src/lib/view-mode.test.mts src/components/domain/workload/data-schema.test.mts src/lib/api-errors.test.mts src/lib/request-bodies.test.mts src/lib/payment-date.test.mts src/lib/activity-edit.test.mts src/lib/bulk-payment.test.mts"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.11",
@@ -29,7 +29,6 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
-    "jwt-decode": "^4.0.0",
     "lucide-react": "^0.562.0",
     "next": "16.4.3",
     "react": "19.2.3",

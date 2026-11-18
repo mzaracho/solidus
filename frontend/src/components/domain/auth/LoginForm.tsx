@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { SESSION_MESSAGES } from '@/lib/constants'
-import { AUTH_COOKIE_NAME, clearSessionCookie, retryAfterMinutes, sanitizeFrom } from '@/lib/session'
+import { retryAfterMinutes, sanitizeFrom } from '@/lib/session'
 import { login, type LoginResult } from '@/services/data'
 
 type LoginFailure = Exclude<LoginResult['status'], 'ok'>
@@ -47,11 +47,6 @@ export function LoginForm({ showSessionNotice, from }: LoginFormProps) {
     const passwordRef = useRef<HTMLInputElement>(null)
     const buttonRef = useRef<HTMLButtonElement>(null)
 
-    // Con el aviso de sesión vencida la cookie vieja se borra acá (el servidor no puede), para evitar bucles.
-    useEffect(() => {
-        if (showSessionNotice) clearSessionCookie()
-    }, [showSessionNotice])
-
     // Foco tras un fallo (UX 1.2): 401 a Contraseña; 400 al primer campo vacío; el resto (incluido el 429) al botón.
     useEffect(() => {
         if (!failure) return
@@ -81,9 +76,7 @@ export function LoginForm({ showSessionNotice, from }: LoginFormProps) {
         const result = await login(user, password)
 
         if (result.status === 'ok') {
-            const secure = window.location.protocol === 'https:' ? '; Secure' : ''
-            document.cookie = `${AUTH_COOKIE_NAME}=${result.token}; path=/; max-age=${result.maxAge}; SameSite=Lax${secure}`
-            // Navegación completa para que el middleware vea la cookie. El botón queda en "Ingresando…".
+            // La cookie HttpOnly ya la dejó el backend. Navegación completa para que el middleware la vea. El botón queda en "Ingresando…".
             window.location.assign(sanitizeFrom(from) ?? '/')
             return
         }

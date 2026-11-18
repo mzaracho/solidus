@@ -20,6 +20,8 @@ export type OrgRoleValue = 'ADMIN' | 'MEMBER';
 export interface AuthContext {
   userId: string;
   claims: JwtPayload;
+  /** Credencial con la que se autenticó el request (solo informativo: nadie autoriza con esto). */
+  source: 'bearer' | 'cookie';
 }
 
 /** Resultado de la validación de pertenencia (OrgAccessGuard). */
