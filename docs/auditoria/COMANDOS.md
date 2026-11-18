@@ -270,7 +270,7 @@ sistema de archivos no admite ACL, avisa y sigue. Se puede comprobar con `icacls
 | `/docs` da 404 y no hay logs debug en desarrollo | `backend/.env` tiene un `NODE_ENV` heredado distinto de `development`/`test` (por ejemplo `local`): el backend se comporta como producción (falla cerrado). Para desarrollo, `NODE_ENV=development` (no se corrige solo; revisar el archivo generado) |
 | `docker compose build` con el override de la CA falla por permisos de Bake (desde Git Bash) | Correrlo desde PowerShell con `COMPOSE_BAKE=false` |
 | `-Docker` falla con puerto ocupado (código 2) | El modo Docker usa el 3001 fijo; liberar el proceso que lo ocupa |
-| `-Smoke` da "Frontend FALLO" tras el primer `.\dev.ps1` (aviso `SecurityFatalError` de Next 16.4.3) | Next 16.4.3 puede abortar el primer arranque con un aviso de vulnerabilidad (BACKLOG 103). Correr `.\dev.ps1 -Stop` y luego `.\dev.ps1` de nuevo: un segundo `.\dev.ps1` sin `-Stop` no relanza (considera el entorno ya levantado por la ventana, no por el puerto; BACKLOG 113). **Nunca ejecutar `next upgrade` desde ese aviso** sin el feature correspondiente (021) |
+| `-Smoke` da "Frontend FALLO" tras el primer `.\dev.ps1` | Ya no aplica el aviso `SecurityFatalError` de Next 16.4.3 (BACKLOG 103, resuelto en el 021): con Next 16.4.6 y `experimental.agentUpgrade: false` el arranque en frío funciona a la primera. Si el frontend igual no responde, correr `.\dev.ps1 -Stop` y relanzar: un segundo `.\dev.ps1` sin `-Stop` no relanza (considera el entorno ya levantado por la ventana, no por el puerto; BACKLOG 113). **Nunca ejecutar `next upgrade`** ni comandos que pidan avisos de herramientas fuera de un feature |
 | Login responde 403 `forbidden` desde el navegador | El `Origin` de la pestaña no está en `CORS_ORIGIN` (otro puerto u host): abrir el front en un origen permitido o sumarlo a `CORS_EXTRA_ORIGINS` |
 | Código 7 en `-Smoke` | No hay nada levantado o el login falló (crear el usuario con `-CreateSmokeUser` o revisar `SMOKE_USER`/`SMOKE_PASSWORD`) |
 
@@ -413,7 +413,11 @@ Get-Content seed_test_users.sql | docker compose exec -T db psql -U <usuario> -d
 
 ## 3. Backend (`backend/`)
 ```bash
-npm install
+npm install --legacy-peer-deps   # también para npm ci (peer de @nestjs/swagger; 021)
+# Auditoría: npm audit  /  npm audit --omit=dev  (con antivirus que inspecciona TLS: npm audit --use-system-ca,
+#   o NODE_OPTIONS=--use-system-ca). Nunca npm audit fix --force; si se regenera el lock, `npm audit fix
+#   --legacy-peer-deps` necesita dos pasadas. Los overrides (express, body-parser, multer) los vigila
+#   test/dependency-floors.spec.ts. `npm ls` puede mostrar `invalid` en subdependencias de express: es benigno.
 # backend/.env necesario (no versionado; lo genera .\dev.ps1, no editar). Variables usadas:
 #   NODE_ENV, APP_NAME (obligatorias: el Logger lanza error si faltan)
 #   PORT=8080
@@ -437,7 +441,7 @@ npm run start:prod    # node dist/src/api/main.js
 ### Calidad
 ```bash
 npx tsc --noEmit                              # type-check (hoy: OK)
-npx eslint "{src,apps,libs,test}/**/*.ts"     # lint SIN modificar archivos (hoy: 768 errores)
+npx eslint "{src,apps,libs,test}/**/*.ts"     # lint SIN modificar archivos (hoy: 755 errores / 153 avisos)
 npm run lint                                  # OJO: incluye --fix, reescribe archivos
 npm run format                                # prettier --write sobre src/ y test/
 ```
@@ -497,8 +501,11 @@ npm run dev           # next dev -> http://localhost:3000 (dev.ps1 usa `-p $FRON
 npm run build         # next build
 npm run start         # next start (requiere build previo)
 npx tsc --noEmit      # type-check (hoy: OK)
-npm run lint          # eslint (sin --fix; hoy: 133 errores)
+npm run lint          # eslint (sin --fix; hoy: 140 errores / 42 avisos)
+npm audit             # hoy: 0 vulnerabilidades (Next 16.4.6); con TLS inspeccionado: npm audit --use-system-ca
 ```
+Los avisos de actualización de Next quedan apagados (`experimental.agentUpgrade: false` en `next.config.ts`, 021): se
+siguen con `npm audit`. No ejecutar `next upgrade`.
 Si `next build` falla con `Failed to fetch 'Inter' from Google Fonts` (error TLS en esta máquina):
 ```powershell
 $env:NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS = "1"; npm run build

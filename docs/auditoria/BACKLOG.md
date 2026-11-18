@@ -24,8 +24,8 @@ Origen: `docs/features/005-seguridad-backend/06-seguridad.md`. Ver los residuale
 | # | Ítem | Riesgo | Esfuerzo |
 |---|---|---|---|
 | 34 | **RESUELTO (feature 006).** Usuarios con `User.deletedAt`: mismo 401 genérico en el login y chequeo en `OrgAccessService`/guard | M-1 | S |
-| 35 | Upgrade a Nest 11 o superior (15 vulnerabilidades de `npm audit` en el backend, entre ellas `proxy-addr`) | H-2 | L |
-| 36 | `npm audit fix` en el frontend (`source-map-js`) | H-3 | S |
+| 35 | Upgrade a Nest 11 o superior. **Tras el 021** `proxy-addr` y los altos/críticos de producción están resueltos; quedan 4 moderados de producción (`@nestjs/core` SSE, `@nestjs/common`/`file-type`, `@nestjs/platform-express`) y los altos de desarrollo de la cadena `@nestjs/cli` 10 (`glob`, `picomatch`, `tmp`): se cierran con Nest 11/12 (022) | H-2 | L |
+| 36 | **RESUELTO (feature 021):** `npm audit fix` en el frontend (`source-map-js` 1.2.2; `npm audit` = 0) | H-3 | S |
 | 37 | **RESUELTO (feature 010).** Loguear requests fallidos (método, ruta, status, duración), incluidos los 401 y 403 de los guards, sin datos sensibles | B-3 | S |
 | 38 | **RESUELTO (feature 010).** Bajar el límite del body (hoy 50 MB) a 1–2 MB (queda `BODY_SIZE_LIMIT`, default 1mb, máx 10mb) | B-4 | S |
 | 39 | **RESUELTO (feature 011).** `ProductionController` y `ReportingController` (no registrados, tomaban `userId` de la query) borrados junto con sus queries; también se eliminó `PUT /api/profile` (`ProfileController`, mock no registrado; el front usa `PUT /pro/profile`). Guardia estructural: el test `(a2)` de `test/org-isolation.spec.ts` falla si un `@Controller` de `src/` no está registrado en un módulo | B-1 | S |
@@ -94,7 +94,7 @@ Origen: `docs/features/013-errores-sin-details/` (00-estado, 05-revision, 06-seg
 |---|---|---|---|
 | 59 | Errores únicos (P2002) y de clave foránea (P2003) de Prisma como 409 en lugar de 500 genérico; requiere analizar la enumeración por campos únicos | decisión 5 (013) | M |
 | 60 | El 403 de "atención ya cobrada" pasarlo a 409 (hoy el cliente recibe el 403 genérico) | decisión 2 (013) | S |
-| 61 | Quitar `axios` y `@nestjs/axios` sin uso de `package.json` (puede ir al 020, audit-fix) | decisión 7 (013) | S |
+| 61 | **RESUELTO (feature 021):** quitados `axios` y `@nestjs/axios` de `package.json` (un test de pisos comprueba que no vuelvan) | decisión 7 (013) | S |
 | 62 | El CUIT de organización en `payer-commands.ts` enumera entre organizaciones (el mensaje distingue si existe en otra) | B-2 (seguridad 013) | S |
 | 63 | Log de `error.message` de errores no Prisma en producción (hoy recortado a 200 y saneado): evaluar registrar solo la clase | B-3 (seguridad 013) | S |
 | 64 | Test del orden `app.init()` / `app.use(finalErrorHandler)` / `listen` contra el bootstrap real (hoy se prueba con la misma secuencia en un spec) | M-4 (revisión 013) | S |
@@ -126,7 +126,7 @@ Origen: `docs/features/013-errores-sin-details/` (00-estado, 05-revision, 06-seg
 | 22 | Framework de tests en frontend (Vitest + Testing Library) empezando por `WorkItemForm` y `services/data.ts` | M |
 | 23 | Lint en verde: `npm run format` en backend (resuelve ~540 errores Prettier), luego tipar `any` críticos; separar script `lint` (sin fix) de `lint:fix` | M |
 | 24 | CI (GitHub Actions) en cada repo: install, type-check, lint, test, build | S |
-| 25 | `npm audit fix` no-breaking en ambos repos; plan de migración Nest 10 → 11/12 y Prisma 5 → 6/7 | M / L |
+| 25 | `npm audit fix` no-breaking en ambos repos **(RESUELTO en el 021, sin `--force`)**; sigue pendiente el plan de migración Nest 10 → 11/12 y Prisma 5 → 6/7 (022) | M / L |
 
 ## P3 — Mantenibilidad y producto
 
@@ -210,7 +210,7 @@ Origen: `docs/features/017-dinero-y-motor-honorarios/` (04-implementacion, 05-re
 | 100 | Cobro múltiple en `AtencionesTable` y `AdmisionesTable`: ante un fallo parcial no refresca ni informa cuáles se cobraron (heredado; `DeudoresTable` ya lo resuelve con `bulk-payment.ts`) | MENOR-2 (revisión 017) | BAJA / S | 031 y siguientes |
 | 101 | El diálogo de cobro múltiple puede ofrecer una atención que otro usuario cobró mientras tanto | MENOR-10 (revisión 017) | BAJA / S | 031 y siguientes |
 | 102 | `test/nest-build-compat.spec.ts` no tiene control positivo (no prueba que la regla detecte un re-export con alias) | MENOR-1 (vuelta 2, 017) | BAJA / S | 031 y siguientes |
-| 103 | Next 16.4.3 a 16.4.6 (GHSA-mfr8-8qww-v76h, GHSA-vc7v-qv4w-wrv8; no explotables hoy) y `source-map-js` alto transitivo. El 018 sumó: el aviso `SecurityFatalError` de Next 16.4.3 corta el primer `next build`/`next dev` (repetir funciona) y `npm audit` del backend marca `proxy-addr` (crítico), `body-parser`, `multer`, `path-to-regexp`, `express` y `qs` | INFO (seguridad 017, vuelta 2) | MEDIA / S | 021 |
+| 103 | **RESUELTO (feature 021): Next 16.4.6, `experimental.agentUpgrade: false`; arranque en frío sin `SecurityFatalError`.** Next 16.4.3 a 16.4.6 (GHSA-mfr8-8qww-v76h, GHSA-vc7v-qv4w-wrv8; no explotables hoy) y `source-map-js` alto transitivo. El 018 sumó: el aviso `SecurityFatalError` de Next 16.4.3 corta el primer `next build`/`next dev` (repetir funciona) y `npm audit` del backend marca `proxy-addr` (crítico), `body-parser`, `multer`, `path-to-regexp`, `express` y `qs` | INFO (seguridad 017, vuelta 2) | MEDIA / S | 021 |
 | 104 | `docker compose build backend` se corta con "additional privileges requested: --allow=fs.read" (buildx bake) en la máquina del usuario. El 018 tampoco pudo verificarse en Docker (`AUTH_COOKIE_SECURE=false` del compose, SSR con Bearer desde el contenedor): repetir esa prueba al resolverlo | tester 017 y 018 | BAJA / S | 020 |
 | 105 | El resumen de `dev.ps1` mostró una vez "Swagger: deshabilitado (NODE_ENV=production)" con el entorno ya levantado | tester 017 | BAJA / S | 024 |
 
@@ -230,3 +230,20 @@ Las pruebas de Docker del 018 se suman al #104 y el aviso de Next 16.4.3 al #103
 | 112 | `frontend/AGENTS.md` lo regenera `next dev`: decidir si se versiona o se ignora | m-5 revisión 018 | BAJA / S | 024 |
 | 113 | `dev.ps1` considera el frontend "ya levantado" por la ventana y no por el puerto, y `Wait-Http` acepta un frontend que muere enseguida: un segundo `.\dev.ps1` no lo relanza | tester 018, hallazgo 2 | BAJA / S | 024 |
 | 114 | Las páginas SSR con nombre y email en el payload RSC no deben cachearse en caches compartidos (proxy/CDN) | INFO seguridad 018 | BAJA / S | despliegue (031 y siguientes) |
+
+## Candidatos surgidos del feature 021
+
+Origen: `docs/features/021-audit-fix/`. **RESUELTO en el 021:** #36, #61, #103 y `npm audit fix` sin cambios incompatibles de #25.
+Los moderados de producción restantes (`@nestjs/core` SSE, `@nestjs/common`/`file-type`, `@nestjs/platform-express`) y los
+altos de desarrollo de la cadena `@nestjs/cli` 10 ya están cubiertos por #25/#35 (022): no se duplican.
+
+| # | Ítem | Origen | Prioridad / esfuerzo | Feature sugerido |
+|---|---|---|---|---|
+| 115 | Retirar los `overrides` (`express`, `body-parser`, `multer`) de `backend/package.json` al pasar a Nest 11, y el test `dependency-floors.spec.ts` que los vigila (o ajustarlo) | diseño 021 | MEDIA / S | 022 |
+| 116 | Lint del backend: +29 `no-unnecessary-type-assertion` por `typescript-eslint` 8.73 en archivos sin tocar (nueva base 755 errores / 153 avisos; frontend 140 / 42) | pregunta 1 (implementación 021) | BAJA / S | 025 |
+| 117 | `npm audit` periódico y en el CI: con `agentUpgrade: false` el aviso de actualización de Next ya no avisa, la detección depende de `npm audit` | decisión 1 (PO 021) | MEDIA / S | 026 |
+| 118 | La imagen Docker de runtime incluye dependencias de desarrollo: `npm prune --omit=dev` conservando `prisma` | seguridad 021 | BAJA / S | 020 |
+| 119 | Telemetría `@scarf/scarf` en `postinstall`: desactivar con `SCARF_ANALYTICS=false` en `dev.ps1` y en el Dockerfile | decisión 3 (PO 021) | BAJA / S | 020 o 024 |
+| 120 | `npm ls` del backend muestra `invalid` en subdependencias de `express` (qs, http-errors, on-finished, type-is, mime-types) por los `overrides`; benigno (`npm ci` y los tests pasan). Informativo, desaparece con #115 | implementación 021 | INFO | 022 |
+| 121 | `body-parser-gzip.spec.ts` usa esperas fijas (150 ms) que pueden ser frágiles en CI; además no reproduce el fallo con body-parser 1.20.4 en Node 24 (guarda de comportamiento; la protección real son los pisos) | implementación / testing 021 | BAJA / S | 027 |
+| 122 | `npm audit fix --legacy-peer-deps` del backend necesita dos pasadas para converger (informativo, al regenerar el lock) | implementación 021 | INFO | — |

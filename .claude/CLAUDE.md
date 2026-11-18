@@ -34,7 +34,7 @@ salvo que el usuario lo pida.
 ## Stack
 - Backend: TypeScript 5.9, NestJS 10, Prisma 5.22, PostgreSQL 16, JWT (`@nestjs/jwt`), bcrypt,
   class-validator, Swagger, Jest 29 (specs de guards, login, logs, CORS, rutas, etc. en `src/` y `test/`), ESLint 9 + Prettier.
-- Frontend: Next.js 16.1 (Turbopack), React 19.2, TypeScript strict, Tailwind 4, shadcn/ui (Radix),
+- Frontend: Next.js 16.4.6 (Turbopack), React 19.2, TypeScript strict, Tailwind 4, shadcn/ui (Radix),
   Zustand, Recharts, date-fns, sonner. Tests con `node --test` (`npm test`), sin framework.
 - Infra: Docker Compose (db `postgres:16.11-alpine` en 5433, backend 8080, frontend Docker 3001→3000). En desarrollo el frontend
   corre en el host en `FRONTEND_PORT` (3000 por defecto).
@@ -89,6 +89,14 @@ salvo que el usuario lo pida.
   para crear. Detalle: `docs/features/007-aislamiento-organizaciones/00-estado.md`.
 - `ConfigController` ya no existe: el front usa `org/*` (escrituras ADMIN) y `pro/*`.
 - Prettier: comillas simples, trailing commas (`.prettierrc`).
+
+## Dependencias (021)
+- `npm audit fix` nunca con `--force`. Sin majors de Nest/Prisma/React/Next/TS fuera de su feature (Nest: 022).
+- Backend: `overrides` con piso (`express`, `body-parser`, `multer`) vigilados por `test/dependency-floors.spec.ts`; se retiran
+  al pasar a Nest 11 (022). `npm ci`/`npm install` del backend requieren `--legacy-peer-deps`.
+- Frontend: `experimental.agentUpgrade: false` en `next.config.ts` (el aviso de actualización de Next ya no corta el
+  arranque; los avisos se ven con `npm audit`). Nunca ejecutar `next upgrade` ni comandos que pidan los avisos de
+  herramientas fuera de un feature.
 
 ## Convenciones — frontend
 - Rutas bajo `src/app/(dashboard)/[orgSlug]/...`; secciones `org/*` (organización) y `pro/*` (profesional).
@@ -172,12 +180,12 @@ Manual, sin `dev.ps1`:
 Backend (`cd backend`):
 - `docker compose up -d db` (desde la raíz) — Postgres local en 5433; requiere `backend/.env` ya generado
   (`.\dev.ps1 -Init`)
-- `npm install` · `npx prisma migrate deploy` · `npx prisma generate`
+- `npm install --legacy-peer-deps` (también `npm ci`) · `npx prisma migrate deploy` · `npx prisma generate`
 - `npm run start:dev` — API en http://localhost:8080/api, Swagger en http://localhost:8080/docs
 - `npx tsc --noEmit` — type-check
 - `npx eslint "{src,apps,libs,test}/**/*.ts"` — lint sin modificar archivos
 - `npm run lint` — ATENCIÓN: aplica `--fix` y reescribe archivos
-- `npm test` — Jest (56 suites, 1020 tests)
+- `npm test` — Jest (58 suites, 1036 tests)
 - `npm run build` — reescribe `dist/`
 
 Frontend (`cd frontend`):
