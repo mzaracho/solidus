@@ -317,6 +317,8 @@ describe('staff', () => {
           userId,
           organizationId: orgA,
           workItems: [],
+          participants: [],
+          splits: [],
         }),
       },
       $transaction: jest.fn().mockImplementation(async (fn: any) => fn(tx)),
@@ -475,6 +477,8 @@ describe('pagadores', () => {
         update: jest.fn().mockResolvedValue({}),
         delete: jest.fn().mockResolvedValue({}),
       },
+      feeRule: { count: jest.fn().mockResolvedValue(0) },
+      workItem: { count: jest.fn().mockResolvedValue(0) },
     };
     const eU = await errorOf(() =>
       new UpdatePayerCommandHandler(prisma).execute(

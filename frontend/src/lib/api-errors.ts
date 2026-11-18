@@ -32,6 +32,14 @@ const genericForStatus = (status: number): string => {
   }
 }
 
+/** Texto de respaldo de los errores de negocio conocidos (mismo texto que el backend). */
+const FALLBACK_BY_CODE: Record<string, string> = {
+  [API_ERROR_CODE.ACTIVITY_ALREADY_COLLECTED]: API_ERROR_MESSAGES.activityAlreadyCollected,
+  [API_ERROR_CODE.PAYER_HAS_FEE_RULES]: API_ERROR_MESSAGES.payerHasFeeRules,
+  [API_ERROR_CODE.PAYER_HAS_ACTIVITIES]: API_ERROR_MESSAGES.payerHasActivities,
+  [API_ERROR_CODE.PAYMENT_DATE_REQUIRED]: API_ERROR_MESSAGES.paymentDateRequired,
+}
+
 const codeOf = (body: unknown): string | null => {
   if (typeof body !== 'object' || body === null) return null
   const code = (body as { code?: unknown }).code
@@ -58,6 +66,8 @@ export function messageFromErrorBody(status: number, body: unknown): string {
   if (codeOf(body) === API_ERROR_CODE.VALIDATION_FAILED) return API_ERROR_MESSAGES.validation
   const message = firstErrorMessage(body)
   if (message) return message.slice(0, MAX_MESSAGE_LENGTH)
+  const code = codeOf(body)
+  if (code !== null && code in FALLBACK_BY_CODE) return FALLBACK_BY_CODE[code]
   return genericForStatus(status)
 }
 

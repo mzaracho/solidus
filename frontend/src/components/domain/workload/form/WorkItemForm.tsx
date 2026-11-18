@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { User, Coins, Clock, Layers } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { User, Layers, AlertTriangle, Lock } from 'lucide-react'
 import { toast } from 'sonner'
-import { errorMessageOf } from '@/lib/api-errors'
+import { ApiRequestError, errorMessageOf } from '@/lib/api-errors'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -34,7 +35,14 @@ import {
     MIN_PATIENT_SEARCH_LENGTH,
     ACTIVITY_TYPE_PREFIX,
     PAYER_PARTICULAR,
+    ACTIVITY_EDIT_TEXTS,
+    API_ERROR_CODE,
+    PAYMENT_DATE_TEXTS,
 } from '@/lib/constants'
+import { isActivityCollected } from '@/lib/activity-permissions'
+import { buildEditActivityBody, financialChanges, isSavedPaid, validateAmountInput } from '@/lib/activity-edit'
+import { isValidPaymentDate, todayLocalISO, initialEditPaymentDate, editPaymentDateForBody } from '@/lib/payment-date'
+import { PaymentDateField } from '@/components/domain/payment/PaymentDateField'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -81,12 +89,14 @@ export type WorkItemFormData = {
 type Props = {
     isOpen: boolean
     onClose: () => void
-    onSubmit: (data: any[]) => void
+    onSubmit: (data: any[]) => void | Promise<void>
     rulesOrg: any
     rulesPro: any
     orgSlug?: string
     initialData?: any
     mode?: 'ORGANIZATION' | 'PROFESSIONAL'
+    /** Se llama ante un 409 por cobro simultaneo (la atencion se cobro mientras se editaba), para refrescar datos. */
+    onConflict?: () => void
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -116,7 +126,8 @@ const DEFAULT_FORM: WorkItemFormData = {
     payer: '',
     status: FORM_STATUS.PENDING,
     paymentMethod: PAYMENT_METHOD.CASH,
-    paymentDate: new Date().toISOString().split('T')[0],
+    // Fecha de pago precargada con HOY en zona horaria local (017, criterio 16)
+    paymentDate: todayLocalISO(),
     presetId: '',
     packDates: [],
     attendance: ATTENDANCE.PRESENT,
@@ -125,7 +136,7 @@ const DEFAULT_FORM: WorkItemFormData = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, orgSlug, initialData, mode: forcedMode }: Props) {
+export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, orgSlug, initialData, mode: forcedMode, onConflict }: Props) {
     const { viewMode: storeMode } = useStore()
     const viewMode = forcedMode || storeMode
 
@@ -139,14 +150,27 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
         }
     }, [orgSlug, isOpen])
 
+    const [isPrivate, setIsPrivate] = useState(true)
+    // Edicion (017): el precio del preset solo se recalcula si el usuario cambia algo que lo determina
+    const [pricingTouched, setPricingTouched] = useState(false)
+    const [saving, setSaving] = useState(false)
+    const [submitError, setSubmitError] = useState<string | null>(null)
+    const [conflictLocked, setConflictLocked] = useState(false)
+    const errorRef = useRef<HTMLDivElement>(null)
+
+    // "Cobrada" la fija el backend (isCollected); un 409 en esta sesion tambien bloquea monto y pagador.
+    const collected = !!initialData && (isActivityCollected(initialData) || conflictLocked)
+
     // Populate form when editing or resetting
     useEffect(() => {
         if (isOpen && initialData) {
             const d = new Date(initialData.date)
             const dateStr = !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
             let status: FormStatus = FORM_STATUS.PENDING
-            if (initialData.paymentStatus === PAYMENT_STATUS.PAID || initialData.paid === true) status = FORM_STATUS.PAID
-            else if (initialData.paymentStatus === PAYMENT_STATUS.PARTIAL) status = FORM_STATUS.PARTIAL
+            // GET /activity trae el estado en `status`; el detalle y las filas mapeadas, en `paymentStatus`
+            const savedStatus = initialData.paymentStatus ?? initialData.status
+            if (savedStatus === PAYMENT_STATUS.PAID || initialData.paid === true) status = FORM_STATUS.PAID
+            else if (savedStatus === PAYMENT_STATUS.PARTIAL) status = FORM_STATUS.PARTIAL
             let type: string = WORK_ITEM_TYPE.SESSION
             if (initialData.serviceType === WORK_ITEM_TYPE.AT) type = WORK_ITEM_TYPE.AT
             if (initialData.serviceType === WORK_ITEM_TYPE.ADMISSION || initialData.serviceType === 'Admisión') type = WORK_ITEM_TYPE.ADMISSION
@@ -161,32 +185,42 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
                 patientId: initialData.patientId,
                 type,
                 professional: initialData.professionalId || '',
+                // En edicion los participantes no se tocan (el PUT no los acepta y el recalculo los conserva)
                 participantsByRole: {},
                 hours: initialData.quantity || 1,
-                gross: initialData.grossAmount || initialData.fees || 0,
-                payer: initialData.payerId || '',
+                gross: initialData.grossAmount ?? initialData.fees ?? 0,
+                // El pagador sale del dato guardado: 'Particular' => casilla marcada; otro => su id; sin dato => vacio
+                payer: initialData.payerName === PAYER_PARTICULAR ? PAYER_PARTICULAR : (initialData.payerId || ''),
                 status,
                 paymentMethod: initialData.paymentMethod || PAYMENT_METHOD.CASH,
-                paymentDate: initialData.paymentDate && initialData.paymentDate !== 'null'
-                    ? new Date(initialData.paymentDate).toISOString().split('T')[0] : '',
+                // La fecha guardada (el dia tal cual, sin zona horaria). Si ya esta PAGADA sin fecha (antigua) arranca
+                // VACIA: no se inventa una fecha (017, decision del PO). Si no esta pagada, hoy para cuando se pase a pagada.
+                paymentDate: initialEditPaymentDate(isSavedPaid(initialData), initialData.paymentDate),
                 presetId: initialData.presetId || '',
                 attendance: initialData.attendance || ATTENDANCE.PRESENT,
                 activityTypeId: initialData.activityTypeId,
             })
             setPatientSearch(initialData.patientName || '')
+            setIsPrivate(initialData.payerName === PAYER_PARTICULAR)
+            setPricingTouched(false)
+            setConflictLocked(false)
+            setSubmitError(null)
         } else if (isOpen && !initialData) {
-            setFormData(DEFAULT_FORM)
+            setFormData({ ...DEFAULT_FORM, paymentDate: todayLocalISO() })
             setPatientSearch('')
             setActiveActivityType(null)
+            setIsPrivate(true)
+            setSubmitError(null)
         }
+        // Depende del id de la atencion y no de la identidad del objeto: un refresco de datos (por ejemplo tras un
+        // 409) no reinicia lo que el usuario ya escribio.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, initialData])
+    }, [isOpen, initialData?.id])
 
     const [formData, setFormData] = useState<WorkItemFormData>(DEFAULT_FORM)
     const [patientSearch, setPatientSearch] = useState('')
     const [patientSuggestions, setPatientSuggestions] = useState<any[]>([])
     const [showSuggestions, setShowSuggestions] = useState(false)
-    const [isPrivate, setIsPrivate] = useState(true)
 
     const allPayers: any[] = Array.isArray(rulesPro?.payers) ? rulesPro.payers : []
     const orgPayers: { id: string; name: string; isOrg: boolean; professionalId?: string }[] =
@@ -252,6 +286,8 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
 
     useEffect(() => {
         if (!enforceOrgRules) return
+        // En edicion no se pisa el monto guardado al abrir: solo si el usuario cambio actividad, tipo, medio de pago u horas
+        if (initialData && !pricingTouched) return
         const presetId = formData.presetId
         const calculationMethod = formData.status === FORM_STATUS.PAID ? formData.paymentMethod : PAYMENT_METHOD.CASH
         const isAT = formData.type === WORK_ITEM_TYPE.AT
@@ -276,7 +312,7 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
             }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [formData.presetId, formData.type, formData.status, formData.paymentMethod, formData.hours, enforceOrgRules, rulesOrg, activeActivityType])
+    }, [formData.presetId, formData.type, formData.status, formData.paymentMethod, formData.hours, enforceOrgRules, rulesOrg, activeActivityType, pricingTouched])
 
     // ── Pack dates generation ─────────────────────────────────────────────────
     useEffect(() => {
@@ -345,6 +381,7 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
     }
 
     const handlePresetSelect = (val: string) => {
+        setPricingTouched(true)
         // Check if it's an activity type (prefixed with __type__)
         if (val.startsWith(ACTIVITY_TYPE_PREFIX)) {
             const typeCode = val.replace(ACTIVITY_TYPE_PREFIX, '')
@@ -369,16 +406,47 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
     const roles: RoleConfig[] = activeActivityType?.roles ?? []
     const hasRoles = roles.length > 0
 
+    // ── Edicion (017): lo que cambio de monto y pagador respecto de lo guardado ───
+    const originalGross = initialData ? Number(initialData.grossAmount ?? initialData.fees ?? 0) : 0
+    const originalPayerIsParticular = initialData?.payerName === PAYER_PARTICULAR
+    const editedPayerId: string | null | undefined = (() => {
+        if (viewMode !== 'PROFESSIONAL') return undefined // en modo organizacion no hay selector de pagador
+        if (isPrivate) return originalPayerIsParticular ? undefined : null // casilla "Particular"
+        return formData.payer === '' || formData.payer === PAYER_PARTICULAR ? undefined : formData.payer
+    })()
+    const editChanges = initialData
+        ? financialChanges(
+            { grossAmount: originalGross, payerId: initialData.payerId ?? null },
+            { grossAmount: formData.gross, payerId: editedPayerId },
+        )
+        : {}
+    const hasFinancialChange = !!initialData && !collected && Object.keys(editChanges).length > 0
+
     // ── Submit ────────────────────────────────────────────────────────────────
     const handleSubmit = async () => {
+        if (saving) return
         if (!formData.patient) { toast.error("El campo 'Paciente' es obligatorio."); return }
         if (!formData.date) { toast.error("La fecha es obligatoria."); return }
         // El input de monto deja '' mientras se edita (hasta el onBlur): sin esto se crearía la atención sin monto.
         if (typeof formData.gross !== 'number' || !Number.isFinite(formData.gross)) {
             toast.error("El monto no es válido."); return
         }
+        if (!collected) {
+            const amountCheck = validateAmountInput(String(formData.gross))
+            if (!amountCheck.ok) { toast.error(amountCheck.message); return }
+        }
+        // Fecha de pago obligatoria para dejar la atencion en Pagado (017, criterio 16)
+        // Edicion de una atencion que ya estaba pagada: la fecha vacia es valida (no viaja)
+        const savedPaid = isSavedPaid(initialData)
+        const paymentDateBody = initialData
+            ? editPaymentDateForBody(savedPaid, formData.status === FORM_STATUS.PAID, formData.paymentDate)
+            : { ok: formData.status !== FORM_STATUS.PAID || isValidPaymentDate(formData.paymentDate), paymentDate: formData.paymentDate }
+        if (!paymentDateBody.ok) {
+            toast.error(PAYMENT_DATE_TEXTS.invalid); return
+        }
 
-        if (enforceOrgRules) {
+        // En edicion los participantes no se editan (el PUT no los acepta y el recalculo conserva los que hay)
+        if (enforceOrgRules && !initialData) {
             if (hasRoles) {
                 // Validate required roles
                 const missingRequired = roles.filter(r => r.isRequired && !formData.participantsByRole[r.roleLabel])
@@ -398,7 +466,7 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
             }
         }
 
-        if (viewMode === 'PROFESSIONAL' && !isPrivate && !formData.payer) {
+        if (!initialData && viewMode === 'PROFESSIONAL' && !isPrivate && !formData.payer) {
             toast.error("Debes seleccionar una Obra Social o marcar 'Particular'."); return
         }
 
@@ -441,7 +509,24 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
             serviceType: formData.type,
         }
 
+        setSubmitError(null)
+        setSaving(true)
         try {
+            if (initialData) {
+                // Edicion (017): solo viajan los campos de la atencion y, de monto y pagador, lo que cambio.
+                await onSubmit([buildEditActivityBody({
+                    date: baseDate,
+                    attendance: formData.attendance,
+                    saved: initialData,
+                    formPaymentStatus: baseItem.paymentStatus,
+                    formPaymentMethod: formData.paymentMethod,
+                    paymentDate: paymentDateBody.ok ? paymentDateBody.paymentDate : undefined,
+                    changes: collected ? {} : editChanges,
+                })])
+                toast.success(Object.keys(editChanges).length > 0 && !collected ? ACTIVITY_EDIT_TEXTS.updatedRecalc : ACTIVITY_EDIT_TEXTS.updated)
+                onClose()
+                return
+            }
             if (formData.type === WORK_ITEM_TYPE.SESSION && formData.quantity > 1) {
                 const items = formData.packDates.map(dateStr => {
                     const d = safeDate(dateStr)
@@ -456,9 +541,22 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
         } catch (error: any) {
             // Un 403 ya se avisó con el toast de acceso (UX 3.4): no se duplica con otro mensaje.
             if (isHandledApiError(error)) return
-            const msg = errorMessageOf(error, 'Error al guardar la actividad')
-            toast.error(msg)
+            if (error instanceof ApiRequestError && error.code === API_ERROR_CODE.ACTIVITY_ALREADY_COLLECTED) {
+                // Se cobro mientras se editaba: se bloquean monto y pagador (vuelven a lo guardado), se conservan los
+                // demas campos y se refrescan los datos.
+                setConflictLocked(true)
+                setFormData(prev => ({ ...prev, gross: initialData?.grossAmount ?? initialData?.fees ?? prev.gross }))
+                setSubmitError(error.message)
+                onConflict?.()
+            } else if (initialData) {
+                setSubmitError(errorMessageOf(error, ACTIVITY_EDIT_TEXTS.saveError))
+            } else {
+                toast.error(errorMessageOf(error, 'Error al guardar la actividad'))
+            }
+            setTimeout(() => errorRef.current?.focus(), 0)
             // Don't close the modal on error
+        } finally {
+            setSaving(false)
         }
     }
 
@@ -486,8 +584,13 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
     // ─────────────────────────────────────────────────────────────────────────
 
     return (
-        <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
+        <Dialog open={isOpen} onOpenChange={(open) => { if (!saving && !open) onClose() }}>
+            <DialogContent
+                className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto"
+                aria-busy={saving}
+                onEscapeKeyDown={(e) => { if (saving) e.preventDefault() }}
+                onInteractOutside={(e) => { if (saving) e.preventDefault() }}
+            >
                 <DialogHeader>
                     <DialogTitle>
                         {initialData
@@ -497,6 +600,13 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
                 </DialogHeader>
 
                 <div className="grid gap-4 py-4">
+
+                    {submitError && (
+                        <Alert variant="destructive" className="bg-red-50 text-red-900 border-red-200" ref={errorRef} tabIndex={-1}>
+                            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                            <AlertDescription className="text-red-900">{submitError}</AlertDescription>
+                        </Alert>
+                    )}
 
                     {/* Patient Search */}
                     <div className="space-y-2 relative">
@@ -571,8 +681,8 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
                         )}
                     </div>
 
-                    {/* ── Org-mode: Dynamic Participants or Legacy Selectors ── */}
-                    {enforceOrgRules && (
+                    {/* ── Org-mode: Dynamic Participants or Legacy Selectors (no se editan: oculto en edicion) ── */}
+                    {enforceOrgRules && !initialData && (
                         <div className="p-4 bg-muted/20 rounded-lg space-y-4">
                             {hasRoles ? (
                                 /* ── Multi-role participant selectors ─────────── */
@@ -762,7 +872,22 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
                     )}
 
                     {/* Pro Mode Payer Selector */}
-                    {viewMode === 'PROFESSIONAL' && (
+                    {viewMode === 'PROFESSIONAL' && collected && (
+                        <div className="space-y-2 border-b pb-4">
+                            <label htmlFor="edit-payer-readonly" className="text-xs font-semibold text-muted-foreground uppercase">
+                                {ACTIVITY_EDIT_TEXTS.payerLabel}
+                            </label>
+                            <Input
+                                id="edit-payer-readonly"
+                                value={initialData?.payerName ?? ACTIVITY_EDIT_TEXTS.noPayer}
+                                readOnly
+                                aria-readonly="true"
+                                aria-describedby="edit-collected-lock"
+                                className="bg-muted text-foreground"
+                            />
+                        </div>
+                    )}
+                    {viewMode === 'PROFESSIONAL' && !collected && (
                         <div className="space-y-4 border-b pb-4">
                             <div className="flex items-center gap-2">
                                 <Checkbox id="private-patient" checked={isPrivate}
@@ -779,10 +904,23 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
                             </div>
                             {!isPrivate && (
                                 <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
-                                    <label className="text-xs font-semibold text-muted-foreground uppercase">Obra Social / Pagador <span className="text-destructive">*</span></label>
+                                    <label htmlFor="payer-select" className="text-xs font-semibold text-muted-foreground uppercase">Obra Social / Pagador <span className="text-destructive">*</span></label>
                                     <Select value={formData.payer} onValueChange={val => setFormData({ ...formData, payer: val })}>
-                                        <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                                        <SelectTrigger id="payer-select" aria-required="true">
+                                            <SelectValue placeholder={initialData ? ACTIVITY_EDIT_TEXTS.selectPayer : 'Seleccionar...'}>
+                                                {formData.payer
+                                                    ? (payersList.find((p) => p.id === formData.payer)?.name ?? initialData?.payerName ?? undefined)
+                                                    : undefined}
+                                            </SelectValue>
+                                        </SelectTrigger>
                                         <SelectContent>
+                                            {/* El pagador guardado puede no estar en la lista: se ve por su nombre, deshabilitado */}
+                                            {initialData?.payerId && initialData.payerName !== PAYER_PARTICULAR
+                                                && !payersList.some((p) => p.id === initialData.payerId) && (
+                                                <SelectItem value={initialData.payerId} disabled>
+                                                    {initialData.payerName ?? ACTIVITY_EDIT_TEXTS.noPayer}
+                                                </SelectItem>
+                                            )}
                                             {payersList.map((p: any) => (
                                                 <SelectItem key={p.id} value={p.id}>
                                                     <span className="flex items-center gap-2">
@@ -805,7 +943,18 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <label className="text-xs font-semibold text-muted-foreground uppercase">Estado <span className="text-destructive">*</span></label>
-                                <Select value={formData.status} onValueChange={(val: any) => setFormData({ ...formData, status: val })}>
+                                <Select value={formData.status} onValueChange={(val: any) => {
+                                    setPricingTouched(true)
+                                    // Al pasar a Pagado la fecha de pago viene precargada con hoy si no hay una valida
+                                    setFormData({
+                                        ...formData,
+                                        status: val,
+                                        // (no si ya estaba pagada sin fecha: ahi el campo sigue vacio y opcional)
+                                        paymentDate: val === FORM_STATUS.PAID && !isValidPaymentDate(formData.paymentDate)
+                                            && !(initialData && isSavedPaid(initialData) && !formData.paymentDate)
+                                            ? todayLocalISO() : formData.paymentDate,
+                                    })
+                                }}>
                                     <SelectTrigger><SelectValue /></SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value={FORM_STATUS.PENDING}>Pendiente</SelectItem>
@@ -815,13 +964,17 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
                                 </Select>
                             </div>
                             <div className="space-y-2">
-                                <label className="text-xs font-semibold text-muted-foreground uppercase">
+                                <label htmlFor="work-item-amount" className="text-xs font-semibold text-muted-foreground uppercase">
                                     {formData.quantity > 1 ? 'Monto Unitario' : 'Monto Total'}
                                 </label>
                                 <div className="relative">
                                     <span className="absolute left-3 top-2.5 text-muted-foreground">$</span>
-                                    <Input type="number" className="pl-7 font-semibold"
-                                        disabled={enforceOrgRules && (!!formData.presetId || !!activeActivityType?.baseValue)}
+                                    <Input id="work-item-amount" type="number" className="pl-7 font-semibold"
+                                        // En edicion el monto es editable mientras no este cobrada (decision del usuario): se ignora el bloqueo por preset
+                                        disabled={!initialData && enforceOrgRules && (!!formData.presetId || !!activeActivityType?.baseValue)}
+                                        readOnly={collected}
+                                        aria-readonly={collected ? true : undefined}
+                                        aria-describedby={collected ? 'edit-collected-lock' : undefined}
                                         value={formData.gross === 0 && Number.isNaN(formData.gross) ? '' : formData.gross}
                                         onFocus={e => { if (e.target.value === '0') setFormData({ ...formData, gross: '' as any }) }}
                                         onBlur={e => { if (e.target.value === '') setFormData({ ...formData, gross: 0 }) }}
@@ -837,7 +990,7 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
                             <div className="grid grid-cols-2 gap-4 bg-emerald-50 p-3 rounded-lg border border-emerald-100 animate-in slide-in-from-top-2">
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-bold text-emerald-700 uppercase">Medio Pago</label>
-                                    <Select value={formData.paymentMethod} onValueChange={val => setFormData({ ...formData, paymentMethod: val })}>
+                                    <Select value={formData.paymentMethod} onValueChange={val => { setPricingTouched(true); setFormData({ ...formData, paymentMethod: val }) }}>
                                         <SelectTrigger className="h-8 text-xs border-emerald-200"><SelectValue /></SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value={PAYMENT_METHOD.CASH}>Efectivo</SelectItem>
@@ -847,21 +1000,42 @@ export function WorkItemForm({ isOpen, onClose, onSubmit, rulesOrg, rulesPro, or
                                     </Select>
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[10px] font-bold text-emerald-700 uppercase">Fecha Cobro</label>
-                                    <DatePicker
-                                        date={safeDate(formData.paymentDate)}
-                                        setDate={(d) => { if (d) setFormData({ ...formData, paymentDate: d.toISOString().split('T')[0] }) }}
-                                        className="h-8 text-xs border-emerald-200"
+                                    <PaymentDateField
+                                        id="work-item-payment-date"
+                                        value={formData.paymentDate}
+                                        optional={!!initialData && isSavedPaid(initialData)}
+                                        onChange={(value) => setFormData({ ...formData, paymentDate: value })}
                                     />
                                 </div>
                             </div>
                         )}
+                        {collected && (
+                            <p id="edit-collected-lock" className="flex items-center gap-2 text-sm text-foreground">
+                                <Lock className="h-4 w-4 shrink-0" aria-hidden="true" />
+                                {ACTIVITY_EDIT_TEXTS.collectedLock}
+                            </p>
+                        )}
+                    </div>
+
+                    {/* Aviso de recalculo (edicion): region viva siempre presente; visible solo si cambio monto o pagador */}
+                    <div role="status" aria-live="polite">
+                        {hasFinancialChange && (
+                            <Alert className="bg-amber-50 text-amber-900 border-amber-200">
+                                <AlertTriangle className="h-4 w-4 text-amber-600" aria-hidden="true" />
+                                <AlertTitle className="text-amber-800">{ACTIVITY_EDIT_TEXTS.recalcTitle}</AlertTitle>
+                                <AlertDescription className="text-sm text-amber-900">{ACTIVITY_EDIT_TEXTS.recalcBody}</AlertDescription>
+                            </Alert>
+                        )}
                     </div>
                 </div>
 
-                <DialogFooter>
-                    <Button variant="outline" onClick={onClose}>Cancelar</Button>
-                    <Button onClick={handleSubmit}>Guardar</Button>
+                <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:gap-0">
+                    <Button variant="outline" onClick={onClose} disabled={saving}>Cancelar</Button>
+                    <Button onClick={handleSubmit} disabled={saving} aria-busy={saving}>
+                        {saving
+                            ? ACTIVITY_EDIT_TEXTS.saving
+                            : hasFinancialChange ? ACTIVITY_EDIT_TEXTS.saveRecalc : ACTIVITY_EDIT_TEXTS.save}
+                    </Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

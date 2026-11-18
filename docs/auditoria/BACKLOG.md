@@ -43,12 +43,12 @@ Origen: `docs/features/007-aislamiento-organizaciones/` (06-seguridad, 05-revisi
 
 | # | Ítem | Riesgo | Esfuerzo |
 |---|---|---|---|
-| 40 | Motor de honorarios: unificar la forma de `splits` entre la UI (`{role, percentage, beneficiaryType}`) y `FeeResolutionService` (`{beneficiary, type, value}`) y acotar los montos `FIXED` al bruto de la atención (`computeAmounts`: limitar a `grossAmount - totalAllocated`, mínimo 0) | MEDIA-2 (007) | M |
+| 40 | **RESUELTO (feature 017):** forma única `{ beneficiary, type, value, roleLabel? }` y montos acotados al bruto. Motor de honorarios: unificar la forma de `splits` entre la UI (`{role, percentage, beneficiaryType}`) y `FeeResolutionService` (`{beneficiary, type, value}`) y acotar los montos `FIXED` al bruto de la atención (`computeAmounts`: limitar a `grossAmount - totalAllocated`, mínimo 0) | MEDIA-2 (007) | M |
 | 41 | **RESUELTO (feature 009).** `settlements/calculate`: usar `@CurrentOrgId()` en lugar de `organizationId` de la query y sumar el controlador al invariante de `security-invariants.spec.ts`; evaluar `@RequireOrgRole('ADMIN')` en `settlements/calculate` y acceso por rol en el dashboard en modo organización | MENOR-1 e INFO-1 (007) | S |
 | 42 | **RESUELTO (feature 013).** Mensajes de error 404 en español y sin JSON crudo en los toasts del front (`updateWorkItem`/`deleteWorkItem` en `data.ts`, `AtencionesTable`, `AdmisionesTable`, `WorkItemForm`) | m-4 (re-revisión 1) | S |
 | 43 | **RESUELTO (feature 014): todos los comandos de update tienen DTO validado (enums, email, fechas, topes); restos en #67 y #70.** DTOs con class-validator en los comandos de update (`UpdatePatientCommand`, `UpdateActivityCommand`, `UpdateStaffCommand`: enums de pago, email, fechas) para evitar 500 de Prisma. Relacionado con #12 | S-2 / BAJA-2 resto | M |
 | 44 | **RESUELTO (feature 008).** Ocultar "Eliminar" al MEMBER también en `workload/columns.tsx`: `canDeleteActivity` (`src/lib/activity-permissions.ts`) compartida con `AdmisionesTable`; ítem deshabilitado con tooltip. El bug de la tabla de work-items vacía ("No results", O-3 del 005) también quedó resuelto por el 008 | 007 §8.1 | S |
-| 45 | Editar atención: `PUT /activity/:id` ignora monto (`grossAmount`) y pagador (solo persiste `date`, `paymentStatus`, `paymentMethod`, `paymentDate`, `attendance`), pero `workload/RetroactiveModal` y otros formularios permiten cambiarlos y la UI informa éxito. Además el pagador faltante se muestra "—" y se reenvía como valor (M2). Definir si se pueden editar (recalcular splits) o deshabilitarlos en la UI. Relacionado con #17 y #40 (motor de honorarios) | 008 (M1, M2) | M |
+| 45 | **RESUELTO (feature 017):** monto y pagador editables si la atención no está cobrada (recálculo de participantes y splits; 409 si está cobrada). Editar atención: `PUT /activity/:id` ignora monto (`grossAmount`) y pagador (solo persiste `date`, `paymentStatus`, `paymentMethod`, `paymentDate`, `attendance`), pero `workload/RetroactiveModal` y otros formularios permiten cambiarlos y la UI informa éxito. Además el pagador faltante se muestra "—" y se reenvía como valor (M2). Definir si se pueden editar (recalcular splits) o deshabilitarlos en la UI. Relacionado con #17 y #40 (motor de honorarios) | 008 (M1, M2) | M |
 | 46 | UX menor en `workload/columns.tsx`: el tooltip (`title`) del ítem "Eliminar" deshabilitado no se ve (`data-[disabled]:pointer-events-none` del `DropdownMenuItem`; envolver en `<span title>` o `Tooltip`) y "Eliminar" aparece habilitado hasta hidratar el rol (`orgRole` null; el backend responde 403; tratar `null` como no habilitado). Mismo patrón en `pro/atenciones/columns.tsx` y `AdmisionesTable` | 008 (M3, M4) | S |
 
 ## Candidatos surgidos del feature 009
@@ -113,7 +113,7 @@ Origen: `docs/features/013-errores-sin-details/` (00-estado, 05-revision, 06-seg
 | 14 | **RESUELTO (Swagger en el 005; `NODE_TLS_REJECT_UNAUTHORIZED` y body limit en el 010).** Swagger solo fuera de producción (hecho en el 005, en `/docs`); quitar `NODE_TLS_REJECT_UNAUTHORIZED=0`; bajar body limit a ~1 MB | S |
 | 15 | Eliminar `/test-suite` del build de producción | S |
 | 16 | **RESUELTO (features 007 y 015):** `createActivity`, la fusión de pacientes y el borrado de staff van en `$transaction` interactiva (el 007 las introdujo y el 015 agregó la guardia estática `transactions-invariants.spec.ts`, tests de atomicidad y el cierre de dos carreras). Transacciones Prisma en `createActivity`, `MergePatientCommand` y borrado de staff; revisar que borrar staff no afecte membresías de otras orgs | M |
-| 17 | Dinero con `Prisma.Decimal` de punta a punta en splits, KPIs y liquidaciones | M |
+| 17 | **RESUELTO (feature 017):** helper `money.ts` sobre `Prisma.Decimal` y guardia `money-invariants.spec.ts`. Dinero con `Prisma.Decimal` de punta a punta en splits, KPIs y liquidaciones | M |
 | 18 | ~~Arreglar estructura del repo raíz (`.gitmodules`, gitlinks, remoto)~~ **RESUELTO (features 001/002):** hay un único repo (remoto `github.com/mzaracho/solidus`, rama `main`) con `backend/` y `frontend/` como carpetas; sin gitlinks. Pendiente fuera de este ítem: confirmar el remoto antes del push (ver `docs/features/002-sin-credenciales-en-repo/06-seguridad.md`, M-1) | S |
 | 19 | Docker: secretos por `.env`/secrets, Postgres no publicado o ligado a `127.0.0.1`, usuario no-root, `NEXT_PUBLIC_API_BASE_URL` parametrizable | S |
 
@@ -164,8 +164,8 @@ Origen: `docs/features/015-transacciones/` (03-diseno-tecnico, 04-implementacion
 | 72 | Deadlock en fusiones cruzadas de pacientes (A→B y B→A a la vez): hoy responde 500; reintentar o responder 409 | diseño/seguridad (015) | S |
 | 73 | Restricciones únicas faltantes (pagador por defecto, fee rule por pagador y categoría, CUIT del profesional) y `onDelete: Restrict` en `WorkItem.activityType` y `WorkItem.patient` | hallazgos del arquitecto (015) | M |
 | 74 | Ventana residual: durante la fusión de pacientes aún puede crearse una atención para el paciente origen | seguridad (015) | S |
-| 75 | Borrar un pagador con fee rules → reglas globales: decisión provisional 409; se resuelve en el feature 017 | 015 | S |
-| 76 | Borrado físico de un staff que es participante de atenciones (500) o beneficiario de splits: se resuelve en el feature 017 | 015 | S |
+| 75 | **RESUELTO (feature 017):** 409 `payer-has-fee-rules` y `payer-has-activities`, FK `Restrict`. Borrar un pagador con fee rules → reglas globales: decisión provisional 409; se resuelve en el feature 017 | 015 | S |
+| 76 | **RESUELTO (feature 017):** baja lógica si hay participaciones o splits. Borrado físico de un staff que es participante de atenciones (500) o beneficiario de splits: se resuelve en el feature 017 | 015 | S |
 | 77 | Dockerfile del backend: `migrate deploy; start:prod` con `;` (arranca aunque falle la migración); usar `&&` (al feature 020) | 015 | S |
 
 ## Candidatos surgidos del feature 016
@@ -187,3 +187,29 @@ agrupan en el feature 024-dev-ps1-node-env, por tocar el mismo script. Todos de 
 | 85 | Carrera de arranque: `.\dev.ps1 -Smoke` justo después de `.\dev.ps1` falló una vez en el frontend (exit 7; con ~20 s de espera dio OK): darle al smoke un reintento corto | tester 016, anomalía A | S |
 | 86 | Ramas de `-BaselineMigrations` no ensayadas en base real: migración en estado fallido (P3018; ensayada solo en copia con el procedimiento manual) y salida 12 (solo tests de funciones puras) | tester 016, sección 8 | S |
 | 87 | Integrar `.\dev.ps1 -CheckMigrations` al CI cuando exista (la spec del 016 pidió documentarlo; ver #24) | revisión 016, sugerencia | S |
+
+## Candidatos surgidos del feature 017
+
+Origen: `docs/features/017-dinero-y-motor-honorarios/` (04-implementacion, 05-revision, 06-seguridad, 07-testing). **RESUELTO en el 017:**
+#17, #40, #45, #75 y #76. Los mensajes 400 de validación en inglés (heredado) ya están registrados como #66.
+
+| # | Ítem | Origen | Prioridad / esfuerzo | Feature sugerido |
+|---|---|---|---|---|
+| 88 | Reglas con `professionalCategory: 'all'` que el motor no aplica: el deslizador de `PayerRulesManager` no tiene efecto (el 017 no tocó la coincidencia; un test la fija) | decisión 1 del PO (017) | MEDIA / M | 031 y siguientes |
+| 89 | Los pagadores creados desde `PayerRulesManager` crean una regla en el alta y, por el 409 de #75, no se pueden borrar desde la UI (no hay forma de quitar reglas). Se resuelve junto con #88 (misma pantalla) | pregunta 1 del desarrollador (017) | MEDIA / S | 031 y siguientes |
+| 90 | Discrepancia entre el honorario del participante y el split del profesional (ej. regla 33/67: split 521.11 vs participante 505.55): los participantes usan la config por rol y los splits usan la regla (comportamiento heredado) | revisión 017 | BAJA / M | 031 y siguientes |
+| 91 | 42 atenciones `PAID` sin `paymentDate` en la base local: se completan a mano desde la edición (informativo, sin cambio de código) | decisión del usuario (017) | INFO / S | sin feature |
+| 92 | Cuando se persistan las liquidaciones, sumar `settlementId`/`lockedAt` a la condición "no cobrada" de la edición (`NOT_COLLECTED_WHERE`) | diseño 03 (017) | BAJA / S | 031 y siguientes |
+| 93 | `PacientesTable`: carga de datos rota (`getWorkItems` devuelve `{ items, total }` y se hace `items.map` sobre el objeto, campos inexistentes `patient`/`gross`/`paid`, `professionalSplit` fijo en 0.70). Arreglar y luego conectar el cobro (la acción "Registrar Cobro" quedó oculta). Relacionado con #67 | pregunta 4 del desarrollador (017) | MEDIA / M | 031 y siguientes |
+| 94 | Pagador "Particular" duplicado por una carrera (no hay unicidad por organización): se resuelve con #73 | MENOR-1 (seguridad 017) | BAJA / S | 031 y siguientes (con #73) |
+| 95 | Descobrar (PAID a UNPAID) y luego editar el monto elude el bloqueo de edición: definir si revertir un cobro requiere permiso | MENOR-2 (seguridad 017) | MEDIA / S | 029 |
+| 96 | Al pasar PAID a UNPAID se conserva la fecha vieja y al volver a PAID sin fecha por API se reutiliza: poner `paymentDate` en null al descobrar o exigir fecha en el pedido | MENOR-1 (seguridad 017, vuelta 1) | BAJA / S | 029 |
+| 97 | `eventRole` queda fijo en `TITULAR` al recalcular participantes en la edición | diseño 03 / MENOR-8 (revisión 017) | BAJA / S | 031 y siguientes |
+| 98 | La guardia `money-invariants` no ve `.toNumber()`, el `+` unario ni caminos de dinero fuera de sus 8 archivos (`MONEY_FILES`) | MENOR-4 (revisión 017) | BAJA / S | 031 y siguientes |
+| 99 | Avisos `prettier/prettier` en las líneas agregadas de archivos viejos sin formatear (2 a 10 por archivo) | MENOR-3 (revisión 017) | BAJA / S | 025 |
+| 100 | Cobro múltiple en `AtencionesTable` y `AdmisionesTable`: ante un fallo parcial no refresca ni informa cuáles se cobraron (heredado; `DeudoresTable` ya lo resuelve con `bulk-payment.ts`) | MENOR-2 (revisión 017) | BAJA / S | 031 y siguientes |
+| 101 | El diálogo de cobro múltiple puede ofrecer una atención que otro usuario cobró mientras tanto | MENOR-10 (revisión 017) | BAJA / S | 031 y siguientes |
+| 102 | `test/nest-build-compat.spec.ts` no tiene control positivo (no prueba que la regla detecte un re-export con alias) | MENOR-1 (vuelta 2, 017) | BAJA / S | 031 y siguientes |
+| 103 | Next 16.4.3 a 16.4.6 (GHSA-mfr8-8qww-v76h, GHSA-vc7v-qv4w-wrv8; no explotables hoy) y `source-map-js` alto transitivo | INFO (seguridad 017, vuelta 2) | MEDIA / S | 021 |
+| 104 | `docker compose build backend` se corta con "additional privileges requested: --allow=fs.read" (buildx bake) en la máquina del usuario | tester 017 | BAJA / S | 020 |
+| 105 | El resumen de `dev.ps1` mostró una vez "Swagger: deshabilitado (NODE_ENV=production)" con el entorno ya levantado | tester 017 | BAJA / S | 024 |

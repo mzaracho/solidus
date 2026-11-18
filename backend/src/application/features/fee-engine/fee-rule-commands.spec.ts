@@ -33,7 +33,12 @@ const setup = (payer: any) => {
 };
 
 const splits = [
-  { role: 'PROFESSIONAL', percentage: 70, beneficiaryType: 'PROFESSIONAL' },
+  {
+    beneficiary: 'PROFESSIONAL',
+    type: 'PERCENTAGE',
+    value: 70,
+    roleLabel: 'Profesional',
+  },
 ];
 
 describe('POST fee-rules (CreateFeeRuleCommandHandler)', () => {
@@ -175,20 +180,8 @@ describe('POST fee-rules: validación de splits', () => {
 
   it('splits inválidos: 400 genérico y sin escritura (crear)', async () => {
     for (const bad of [
-      [
-        {
-          role: 'PROFESSIONAL',
-          percentage: 150,
-          beneficiaryType: 'PROFESSIONAL',
-        },
-      ],
-      [
-        {
-          role: 'PROFESSIONAL',
-          percentage: -5,
-          beneficiaryType: 'PROFESSIONAL',
-        },
-      ],
+      [{ beneficiary: 'PROFESSIONAL', type: 'PERCENTAGE', value: 150 }],
+      [{ beneficiary: 'PROFESSIONAL', type: 'PERCENTAGE', value: -5 }],
       { professional: 70 },
     ]) {
       const { prisma, e } = await run(bad);
@@ -206,7 +199,7 @@ describe('POST fee-rules: validación de splits', () => {
         command({
           name: 'R',
           splits: [
-            { role: 'P', percentage: 101, beneficiaryType: 'PROFESSIONAL' },
+            { beneficiary: 'PROFESSIONAL', type: 'PERCENTAGE', value: 101 },
           ],
           payer: { connect: { id: payerId } },
         }),
@@ -217,12 +210,30 @@ describe('POST fee-rules: validación de splits', () => {
     expect(prisma.feeRule.update).not.toHaveBeenCalled();
   });
 
-  it('splits de la UI: crea', async () => {
+  it('splits en la forma única del motor: crea', async () => {
     const { prisma, e } = await run([
-      { role: 'PROFESSIONAL', percentage: 70, beneficiaryType: 'PROFESSIONAL' },
-      { role: 'ORGANIZATION', percentage: 30, beneficiaryType: 'ORGANIZATION' },
+      {
+        beneficiary: 'PROFESSIONAL',
+        type: 'PERCENTAGE',
+        value: 70,
+        roleLabel: 'Profesional',
+      },
+      {
+        beneficiary: 'ORG',
+        type: 'PERCENTAGE',
+        value: 30,
+        roleLabel: 'Organización',
+      },
     ]);
     expect(e).toBeUndefined();
     expect(prisma.feeRule.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('splits en la forma vieja de la UI: 400 y sin escritura', async () => {
+    const { prisma, e } = await run([
+      { role: 'PROFESSIONAL', percentage: 70, beneficiaryType: 'PROFESSIONAL' },
+    ]);
+    expect(e.getStatus()).toBe(400);
+    expect(prisma.feeRule.create).not.toHaveBeenCalled();
   });
 });

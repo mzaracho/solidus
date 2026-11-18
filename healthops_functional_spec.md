@@ -89,4 +89,6 @@ Se definen dos estrategias para determinar cuánto cobra cada profesional en una
 ## 6. Reglas de Negocio Críticas
 - **Unicidad de Usuario**: Cada usuario debe tener un email único. Se descarta el concepto de usuarios compartidos en multi-contexto (V1).
 - **Inmutabilidad de Cobros**: Una actividad marcada como cobrada no puede ser eliminada. Esto garantiza la integridad de los reportes financieros.
+- **Cobro y edición (017)**: una atención está cobrada cuando está en estado pagado y tiene fecha de pago; la fecha de pago es obligatoria al marcar una atención como pagada. Mientras no esté cobrada se pueden editar monto y pagador (se recalculan participantes y splits); cobrada, no (409).
+- **Pagadores**: no se puede borrar un pagador que tiene reglas de honorarios o atenciones (409). El staff con participaciones o splits se da de baja lógicamente.
 - **Asistencia**: Si una actividad está pendiente, se puede marcar asistencia y cobro en un solo paso.

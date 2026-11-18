@@ -21,6 +21,7 @@ import {
   DeleteActivityCommandHandler,
 } from './commands/delete-activity-command';
 import { canModifyActivity } from './activity-ownership';
+import { ActivityService } from '@src/infrastructure/features/activity/activity.service';
 
 const orgA = randomUUID();
 const orgB = randomUUID();
@@ -31,7 +32,15 @@ const baseItem = (over: Record<string, unknown> = {}) => ({
   createdByUserId: null as string | null,
   paymentStatus: 'UNPAID',
   paymentDate: null,
+  grossAmount: new Prisma.Decimal(100),
+  amountBase: new Prisma.Decimal(100),
+  amountCard: new Prisma.Decimal(0),
+  payerId: randomUUID(),
+  professionalId: randomUUID(),
+  serviceType: 'session',
   professional: { userId: null as string | null },
+  activityType: null,
+  organization: { type: 'CLINIC', settings: null },
   ...over,
 });
 
@@ -263,7 +272,7 @@ describe('Update y Delete de atenciones', () => {
     };
     return {
       prisma,
-      update: new UpdateActivityCommandHandler(prisma),
+      update: new UpdateActivityCommandHandler(new ActivityService(prisma, {} as any)),
       del: new DeleteActivityCommandHandler(prisma),
     };
   };

@@ -204,9 +204,10 @@
         "presetId": "",
         "packDates": [],
         "attendance": "PRESENT",
-        "amount": 100,
+        "amount": 120,
         "professionalId": "<<staffA>>",
-        "payerId": "<<payerSysA>>",
+        "payerId": "<<payerA>>",
+        "grossAmount": 120,
         "organizationId": "<<orgA>>",
         "paymentStatus": "PAID",
         "paid": true,
@@ -218,7 +219,9 @@
         "paymentStatus": "PAID",
         "paymentMethod": "Efectivo",
         "paymentDate": "2026-03-14",
-        "attendance": "PRESENT"
+        "attendance": "PRESENT",
+        "grossAmount": 120,
+        "payerId": "<<payerA>>"
       }
     },
     {
@@ -252,8 +255,8 @@
       "path": "/api/activity/<<wiMember>>",
       "user": "admin",
       "status": 200,
-      "input": { "paymentStatus": "PAID" },
-      "body": { "paymentStatus": "PAID" }
+      "input": { "paymentStatus": "PAID", "paymentDate": "2026-03-16" },
+      "body": { "paymentStatus": "PAID", "paymentDate": "2026-03-16" }
     },
     {
       "name": "updateWorkItem: asistencia (AtencionesTable)",
@@ -276,14 +279,64 @@
       "body": { "paymentStatus": "PAID", "paymentDate": "2026-03-15", "paymentMethod": "Transferencia" }
     },
     {
-      "name": "updateWorkItem: RetroactiveModal manda grossAmount y payerName, que el backend nunca persistió (body vacío)",
+      "name": "updateWorkItem: RetroactiveModal manda grossAmount y payerId (el payerName ya no viaja)",
       "builder": "buildUpdateActivityBody",
       "method": "put",
       "path": "/api/activity/<<wiMember>>",
       "user": "admin",
       "status": 200,
-      "input": { "grossAmount": 500, "payerName": "Obra Social Ficticia" },
-      "body": {}
+      "input": { "grossAmount": 500, "payerId": "<<payerA>>", "payerName": "Obra Social Ficticia" },
+      "body": { "grossAmount": 500, "payerId": "<<payerA>>" }
+    },
+    {
+      "name": "updateWorkItem: payerId null (casilla Paciente Particular) y el monto con decimales",
+      "builder": "buildUpdateActivityBody",
+      "method": "put",
+      "path": "/api/activity/<<wiMember>>",
+      "user": "admin",
+      "status": 200,
+      "input": { "grossAmount": 150.55, "payerId": null },
+      "body": { "grossAmount": 150.55, "payerId": null }
+    },
+    {
+      "name": "updateWorkItem: valores falsos de pagador ('', '—') y monto no numérico no viajan",
+      "builder": "buildUpdateActivityBody",
+      "method": "put",
+      "path": "/api/activity/<<wiMember>>",
+      "user": "admin",
+      "status": 200,
+      "input": { "attendance": "PRESENT", "payerId": "—", "grossAmount": "" },
+      "body": { "attendance": "PRESENT" }
+    },
+    {
+      "name": "updateWorkItem: atención cobrada con los mismos valores guardados no cuenta como cambio",
+      "builder": "buildUpdateActivityBody",
+      "setup": "collected",
+      "method": "put",
+      "path": "/api/activity/<<wiMember>>",
+      "user": "admin",
+      "status": 200,
+      "input": { "grossAmount": 10, "payerId": "<<payerSysA>>", "attendance": "PRESENT" },
+      "body": { "grossAmount": 10, "payerId": "<<payerSysA>>", "attendance": "PRESENT" }
+    },
+    {
+      "name": "updateWorkItem: cambio de monto sobre una atención cobrada responde 409",
+      "builder": "buildUpdateActivityBody",
+      "setup": "collected",
+      "method": "put",
+      "path": "/api/activity/<<wiMember>>",
+      "user": "admin",
+      "status": 409,
+      "input": { "grossAmount": 999 },
+      "body": { "grossAmount": 999 }
+    },
+    {
+      "name": "updateWorkItem: marcar como pagada sin fecha de pago responde 400 payment-date-required",
+      "method": "put",
+      "path": "/api/activity/<<wiMember>>",
+      "user": "admin",
+      "status": 400,
+      "body": { "paymentStatus": "PAID" }
     },
     {
       "name": "createStaff: org/profesionales (con userId y categoryId vacíos)",
@@ -489,8 +542,8 @@
         "payer": { "connect": { "id": "<<payerA>>" } },
         "professionalCategory": "all",
         "splits": [
-          { "role": "PROFESSIONAL", "percentage": 70, "beneficiaryType": "PROFESSIONAL" },
-          { "role": "ORGANIZATION", "percentage": 30, "beneficiaryType": "ORGANIZATION" }
+          { "beneficiary": "PROFESSIONAL", "type": "PERCENTAGE", "value": 70, "roleLabel": "Profesional" },
+          { "beneficiary": "ORG", "type": "PERCENTAGE", "value": 30, "roleLabel": "Organización" }
         ],
         "name": "Professional Fee Rule",
         "organization": { "connect": { "id": "<<orgA>>" } }
@@ -499,8 +552,8 @@
         "payer": { "connect": { "id": "<<payerA>>" } },
         "professionalCategory": "all",
         "splits": [
-          { "role": "PROFESSIONAL", "percentage": 70, "beneficiaryType": "PROFESSIONAL" },
-          { "role": "ORGANIZATION", "percentage": 30, "beneficiaryType": "ORGANIZATION" }
+          { "beneficiary": "PROFESSIONAL", "type": "PERCENTAGE", "value": 70, "roleLabel": "Profesional" },
+          { "beneficiary": "ORG", "type": "PERCENTAGE", "value": 30, "roleLabel": "Organización" }
         ],
         "name": "Professional Fee Rule"
       }

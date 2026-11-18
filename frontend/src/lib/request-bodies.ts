@@ -38,7 +38,9 @@ export const ACTIVITY_CREATE_FIELDS = [
   'amountBase', 'amountCard', 'attendance',
 ] as const
 export const ACTIVITY_PARTICIPANT_FIELDS = ['professionalId', 'roleLabel'] as const
-export const ACTIVITY_UPDATE_FIELDS = ['date', 'paymentStatus', 'paymentMethod', 'paymentDate', 'attendance'] as const
+export const ACTIVITY_UPDATE_FIELDS = [
+  'date', 'paymentStatus', 'paymentMethod', 'paymentDate', 'attendance', 'grossAmount', 'payerId',
+] as const
 export const STAFF_CREATE_FIELDS = [
   'name', 'surname', 'cuit', 'email', 'phone', 'canLoadActivities', 'categoryId',
 ] as const
@@ -76,9 +78,17 @@ export function buildCreateActivityBody(data: unknown): Json {
   return withFiniteNumbers(body, ['hours', 'quantity', 'amount', 'amountBase', 'amountCard'])
 }
 
-/** PUT activity/:id. Descarta lo que el backend nunca persistio (grossAmount, payerName, etc.). */
+/** Valores que el front mostro en lugar de un pagador y que nunca deben viajar como `payerId` (M2 del 008). */
+const FALSE_PAYER_VALUES = new Set(['', '—', 'Unknown'])
+
+/**
+ * PUT activity/:id (017). `grossAmount` solo si es un numero finito. `payerId`: UUID, o `null` ("pagador
+ * particular"); se omite si falta o es un valor falso ('', '—', 'Unknown'). Descarta lo demas (payerName, etc.).
+ */
 export function buildUpdateActivityBody(data: unknown): Json {
-  return pickDefined(data, ACTIVITY_UPDATE_FIELDS)
+  const body = withFiniteNumbers(pickDefined(data, ACTIVITY_UPDATE_FIELDS), ['grossAmount'])
+  if (typeof body.payerId === 'string' && FALSE_PAYER_VALUES.has(body.payerId)) delete body.payerId
+  return body
 }
 
 /** POST org/staff. */

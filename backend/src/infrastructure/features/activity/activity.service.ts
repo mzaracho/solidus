@@ -1,11 +1,26 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../Prisma/prisma.service';
-import { Prisma, PaymentStatus, BeneficiaryType } from '@prisma/client';
+import { Prisma, PaymentStatus, BeneficiaryType, AttendanceStatus } from '@prisma/client';
 import { FEE_STRATEGY, FeeStrategy } from '@src/domain/constants/app.constants';
-import { FeeResolutionService } from '../fee-engine/fee-resolution.service';
+import { FeeResolutionService, SplitResult } from '../fee-engine/fee-resolution.service';
 import { CreateActivityDto } from '@src/application/features/activity/Dtos/create-activity.dto';
 import { WorkItem } from '@src/domain/features/activity/WorkItem.entity';
 import { parseOrgSettings } from '@src/domain/features/organization/org-settings';
+import {
+  Money,
+  money,
+  percentOf,
+  roundMoney,
+  sameMoney,
+  toJsonNumber,
+} from '@src/domain/seed-work/money';
+import { isCollected, NOT_COLLECTED_WHERE } from '@src/domain/features/activity/activity-collected';
+import {
+  activityAlreadyCollected,
+  amountBelowCardSurcharge,
+  paymentDateRequired,
+} from '@src/application/features/activity/activity-errors';
+import { canModifyActivity } from '@src/application/features/activity/activity-ownership';
 import { OrgScope, roleIn } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 import {
   AUTH_ERROR_CODE,
@@ -15,9 +30,33 @@ import {
   forbiddenAction,
   foundOr404,
   inOrg,
+  inScope,
   optionalId,
   requireId,
+  resourceNotFound,
 } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
+
+/**
+ * Rol del evento que usa el alta cuando el pedido no manda `role` (el front nunca lo manda). La edición lo
+ * reutiliza al recalcular.
+ */
+const DEFAULT_EVENT_ROLE = 'TITULAR';
+
+export interface UpdateActivityInput {
+  id: string;
+  date?: string;
+  paymentStatus?: PaymentStatus;
+  paymentMethod?: string;
+  /** null o vacía = intento de borrar la fecha: 400 si la atención queda PAID. */
+  paymentDate?: string | null;
+  attendance?: AttendanceStatus;
+  /** Ausente = sin cambio. */
+  grossAmount?: number;
+  /** Ausente = sin cambio; null = pagador particular de la organización; UUID = ese pagador. */
+  payerId?: string | null;
+}
+
+type WorkItemRow = Prisma.WorkItemGetPayload<object>;
 
 interface ActivityTypeRoleConfig {
   roleLabel: string;
@@ -45,6 +84,10 @@ export class ActivityService {
     mode: ViewModeValue,
     scope: OrgScope,
   ): Promise<WorkItem> {
+    // Criterio 16: una atención que se da de alta como pagada exige la fecha de pago (sin escribir nada).
+    if (data.paymentStatus === PaymentStatus.PAID && !data.paymentDate) {
+      throw paymentDateRequired();
+    }
     const date = new Date(data.date);
     const userId = scope.userId;
 
@@ -185,55 +228,45 @@ export class ActivityService {
     const privatePayerName = orgSettings.privatePayerName;
     let payerId: string | undefined = requestedPayerId ?? undefined;
     if (!payerId) {
-      const defaultPayer = await this.prisma.payer.findFirst({
-        where: { organizationId: orgId, name: privatePayerName },
-      });
+      const defaultPayer = await this.findDefaultPayer(this.prisma, orgId, privatePayerName);
       payerId = defaultPayer?.id;
     }
 
     // ── Resolve Amounts ───────────────────────────────────────────────────────
-    let amountBase = new Prisma.Decimal(0);
-    let amountCard: Prisma.Decimal | null = null;
+    let amountBase: Money = money(0);
+    let amountCard: Money | null = null;
 
     if (mode === 'pro') {
-      amountBase = new Prisma.Decimal(data.amountBase ?? data.amount ?? 0);
-      amountCard = data.amountCard != null ? new Prisma.Decimal(data.amountCard) : null;
+      amountBase = money(data.amountBase ?? data.amount ?? 0);
+      amountCard = data.amountCard != null ? money(data.amountCard) : null;
     } else {
       // Org mode: ActivityType values take precedence, then preset, then manual
       if (activityType?.baseValue) {
-        amountBase = new Prisma.Decimal(activityType.baseValue);
-        amountCard = activityType.cardValue ? new Prisma.Decimal(activityType.cardValue) : null;
+        amountBase = money(activityType.baseValue);
+        amountCard = activityType.cardValue ? money(activityType.cardValue) : null;
       } else if (preset) {
-        amountBase = new Prisma.Decimal(preset.value);
-        amountCard = preset.cardValue ? new Prisma.Decimal(preset.cardValue) : null;
+        amountBase = money(preset.value);
+        amountCard = preset.cardValue ? money(preset.cardValue) : null;
       }
 
       // Manual overrides always win when provided explicitly
-      if (data.amountBase != null) amountBase = new Prisma.Decimal(data.amountBase);
-      if (data.amountCard != null) amountCard = new Prisma.Decimal(data.amountCard);
+      if (data.amountBase != null) amountBase = money(data.amountBase);
+      if (data.amountCard != null) amountCard = money(data.amountCard);
 
       // Legacy fallback: plain 'amount' field
-      if (Number(amountBase) === 0 && data.amount) {
-        amountBase = new Prisma.Decimal(data.amount);
+      if (amountBase.isZero() && data.amount) {
+        amountBase = money(data.amount);
       }
     }
 
-    const grossAmount = amountCard
-      ? amountBase.add(amountCard)
-      : amountBase;
+    const grossAmount: Money = amountCard ? amountBase.add(amountCard) : amountBase;
 
     // ── 4. Escrituras: todo en una transacción ────────────────────────────────
     return this.prisma.$transaction(async (tx) => {
       // Default payer
       if (!payerId) {
         this.logger.debug(`[CreateActivity] Auto-creating default payer for org ${orgId}`);
-        const createdPayer = await tx.payer.create({
-          data: {
-            organizationId: orgId,
-            name: privatePayerName,
-            isManagedBySystem: true,
-          },
-        });
+        const createdPayer = await this.createDefaultPayer(tx, orgId, privatePayerName);
         payerId = createdPayer.id;
       }
 
@@ -274,7 +307,7 @@ export class ActivityService {
         serviceType: data.serviceType ?? orgSettings.defaultServiceType,
         grossAmount,
         amountBase,
-        amountCard: amountCard ?? new Prisma.Decimal(0),
+        amountCard: amountCard ?? money(0),
         paymentStatus: (data.paymentStatus as PaymentStatus) ?? PaymentStatus.UNPAID,
         paymentMethod: data.paymentStatus && data.paymentStatus !== PaymentStatus.UNPAID ? data.paymentMethod : null,
         paymentDate: data.paymentStatus && data.paymentStatus !== PaymentStatus.UNPAID && data.paymentDate ? new Date(data.paymentDate) : null,
@@ -288,82 +321,38 @@ export class ActivityService {
       const workItem = await tx.workItem.create({ data: prismaData });
 
       // ── Create WorkItemParticipants ──────────────────────────────────────────
-      const roleConfigs: ActivityTypeRoleConfig[] = Array.isArray(activityType?.roles)
-        ? (activityType!.roles as ActivityTypeRoleConfig[])
-        : [];
+      const roleConfigs = this.roleConfigsOf(activityType?.roles);
 
       const participants = verifiedParticipants.length > 0
         ? verifiedParticipants
         : [{ professionalId: resolvedProfessionalId, roleLabel: roleConfigs[0]?.roleLabel ?? 'Profesional' }];
 
-      const participantRows = await Promise.all(
-        participants.map(async (p) => {
-          const roleConfig = roleConfigs.find(r => r.roleLabel === p.roleLabel);
-          const feeAmount = await this.calculateParticipantFee(
-            p.professionalId,
-            roleConfig,
-            Number(amountBase),
-            tx,
-          );
-          return {
-            workItemId: workItem.id,
-            professionalId: p.professionalId,
-            roleLabel: p.roleLabel,
-            feeAmount: new Prisma.Decimal(feeAmount),
-            isRequired: roleConfig?.isRequired ?? true,
-          };
-        }),
-      );
+      const fees = await this.computeParticipantFees(tx, participants, roleConfigs, amountBase);
+      const participantRows = participants.map((p, i) => ({
+        workItemId: workItem.id,
+        professionalId: p.professionalId,
+        roleLabel: p.roleLabel,
+        feeAmount: fees[i],
+        isRequired: roleConfigs.find((r) => r.roleLabel === p.roleLabel)?.isRequired ?? true,
+      }));
 
       await tx.workItemParticipant.createMany({ data: participantRows });
 
       // ── Calculate & Persist Splits (WorkItemSplit) ───────────────────────────
-      const professional = await tx.professional.findUnique({
-        where: { id: resolvedProfessionalId },
-        include: { category: true },
+      const splits = await this.computeDistribution(tx, {
+        orgId,
+        orgType: org.type,
+        settings: orgSettings,
+        payerId: resolvedPayerId,
+        mainProfessionalId: resolvedProfessionalId,
+        serviceType: workItem.serviceType,
+        eventRole: data.role ?? DEFAULT_EVENT_ROLE,
+        grossAmount,
+        allowPrivateSplit: mode === 'pro',
       });
 
-      const payerRecord = await tx.payer.findUnique({ where: { id: resolvedPayerId } });
-      // "Private" means patient paying directly with no org commission structure.
-      // This ONLY applies to SOLO_PRACTICE (virtual) orgs — the professional's own private practice.
-      // In a CLINIC org (like Psico LSA), even "Particular" payer goes through the fee engine
-      // so that the professional's category percentage is correctly applied.
-      const isPrivate = payerRecord?.name === orgSettings.privatePayerName && org.type === 'SOLO_PRACTICE';
-
-      let splits: any[];
-
-      if (mode === 'pro' && isPrivate) {
-        const proPct = orgSettings.proModePrivatePatientPct / 100;
-        this.logger.debug(`[CreateActivity] Private patient in pro mode (SOLO_PRACTICE): ${orgSettings.proModePrivatePatientPct}% to professional`);
-        splits = [{
-          beneficiaryType: BeneficiaryType.PROFESSIONAL,
-          beneficiaryId: resolvedProfessionalId,
-          amount: Number(grossAmount) * proPct,
-          roleLabel: 'Honorario (Particular/Privado)',
-        }];
-      } else {
-        const context: any = {
-          organizationId: orgId,
-          payerId: resolvedPayerId,
-          professionalId: resolvedProfessionalId,
-          professionalCategory: professional?.category?.name ?? null,
-          eventRole: data.role ?? 'TITULAR',
-          serviceType: workItem.serviceType,
-          grossAmount: Number(grossAmount),
-        };
-        splits = await this.feeEngine.calculateSplits(context, tx);
-      }
-
       if (splits.length > 0) {
-        await tx.workItemSplit.createMany({
-          data: splits.map((s) => ({
-            workItemId: workItem.id,
-            beneficiaryType: s.beneficiaryType,
-            beneficiaryId: s.beneficiaryId,
-            amount: new Prisma.Decimal(s.amount),
-            roleLabel: s.roleLabel,
-          } as any)),
-        });
+        await tx.workItemSplit.createMany({ data: this.splitRows(workItem.id, splits) });
       }
 
       // ── Map to Domain Entity ────────────────────────────────────────────────
@@ -371,11 +360,254 @@ export class ActivityService {
         ...workItem,
         paymentStatus: workItem.paymentStatus,
         attendance: workItem.attendance,
-        grossAmount: Number(workItem.grossAmount),
-        amountBase: Number(workItem.amountBase),
-        amountCard: workItem.amountCard != null ? Number(workItem.amountCard) : null,
+        grossAmount: toJsonNumber(workItem.grossAmount),
+        amountBase: toJsonNumber(workItem.amountBase),
+        amountCard: workItem.amountCard != null ? toJsonNumber(workItem.amountCard) : null,
       });
     });
+  }
+
+  /**
+   * Edición de una atención (017, #45). Sin cambio de monto ni de pagador es una sola escritura, igual que
+   * siempre. Con cambio financiero: transacción con escritura condicional "no cobrada" en el `where` (cierra la
+   * carrera con un cobro simultáneo), recálculo de honorarios de participantes y reemplazo de los splits con las
+   * reglas vigentes (mismo código que el alta).
+   */
+  async updateActivity(input: UpdateActivityInput, scope: OrgScope): Promise<WorkItemRow> {
+    const id = requireId(input.id);
+
+    const existing = await foundOr404(
+      this.prisma.workItem.findFirst({
+        where: { id, ...inScope(scope) },
+        select: {
+          organizationId: true,
+          createdByUserId: true,
+          paymentStatus: true,
+          paymentDate: true,
+          grossAmount: true,
+          amountBase: true,
+          amountCard: true,
+          payerId: true,
+          professionalId: true,
+          serviceType: true,
+          professional: { select: { userId: true } },
+          activityType: { select: { roles: true } },
+          organization: { select: { type: true, settings: true } },
+        },
+      }),
+    );
+    if (!canModifyActivity(existing, scope, 'edit')) throw forbiddenAction();
+
+    // Criterio 16: la fecha se exige solo cuando el pedido hace que la atención PASE a PAID (lo guardado no era PAID
+    // y el resultado sí) sin fecha en el pedido ni guardada, o cuando intenta borrar la fecha (null o vacía) de una
+    // atención que queda PAID. Mandar paymentStatus PAID igual a lo guardado no es un cambio: una PAID antigua sin
+    // fecha se puede seguir editando.
+    const finalStatus = input.paymentStatus ?? existing.paymentStatus;
+    const becomesPaid = existing.paymentStatus !== PaymentStatus.PAID && finalStatus === PaymentStatus.PAID;
+    const clearsDate = input.paymentDate === null || input.paymentDate === '';
+    if (becomesPaid && !input.paymentDate && !existing.paymentDate) {
+      throw paymentDateRequired();
+    }
+    if (clearsDate && finalStatus === PaymentStatus.PAID) {
+      throw paymentDateRequired();
+    }
+
+    const data: Prisma.WorkItemUncheckedUpdateManyInput = {};
+    if (input.date) data.occurredAt = new Date(input.date);
+    if (input.paymentMethod) data.paymentMethod = input.paymentMethod;
+    if (input.paymentDate) data.paymentDate = new Date(input.paymentDate);
+    if (input.attendance) data.attendance = input.attendance;
+    if (input.paymentStatus) data.paymentStatus = input.paymentStatus;
+
+    // ── Cambios financieros (se calculan antes de escribir) ────────────────────
+    const grossChanged =
+      input.grossAmount !== undefined && !sameMoney(roundMoney(input.grossAmount), existing.grossAmount);
+
+    const orgSettings = parseOrgSettings(existing.organization.settings);
+    let targetPayerId: string | null = existing.payerId;
+    if (input.payerId === null) {
+      const defaultPayer = await this.findDefaultPayer(
+        this.prisma,
+        existing.organizationId,
+        orgSettings.privatePayerName,
+      );
+      targetPayerId = defaultPayer?.id ?? null;
+    } else if (input.payerId !== undefined) {
+      // Tiene que ser de la organización de la atención: ajeno e inexistente dan el mismo 404.
+      const payer = await foundOr404(
+        this.prisma.payer.findFirst({
+          where: { id: requireId(input.payerId), ...inOrg(existing.organizationId) },
+          select: { id: true },
+        }),
+      );
+      targetPayerId = payer.id;
+    }
+    const payerChanged = targetPayerId !== existing.payerId;
+
+    // ── Sin cambio financiero: una sola escritura, como antes ──────────────────
+    if (!grossChanged && !payerChanged) {
+      return this.prisma.workItem.update({ where: { id }, data });
+    }
+
+    // ── Con cambio financiero ──────────────────────────────────────────────────
+    if (isCollected(existing)) throw activityAlreadyCollected();
+
+    const newGross: Money = grossChanged ? roundMoney(input.grossAmount) : money(existing.grossAmount);
+    const amountCard: Money = money(existing.amountCard);
+    let amountBase: Money = money(existing.amountBase);
+    if (grossChanged) {
+      amountBase = newGross.sub(amountCard);
+      if (amountBase.isNegative()) throw amountBelowCardSurcharge();
+    }
+    const roleConfigs = this.roleConfigsOf(existing.activityType?.roles);
+    const orgId = existing.organizationId;
+
+    return this.prisma.$transaction(async (tx) => {
+      let payerId = targetPayerId;
+      if (!payerId) {
+        const created = await this.createDefaultPayer(tx, orgId, orgSettings.privatePayerName);
+        payerId = created.id;
+      }
+
+      // Escritura condicional: si otra sesión la cobró entre la lectura y acá, count = 0.
+      const { count } = await tx.workItem.updateMany({
+        where: { id, organizationId: orgId, ...NOT_COLLECTED_WHERE },
+        data: { ...data, grossAmount: newGross, amountBase, payerId },
+      });
+      if (count === 0) {
+        const current = await tx.workItem.findFirst({
+          where: { id, ...inScope(scope) },
+          select: { id: true },
+        });
+        if (!current) throw resourceNotFound();
+        throw activityAlreadyCollected();
+      }
+
+      // Honorarios de los participantes: los mismos que conserva la atención, recalculados.
+      const participants = await tx.workItemParticipant.findMany({ where: { workItemId: id } });
+      const fees = await this.computeParticipantFees(tx, participants, roleConfigs, amountBase);
+      for (let i = 0; i < participants.length; i++) {
+        await tx.workItemParticipant.update({
+          where: { id: participants[i].id },
+          data: { feeAmount: fees[i] },
+        });
+      }
+
+      // Distribución: se reemplaza por completo (también cualquier ajuste manual previo).
+      const splits = await this.computeDistribution(tx, {
+        orgId,
+        orgType: existing.organization.type,
+        settings: orgSettings,
+        payerId,
+        mainProfessionalId: existing.professionalId,
+        serviceType: existing.serviceType,
+        eventRole: DEFAULT_EVENT_ROLE,
+        grossAmount: newGross,
+        allowPrivateSplit: true,
+      });
+      await tx.workItemSplit.deleteMany({ where: { workItemId: id } });
+      if (splits.length > 0) {
+        await tx.workItemSplit.createMany({ data: this.splitRows(id, splits) });
+      }
+
+      return foundOr404(tx.workItem.findUnique({ where: { id } }));
+    });
+  }
+
+  // ── Piezas compartidas por el alta y la edición ─────────────────────────────
+
+  /** Pagador por defecto de la organización (el "Particular"), si existe. */
+  private findDefaultPayer(db: Prisma.TransactionClient, orgId: string, name: string) {
+    return db.payer.findFirst({ where: { organizationId: orgId, name } });
+  }
+
+  private createDefaultPayer(tx: Prisma.TransactionClient, orgId: string, name: string) {
+    return tx.payer.create({
+      data: { organizationId: orgId, name, isManagedBySystem: true },
+    });
+  }
+
+  private roleConfigsOf(roles: unknown): ActivityTypeRoleConfig[] {
+    return Array.isArray(roles) ? (roles as ActivityTypeRoleConfig[]) : [];
+  }
+
+  private computeParticipantFees(
+    db: Prisma.TransactionClient,
+    participants: { professionalId: string; roleLabel: string }[],
+    roleConfigs: ActivityTypeRoleConfig[],
+    amountBase: Money,
+  ): Promise<Money[]> {
+    return Promise.all(
+      participants.map((p) =>
+        this.calculateParticipantFee(
+          p.professionalId,
+          roleConfigs.find((r) => r.roleLabel === p.roleLabel),
+          amountBase,
+          db,
+        ),
+      ),
+    );
+  }
+
+  /**
+   * Reparto del bruto: el particular de SOLO_PRACTICE (solo si `allowPrivateSplit`) o el motor de honorarios.
+   * "Private" aplica ÚNICAMENTE a SOLO_PRACTICE (la práctica propia del profesional): en una CLINIC hasta el
+   * pagador "Particular" pasa por el motor, para aplicar el porcentaje de la categoría.
+   */
+  private async computeDistribution(
+    tx: Prisma.TransactionClient,
+    p: {
+      orgId: string;
+      orgType: string;
+      settings: ReturnType<typeof parseOrgSettings>;
+      payerId: string;
+      mainProfessionalId: string;
+      serviceType: string;
+      eventRole: string;
+      grossAmount: Money;
+      allowPrivateSplit: boolean;
+    },
+  ): Promise<SplitResult[]> {
+    const professional = await tx.professional.findUnique({
+      where: { id: p.mainProfessionalId },
+      include: { category: true },
+    });
+    const payerRecord = await tx.payer.findUnique({ where: { id: p.payerId } });
+    const isPrivate = payerRecord?.name === p.settings.privatePayerName && p.orgType === 'SOLO_PRACTICE';
+
+    if (p.allowPrivateSplit && isPrivate) {
+      this.logger.debug(`[Distribution] Private patient (SOLO_PRACTICE): ${p.settings.proModePrivatePatientPct}% to professional`);
+      return [
+        {
+          beneficiaryType: BeneficiaryType.PROFESSIONAL,
+          beneficiaryId: p.mainProfessionalId,
+          amount: percentOf(p.grossAmount, p.settings.proModePrivatePatientPct),
+          roleLabel: 'Honorario (Particular/Privado)',
+        },
+      ];
+    }
+    return this.feeEngine.calculateSplits(
+      {
+        organizationId: p.orgId,
+        payerId: p.payerId,
+        professionalId: p.mainProfessionalId,
+        professionalCategory: professional?.category?.name ?? null,
+        eventRole: p.eventRole,
+        serviceType: p.serviceType,
+        grossAmount: p.grossAmount,
+      },
+      tx,
+    );
+  }
+
+  private splitRows(workItemId: string, splits: SplitResult[]): Prisma.WorkItemSplitCreateManyInput[] {
+    return splits.map((s) => ({
+      workItemId,
+      beneficiaryType: s.beneficiaryType,
+      beneficiaryId: s.beneficiaryId,
+      amount: s.amount,
+      roleLabel: s.roleLabel,
+    }));
   }
 
   /**
@@ -389,13 +621,13 @@ export class ActivityService {
   private async calculateParticipantFee(
     professionalId: string,
     roleConfig: ActivityTypeRoleConfig | undefined,
-    amountBase: number,
+    amountBase: Money,
     db: Prisma.TransactionClient = this.prisma,
-  ): Promise<number> {
-    if (!roleConfig || amountBase === 0) return 0;
+  ): Promise<Money> {
+    if (!roleConfig || amountBase.isZero()) return money(0);
 
     if (roleConfig.feeStrategy === FEE_STRATEGY.FIXED && roleConfig.fixedPercentage != null) {
-      return Number(((amountBase * roleConfig.fixedPercentage) / 100).toFixed(2));
+      return percentOf(amountBase, roleConfig.fixedPercentage);
     }
 
     if (roleConfig.feeStrategy === FEE_STRATEGY.CATEGORY) {
@@ -404,9 +636,9 @@ export class ActivityService {
         include: { category: true },
       });
       const categoryPct = pro?.category?.percentage ?? 100;
-      return Number(((amountBase * categoryPct) / 100).toFixed(2));
+      return percentOf(amountBase, categoryPct);
     }
 
-    return 0;
+    return money(0);
   }
 }

@@ -17,14 +17,16 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { formatCurrency } from '@/lib/utils'
-import { PAYMENT_STATUS } from '@/lib/constants'
-import { canDeleteActivity } from '@/lib/activity-permissions'
+import { PAYMENT_STATUS, PAYMENT_DATE_TEXTS, ACTIVITY_EDIT_TEXTS } from '@/lib/constants'
+import { canDeleteActivity, isActivityCollected } from '@/lib/activity-permissions'
+import { MarkPaidDialog } from '@/components/domain/payment/MarkPaidDialog'
 import { readSessionIdentity } from '@/lib/session'
 import { useStore } from '@/store/useStore'
 import { RetroactiveModal } from './RetroactiveModal'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { updateWorkItem, deleteWorkItem, isHandledApiError } from '@/services/data'
 import { useParams, useRouter } from 'next/navigation'
+import { errorMessageOf } from '@/lib/api-errors'
 import { toast } from 'sonner'
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
@@ -57,24 +59,39 @@ const ActionsCell = ({ row }: { row: any }) => {
     const payment = row.original
     const [showRetroactive, setShowRetroactive] = useState(false)
     const [showConfirmDelete, setShowConfirmDelete] = useState(false)
+    const [showMarkPaid, setShowMarkPaid] = useState(false)
     const { orgSlug } = useParams() as { orgSlug: string }
     const router = useRouter()
     const { orgRole } = useStore()
 
     const alreadyPaid = isPaidStatus(payment.status)
 
-    const handleUpdateStatus = async (paymentStatus: string) => {
+    /** Pasar a Pendiente no pide fecha. */
+    const handleMarkUnpaid = async () => {
         try {
-            await updateWorkItem(orgSlug, payment.id, { paymentStatus })
+            await updateWorkItem(orgSlug, payment.id, { paymentStatus: PAYMENT_STATUS.UNPAID })
             toast.success('Estado actualizado')
             router.refresh()
         } catch (e) {
             if (isHandledApiError(e)) return
-            toast.error('Error al actualizar estado')
+            toast.error(errorMessageOf(e, 'Error al actualizar estado'))
         }
     }
 
-    const isRestrictedForDelete = alreadyPaid && !!payment.paymentDate
+    /** Marcar como pagada exige la fecha de pago (017, criterio 16): la pide MarkPaidDialog. */
+    const handleMarkPaid = async (paymentDate: string) => {
+        try {
+            await updateWorkItem(orgSlug, payment.id, { paymentStatus: PAYMENT_STATUS.PAID, paymentDate })
+            toast.success(PAYMENT_DATE_TEXTS.markedPaid)
+            router.refresh()
+        } catch (e) {
+            if (!isHandledApiError(e)) toast.error(errorMessageOf(e, PAYMENT_DATE_TEXTS.markPaidError))
+            throw e
+        }
+    }
+
+    // La definicion de "cobrada" la fija el backend (isCollected); el front no la repite.
+    const isRestrictedForDelete = isActivityCollected(payment)
     // MEMBER: solo borra lo propio (política del 007). Solo presentación: el backend responde 403 si no corresponde.
     const canDelete = canDeleteActivity(orgRole, payment, readSessionIdentity())
     const deleteDisabled = isRestrictedForDelete || !canDelete
@@ -115,13 +132,13 @@ const ActionsCell = ({ row }: { row: any }) => {
                     </DropdownMenuItem>
 
                     {!alreadyPaid && (
-                        <DropdownMenuItem onClick={() => handleUpdateStatus(PAYMENT_STATUS.PAID)} className="text-green-600">
+                        <DropdownMenuItem onClick={() => setShowMarkPaid(true)} className="text-green-600">
                             <Check className="mr-2 h-4 w-4" /> Marcar Pagado
                         </DropdownMenuItem>
                     )}
 
                     {alreadyPaid && (
-                        <DropdownMenuItem onClick={() => handleUpdateStatus(PAYMENT_STATUS.UNPAID)} className="text-orange-600">
+                        <DropdownMenuItem onClick={handleMarkUnpaid} className="text-orange-600">
                             <X className="mr-2 h-4 w-4" /> Marcar Pendiente
                         </DropdownMenuItem>
                     )}
@@ -147,22 +164,24 @@ const ActionsCell = ({ row }: { row: any }) => {
                 variant="destructive"
             />
 
+            <MarkPaidDialog
+                open={showMarkPaid}
+                onOpenChange={setShowMarkPaid}
+                description={`Atención de ${payment.patientName}.`}
+                onConfirm={handleMarkPaid}
+            />
+
             <RetroactiveModal
                 item={payment}
                 open={showRetroactive}
+                orgSlug={orgSlug}
                 onOpenChange={setShowRetroactive}
-                onConfirm={async (updated) => {
-                    try {
-                        // El backend (PUT /activity/:id) hoy no persiste monto ni pagador: ver 04-implementacion.md
-                        await updateWorkItem(orgSlug, payment.id, { grossAmount: updated.grossAmount, payerName: updated.payerName })
-                        toast.success('Actualizado correctamente')
-                        setShowRetroactive(false)
-                        router.refresh()
-                    } catch (e) {
-                        if (isHandledApiError(e)) return
-                        toast.error('Error al guardar cambios')
-                    }
+                // El modal informa exito solo despues de que el backend confirma: onSave lanza si lo rechaza.
+                onSave={async (changes) => {
+                    await updateWorkItem(orgSlug, payment.id, changes)
+                    router.refresh()
                 }}
+                onConflict={() => router.refresh()}
             />
         </>
     )
@@ -194,12 +213,21 @@ export const columns: ColumnDef<WorkItem>[] = [
     {
         accessorKey: 'payerName',
         header: 'Pagador',
-        cell: ({ row }) => <span className="font-medium">{row.original.payerName}</span>,
+        cell: ({ row }) => row.original.payerName
+            ? <span className="font-medium">{row.original.payerName}</span>
+            : <span className="text-muted-foreground italic">{ACTIVITY_EDIT_TEXTS.noPayer}</span>,
     },
     {
         accessorKey: 'status',
         header: 'Estado',
-        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+        cell: ({ row }) => (
+            <div className="flex flex-col items-start gap-0.5">
+                <StatusBadge status={row.original.status} />
+                {isPaidStatus(row.original.status) && !row.original.paymentDate && (
+                    <span className="text-xs text-muted-foreground">{PAYMENT_DATE_TEXTS.missingInTable}</span>
+                )}
+            </div>
+        ),
     },
     {
         accessorKey: 'grossAmount',

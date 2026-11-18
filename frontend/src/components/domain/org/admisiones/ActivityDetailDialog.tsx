@@ -7,7 +7,8 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { formatCurrency } from "@/lib/utils"
-import { PAYMENT_STATUS } from '@/lib/constants'
+import { PAYMENT_STATUS, PAYMENT_DATE_TEXTS } from '@/lib/constants'
+import { paymentDateCell } from '@/lib/payment-date'
 
 interface Category {
     name: string
@@ -103,7 +104,7 @@ export function ActivityDetailDialog({
                     <div className="flex items-center justify-between">
                         <span className="text-sm font-medium text-muted-foreground">Fecha de cobro</span>
                         <span className="text-sm">
-                            {activity.paymentDate ? new Date((activity.paymentDate as string).substring(0, 10) + 'T12:00:00').toLocaleDateString() : '-'}
+                            {paymentDateCell(activity.paymentStatus === PAYMENT_STATUS.PAID, activity.paymentDate, PAYMENT_DATE_TEXTS.missingInTable) ?? '-'}
                         </span>
                     </div>
                     {activity.paymentMethod && (

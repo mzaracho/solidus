@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { canDeleteActivity } from './activity-permissions.ts'
+import { canDeleteActivity, isActivityCollected } from './activity-permissions.ts'
 
 const me = { userId: 'u1', professionalId: 'p1' }
 
@@ -26,4 +26,14 @@ test('MEMBER sin autor registrado: solo si es dueño del Professional', () => {
 
 test('MEMBER sin identidad legible no borra nada con autor', () => {
   assert.equal(canDeleteActivity('MEMBER', { createdByUserId: 'u1' }, { userId: null, professionalId: null }), false)
+})
+
+test('017: isActivityCollected solo lee el isCollected que calcula el backend', () => {
+  assert.equal(isActivityCollected({ isCollected: true }), true)
+  assert.equal(isActivityCollected({ isCollected: false }), false)
+  assert.equal(isActivityCollected({}), false)
+  assert.equal(isActivityCollected(null), false)
+  assert.equal(isActivityCollected(undefined), false)
+  // no deriva "cobrada" de otros campos
+  assert.equal(isActivityCollected({ paymentDate: '2026-01-01', status: 'PAID' } as never), false)
 })

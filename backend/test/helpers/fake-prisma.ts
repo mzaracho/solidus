@@ -34,6 +34,7 @@ const RELATIONS: Record<
       many: true,
     },
     organization: { model: 'organization', fk: 'organizationId' },
+    activityType: { model: 'activityType', fk: 'activityTypeId' },
   },
   patient: {
     workItems: { model: 'workItem', fk: 'patientId', many: true },
@@ -43,10 +44,18 @@ const RELATIONS: Record<
   },
   professional: {
     workItems: { model: 'workItem', fk: 'professionalId', many: true },
+    participants: {
+      model: 'workItemParticipant',
+      fk: 'professionalId',
+      many: true,
+    },
+    splits: { model: 'workItemSplit', fk: 'beneficiaryId', many: true },
     category: { model: 'professionalCategory', fk: 'categoryId' },
   },
   payer: {
     professional: { model: 'professional', fk: 'professionalId' },
+    feeRules: { model: 'feeRule', fk: 'payerId', many: true },
+    workItems: { model: 'workItem', fk: 'payerId', many: true },
   },
 };
 

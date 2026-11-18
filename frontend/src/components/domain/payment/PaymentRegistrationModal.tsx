@@ -2,8 +2,6 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { DatePicker } from '@/components/ui/date-picker'
 import {
     Select,
     SelectContent,
@@ -19,6 +17,8 @@ import {
     DialogFooter,
 } from "@/components/ui/dialog"
 import { PAYMENT_METHOD } from '@/lib/constants'
+import { isValidPaymentDate, todayLocalISO } from '@/lib/payment-date'
+import { PaymentDateField } from './PaymentDateField'
 
 type PaymentItem = {
     id: string | number
@@ -40,9 +40,18 @@ type Props = {
  * Modal to register payments for one or multiple items.
  * Handles calculation of final amount based on Payment Method (e.g. Credit Card surcharge).
  */
-export function PaymentRegistrationModal({ isOpen, onClose, onConfirm, items, rulesOrg }: Props) {
-    const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0])
+export function PaymentRegistrationModal(props: Props) {
+    // Se monta solo mientras esta abierto: cada apertura arranca con la fecha de hoy y el medio por defecto.
+    if (!props.isOpen) return null
+    return <PaymentRegistrationBody {...props} />
+}
+
+function PaymentRegistrationBody({ isOpen, onClose, onConfirm, items, rulesOrg }: Props) {
+    // Fecha de pago (017, criterio 16): obligatoria, precargada con HOY en zona horaria local (no toISOString: en
+    // UTC corre el dia a la noche), modificable, y una sola para todas las atenciones del cobro.
+    const [paymentDate, setPaymentDate] = useState(() => todayLocalISO())
     const [paymentMethod, setPaymentMethod] = useState<string>(PAYMENT_METHOD.CASH)
+
 
     if (!items || items.length === 0) return null
 
@@ -94,15 +103,7 @@ export function PaymentRegistrationModal({ isOpen, onClose, onConfirm, items, ru
 
                 <div className="space-y-4 mb-6">
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-semibold text-muted-foreground uppercase">Fecha Pago</label>
-                            <DatePicker
-                                date={paymentDate ? new Date(paymentDate + 'T00:00:00') : undefined}
-                                setDate={(d) => {
-                                    if (d) setPaymentDate(d.toISOString().split('T')[0])
-                                }}
-                            />
-                        </div>
+                        <PaymentDateField id="payment-registration-date" value={paymentDate} onChange={setPaymentDate} />
                         <div className="space-y-1.5">
                             <label className="text-xs font-semibold text-muted-foreground uppercase">Medio de Pago</label>
                             <Select
@@ -140,7 +141,10 @@ export function PaymentRegistrationModal({ isOpen, onClose, onConfirm, items, ru
 
                 <DialogFooter>
                     <Button variant="outline" onClick={onClose}>Cancelar</Button>
-                    <Button onClick={() => onConfirm(items, paymentDate, paymentMethod)}>
+                    <Button
+                        onClick={() => onConfirm(items, paymentDate, paymentMethod)}
+                        disabled={!isValidPaymentDate(paymentDate)}
+                    >
                         Confirmar Cobro
                     </Button>
                 </DialogFooter>

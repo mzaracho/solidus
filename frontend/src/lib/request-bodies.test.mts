@@ -99,3 +99,24 @@ test('buildWorkItemsQuery: mode, page, limit y solo los filtros que declara el D
   assert.equal('payer' in query, false)
   assert.deepEqual(bodies.buildWorkItemsQuery('ORGANIZATION', { patientId: 'p1' }, 1, 12).patientId, 'p1')
 })
+
+test('017: PUT activity/:id manda grossAmount finito y payerId (UUID o null) y nunca valores falsos', () => {
+  const b = bodies.buildUpdateActivityBody
+  assert.deepEqual(b({ grossAmount: 150.5, payerId: 'u-1', payerName: 'X' }), { grossAmount: 150.5, payerId: 'u-1' })
+  // null se conserva: significa "pagador particular"
+  assert.deepEqual(b({ payerId: null }), { payerId: null })
+  // valores falsos: no viajan
+  for (const payerId of ['', '—', 'Unknown', undefined]) assert.equal('payerId' in b({ payerId }), false, String(payerId))
+  // monto no finito: no viaja
+  for (const grossAmount of ['', Number.NaN, null, '100', undefined]) {
+    assert.equal('grossAmount' in b({ grossAmount }), false, String(grossAmount))
+  }
+  assert.deepEqual(b({ grossAmount: 0 }), { grossAmount: 0 })
+})
+
+test('017: PUT activity/:id con la fecha de pago de la edición y los campos que no cambian ausentes', () => {
+  assert.deepEqual(
+    bodies.buildUpdateActivityBody({ paymentStatus: 'PAID', paymentDate: '2026-03-05', paymentMethod: 'Efectivo' }),
+    { paymentStatus: 'PAID', paymentDate: '2026-03-05', paymentMethod: 'Efectivo' },
+  )
+})

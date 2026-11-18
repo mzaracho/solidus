@@ -7,6 +7,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsString, Matches } from 'class-validator';
 import { requireOrgId } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 import { parseOrgSettings } from '@src/domain/features/organization/org-settings';
+import { Money, money, percentOf, toJsonNumber, wholePercent } from '@src/domain/seed-work/money';
 
 export class CalculateSettlementsQuery implements IRequest<any[]> {
     @ApiProperty({ example: '2026-02' })
@@ -78,7 +79,15 @@ export class CalculateSettlementsQueryHandler implements IRequestHandler<Calcula
         const atPct = categories.find(c => c.name === 'Acompañante Terapeutico')?.percentage ?? 70;
         const coordPct = categories.find(c => c.name === 'Coordinacion AT')?.percentage ?? 10;
 
-        const summary: Record<string, any> = {};
+        interface SummaryEntry {
+            professionalId: string;
+            name: string;
+            count: number;
+            grossBase: Money;
+            payout: Money;
+            details: Record<string, unknown>[];
+        }
+        const summary: Record<string, SummaryEntry> = {};
 
         const getOrCreateSummary = (proId: string, proName: string) => {
             if (!summary[proId]) {
@@ -86,8 +95,8 @@ export class CalculateSettlementsQueryHandler implements IRequestHandler<Calcula
                     professionalId: proId,
                     name: proName,
                     count: 0,
-                    grossBase: 0,
-                    payout: 0,
+                    grossBase: money(0),
+                    payout: money(0),
                     details: []
                 };
             }
@@ -98,7 +107,7 @@ export class CalculateSettlementsQueryHandler implements IRequestHandler<Calcula
             const item = itemRaw as any;
             if (!item.professional) continue;
 
-            const calculationBase = Number(item.amountBase ?? item.grossAmount) || 0;
+            const calculationBase = money(item.amountBase ?? item.grossAmount);
 
             // If the WorkItem has participants defined, use them (new multi-professional model)
             if (item.participants && item.participants.length > 0) {
@@ -107,40 +116,44 @@ export class CalculateSettlementsQueryHandler implements IRequestHandler<Calcula
                     if (!pro) continue;
 
                     const proEntry = getOrCreateSummary(pro.id, pro.displayName || 'Desconocido');
-                    const payoutAmount = Number(participant.feeAmount) || 0;
+                    const payoutAmount = money(participant.feeAmount);
 
                     proEntry.count++;
-                    proEntry.grossBase += calculationBase;
-                    proEntry.payout += payoutAmount;
+                    proEntry.grossBase = proEntry.grossBase.add(calculationBase);
+                    proEntry.payout = proEntry.payout.add(payoutAmount);
                     proEntry.details.push({
                         date: item.occurredAt.toISOString(),
                         patient: item.patient ? `${item.patient.firstName} ${item.patient.lastName}` : 'Sin Paciente',
                         type: `${item.serviceType} (${participant.roleLabel})`,
-                        calculationBase,
-                        payoutAmount,
-                        percent: calculationBase > 0 ? Math.round((payoutAmount / calculationBase) * 100) : 0,
+                        calculationBase: toJsonNumber(calculationBase),
+                        payoutAmount: toJsonNumber(payoutAmount),
+                        percent: toJsonNumber(wholePercent(payoutAmount, calculationBase)),
                     });
                 }
             } else {
                 // Legacy fallback: calculate from professional category
                 const proEntry = getOrCreateSummary(item.professional.id, item.professional.displayName || 'Desconocido');
                 const percent = item.professional.category?.percentage ?? 0;
-                const payoutAmount = calculationBase * (percent / 100);
+                const payoutAmount = percentOf(calculationBase, percent);
 
                 proEntry.count++;
-                proEntry.grossBase += calculationBase;
-                proEntry.payout += payoutAmount;
+                proEntry.grossBase = proEntry.grossBase.add(calculationBase);
+                proEntry.payout = proEntry.payout.add(payoutAmount);
                 proEntry.details.push({
                     date: item.occurredAt.toISOString(),
                     patient: item.patient ? `${item.patient.firstName} ${item.patient.lastName}` : 'Sin Paciente',
                     type: item.serviceType,
-                    calculationBase,
-                    payoutAmount,
+                    calculationBase: toJsonNumber(calculationBase),
+                    payoutAmount: toJsonNumber(payoutAmount),
                     percent,
                 });
             }
         }
 
-        return Object.values(summary);
+        return Object.values(summary).map((entry) => ({
+            ...entry,
+            grossBase: toJsonNumber(entry.grossBase),
+            payout: toJsonNumber(entry.payout),
+        }));
     }
 }

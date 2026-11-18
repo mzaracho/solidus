@@ -27,7 +27,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select'
-import { PAYMENT_STATUS, FILTER_ALL, PAGE_SIZE_OPTIONS, DEFAULT_PAGE_SIZE } from '@/lib/constants'
+import { PAYMENT_STATUS, FILTER_ALL, PAGE_SIZE_OPTIONS, DEFAULT_PAGE_SIZE, PAYMENT_DATE_TEXTS } from '@/lib/constants'
+import { formatPaymentDate, paymentDateCell } from '@/lib/payment-date'
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
 
@@ -108,6 +109,9 @@ export function AdmisionesTable() {
                 admissionValue: i.grossAmount ?? 0,
                 paymentStatus: i.status || i.paymentStatus || PAYMENT_STATUS.UNPAID,
                 paymentDate: i.paymentDate,
+                payerId: i.payerId ?? null,
+                payerName: i.payerName && i.payerName !== 'Unknown' ? i.payerName : null,
+                isCollected: i.isCollected === true,
                 paymentMethod: i.paymentMethod || null,
                 fees: i.grossAmount ?? 0,
                 presetId: i.presetId,
@@ -246,9 +250,11 @@ export function AdmisionesTable() {
             accessorKey: 'paymentDate',
             header: 'Fecha de Cobro',
             cell: ({ row }) => {
-                const date = row.getValue('paymentDate') as string
-                if (!date) return <span className="text-muted-foreground">-</span>
-                return format(new Date((date as string).substring(0, 10) + 'T12:00:00'), 'dd-MM-yyyy')
+                // Sin corrimiento de zona: la fecha viene como dia (medianoche UTC) y se muestra tal cual.
+                // Una atencion PAGADA sin fecha (las antiguas) dice "Sin fecha de pago" en lugar de quedar vacia.
+                const text = paymentDateCell(isPaidStatus(row.original.paymentStatus), row.getValue('paymentDate'), PAYMENT_DATE_TEXTS.missingInTable)
+                if (!text) return <span className="text-muted-foreground">-</span>
+                return <span className={formatPaymentDate(row.getValue('paymentDate')) ? undefined : 'text-muted-foreground text-xs'}>{text}</span>
             },
         },
         {
@@ -274,9 +280,9 @@ export function AdmisionesTable() {
                             <Eye className="h-4 w-4" />
                         </Button>
                         <Button variant="ghost" size="icon"
-                            className={`h-8 w-8 ${paid ? 'opacity-40 cursor-not-allowed' : 'text-muted-foreground hover:text-primary'}`}
-                            onClick={() => !paid && handleEdit(item)}
-                            disabled={paid} title={paid ? 'No se puede editar una actividad cobrada' : 'Editar'}>
+                            className="h-8 w-8 text-muted-foreground hover:text-primary"
+                            onClick={() => handleEdit(item)}
+                            title="Editar">
                             <Pencil className="h-4 w-4" />
                         </Button>
                         <Button variant="ghost" size="icon"
@@ -421,6 +427,7 @@ export function AdmisionesTable() {
                 onClose={() => { setIsFormOpen(false); setEditingItem(null) }}
                 onSubmit={handleSave}
                 initialData={editingItem}
+                onConflict={() => loadData()}
                 orgSlug={orgSlug}
                 rulesOrg={config}
                 rulesPro={{}}

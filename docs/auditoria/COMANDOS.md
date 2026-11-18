@@ -406,6 +406,7 @@ npm install
 
 npm run start:dev     # nest start --watch  -> http://localhost:8080/api ; Swagger en http://localhost:8080/docs (solo NODE_ENV=development|test)
 npm run build         # tsc --noEmit && nest build  (reescribe dist/)
+npx nest build        # verificación previa al arranque/Docker: tsc --noEmit y Jest NO detectan sus fallos (p. ej. re-exports con alias `@src/`, ver `test/nest-build-compat.spec.ts`)
 npm run start:prod    # node dist/src/api/main.js
 ```
 
@@ -419,7 +420,7 @@ npm run format                                # prettier --write sobre src/ y te
 
 ### Tests
 ```bash
-npm test              # jest (45 suites, 815 tests: guards, login, logs, log de acceso, body limit, CORS, rutas, etc.)
+npm test              # jest (52 suites, 936 tests: guards, login, logs, log de acceso, body limit, CORS, rutas, etc.)
 npm run test:cov      # cobertura en backend/coverage
 npm run test:e2e      # requiere DB; el único e2e es boilerplate roto
 ```

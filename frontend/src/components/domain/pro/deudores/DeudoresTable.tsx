@@ -12,7 +12,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from 'sonner'
-import { PAYMENT_STATUS, ATTENDANCE } from '@/lib/constants'
+import { PAYMENT_STATUS, ATTENDANCE, PAYMENT_DATE_TEXTS } from '@/lib/constants'
+import { errorMessageOf } from '@/lib/api-errors'
+import { payEach, pruneSelection, removeFromSelection, selectedById } from '@/lib/bulk-payment'
+import { MarkPaidDialog } from '@/components/domain/payment/MarkPaidDialog'
 import {
     Dialog,
     DialogContent,
@@ -53,11 +56,14 @@ export function DeudoresTable() {
     const [summaryPatientName, setSummaryPatientName] = useState<string>('')
     const [summary, setSummary] = useState<PatientSummary | null>(null)
     const [summaryLoading, setSummaryLoading] = useState(false)
+    // Cobro de una o varias atenciones: una sola "Fecha de pago" para todas (017, criterio 16)
+    const [itemsToPay, setItemsToPay] = useState<Attention[]>([])
+    const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
     const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; description: string; onConfirm: () => void }>({ open: false, title: '', description: '', onConfirm: () => {} })
 
     const load = useCallback(async () => {
         if (!orgSlug) return
-        setLoading(true)
+        // No se vuelve a poner `loading` en true: la tabla y el dialogo de cobro no se desmontan al recargar
         const result = await getWorkItems(orgSlug, 'PROFESSIONAL')
         const items = Array.isArray(result) ? result : (result?.items ?? [])
 
@@ -78,6 +84,8 @@ export function DeudoresTable() {
             }))
 
         setData(unpaid)
+        // La seleccion es por id: se descartan las atenciones que ya no estan (cobradas o borradas)
+        setRowSelection((prev) => pruneSelection(prev, unpaid))
         setLoading(false)
     }, [orgSlug])
 
@@ -104,21 +112,26 @@ export function DeudoresTable() {
     }
 
     const handleMarkPaid = (item: Attention) => {
-        setConfirmDialog({
-            open: true,
-            title: 'Marcar como Cobrado',
-            description: `¿Confirmar cobro para ${item.patientName}?`,
-            onConfirm: async () => {
-                try {
-                    await updateWorkItem(orgSlug, item.id, { paymentStatus: PAYMENT_STATUS.PAID })
-                } catch (e) {
-                    if (!isHandledApiError(e)) toast.error('No se pudo marcar como cobrado')
-                    return
-                }
-                toast.success('Marcado como cobrado')
-                await load()
-            },
-        })
+        setItemsToPay([item])
+    }
+
+    /** Marca como pagadas todas las atenciones seleccionadas con la misma fecha de pago (obligatoria). */
+    const confirmMarkPaid = async (paymentDate: string) => {
+        const { paid, failed, lastError } = await payEach(itemsToPay, (item) =>
+            updateWorkItem(orgSlug, item.id, { paymentStatus: PAYMENT_STATUS.PAID, paymentDate }),
+        )
+        // Las ya cobradas salen de la seleccion y no se vuelven a mandar
+        if (paid.length > 0) setRowSelection((prev) => removeFromSelection(prev, paid.map((i) => i.id)))
+        if (failed.length > 0) {
+            if (!isHandledApiError(lastError)) toast.error(errorMessageOf(lastError, PAYMENT_DATE_TEXTS.markPaidError))
+            // El dialogo sigue abierto (no se desmonta al recargar) solo con las que fallaron y conserva la fecha
+            setItemsToPay(failed)
+            await load()
+            throw lastError
+        }
+        toast.success(PAYMENT_DATE_TEXTS.markedPaid)
+        setItemsToPay([])
+        await load()
     }
 
     const handleViewSummary = async (item: Attention & { patientId?: string }) => {
@@ -148,9 +161,21 @@ export function DeudoresTable() {
 
     if (loading) return <div>Cargando deudores...</div>
 
+    const selectedItems = selectedById(data, rowSelection)
+
     return (
         <>
-            <DataTable columns={columns} data={data} />
+            {selectedItems.length > 0 && (
+                <div className="mb-3 flex items-center justify-between rounded-md border bg-muted/20 px-4 py-2">
+                    <span className="text-sm text-muted-foreground">
+                        {selectedItems.length === 1 ? '1 atención seleccionada' : `${selectedItems.length} atenciones seleccionadas`}
+                    </span>
+                    <Button size="sm" onClick={() => setItemsToPay(selectedItems)}>
+                        Marcar seleccionadas como cobradas
+                    </Button>
+                </div>
+            )}
+            <DataTable columns={columns} data={data} getRowId={(row) => row.id} rowSelection={rowSelection} setRowSelection={setRowSelection} />
 
             <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
                 <DialogContent className="max-w-2xl">
@@ -226,6 +251,15 @@ export function DeudoresTable() {
                     )}
                 </DialogContent>
             </Dialog>
+
+            <MarkPaidDialog
+                open={itemsToPay.length > 0}
+                onOpenChange={(open) => { if (!open) setItemsToPay([]) }}
+                description={itemsToPay.length === 1
+                    ? `Cobro de ${itemsToPay[0].patientName}.`
+                    : `Cobro de ${itemsToPay.length} atenciones. Se usa la misma fecha para todas.`}
+                onConfirm={confirmMarkPaid}
+            />
 
             <ConfirmDialog
                 isOpen={confirmDialog.open}

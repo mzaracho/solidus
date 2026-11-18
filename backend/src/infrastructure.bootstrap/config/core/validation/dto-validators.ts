@@ -32,6 +32,16 @@ export const IsOptionalEntityId = () =>
     IsUUID('loose'),
   );
 
+/**
+ * Id de entidad que admite `null` explícito (con significado propio) pero NO `''`: undefined = sin cambio,
+ * null = valor por defecto, UUID = ese id. Un `''` (valor falso del front) es un 400, no un cambio (017).
+ */
+export const IsNullableEntityId = () =>
+  applyDecorators(
+    ValidateIf((_o, v) => v !== undefined && v !== null),
+    IsUUID('loose'),
+  );
+
 /** Fecha ISO estricta opcional ('' y null cuentan como ausente; rechaza 2026-02-30). */
 export const IsOptionalDateString = () =>
   applyDecorators(

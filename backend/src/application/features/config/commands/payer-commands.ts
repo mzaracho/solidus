@@ -2,11 +2,12 @@ import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfa
 import { CreatePayerDto } from '../Dtos/create-payer.dto';
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
-import { Payer } from '@prisma/client';
+import { Payer, Prisma } from '@prisma/client';
+import { API_ERROR_CODE } from '@src/infrastructure.bootstrap/filters/error-contract';
 import { requireOrgScope, requireOrgId, RequestContext, roleIn, OrgScope } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
-import { forbiddenAction, foundOr404, inScope, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
+import { forbiddenAction, foundOr404, inScope, requireId, resourceNotFound } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 
 /**
  * Pagador de la organización del request. Lo modifica el ADMIN de la organización del pagador
@@ -244,6 +245,18 @@ export class DeletePayerCommand implements IRequest<Payer> {
   constructor(public readonly id: string) { }
 }
 
+const payerHasFeeRules = () =>
+  new ConflictException({
+    code: API_ERROR_CODE.PAYER_HAS_FEE_RULES,
+    message: 'No se puede eliminar el pagador porque tiene reglas de honorarios asociadas.',
+  });
+
+const payerHasActivities = () =>
+  new ConflictException({
+    code: API_ERROR_CODE.PAYER_HAS_ACTIVITIES,
+    message: 'No se puede eliminar el pagador porque tiene atenciones asociadas.',
+  });
+
 @RequestHandler(DeletePayerCommand)
 @Injectable()
 export class DeletePayerCommandHandler implements IRequestHandler<
@@ -252,9 +265,32 @@ export class DeletePayerCommandHandler implements IRequestHandler<
 > {
   constructor(private readonly prisma: PrismaService) { }
 
+  /**
+   * 017 (#75, criterio 17): un pagador con reglas de honorarios o con atenciones no se borra (409 con código
+   * propio, sin tocar nada). La verificación previa da el mensaje; las FK RESTRICT (FeeRule.payerId desde la
+   * migración del 017, WorkItem.payerId) hacen cumplir lo mismo si aparece un vínculo entre la lectura y el
+   * borrado, así que no hay carrera. Una sola escritura.
+   */
   async execute(command: DeletePayerCommand, ctx: RequestContext): Promise<Payer> {
     const scope = requireOrgScope(ctx);
     const { id } = await loadPayerForWrite(this.prisma, scope, command.id);
-    return this.prisma.payer.delete({ where: { id } });
+    await this.assertNoLinks(id);
+    try {
+      return await this.prisma.payer.delete({ where: { id } });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2025') throw resourceNotFound();
+        if (error.code === 'P2003') {
+          // Apareció un vínculo después de la verificación: la base lo rechazó. Se responde igual que antes.
+          await this.assertNoLinks(id);
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async assertNoLinks(payerId: string): Promise<void> {
+    if ((await this.prisma.feeRule.count({ where: { payerId } })) > 0) throw payerHasFeeRules();
+    if ((await this.prisma.workItem.count({ where: { payerId } })) > 0) throw payerHasActivities();
   }
 }

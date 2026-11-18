@@ -590,6 +590,24 @@ export async function deleteStaff(slug: string, id: string, ctx?: ApiContext) {
     }
 }
 
+/**
+ * DELETE /pro/payers/:id (017). 409 si el pagador tiene reglas de honorarios (`payer-has-fee-rules`) o atenciones
+ * (`payer-has-activities`): el mensaje viene del backend. Lanza el error para que la UI lo muestre.
+ */
+export async function deletePayer(slug: string, id: string, ctx?: ApiContext) {
+    try {
+        const res = await apiFetch(`${API_BASE_URL}/pro/payers/${id}`, {
+            method: 'DELETE',
+            headers: getHeaders(slug, ctx?.token)
+        });
+        if (!res.ok) throw await toApiError(res)
+        return true;
+    } catch (error) {
+        rethrowServerAuthError(error);
+        console.error(error);
+        throw error;
+    }
+}
 
 /**
  * GET /v1/patients/:id/summary

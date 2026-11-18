@@ -276,6 +276,7 @@ describe('invariantes de seguridad', () => {
     'MergePatientCommand.sourceId': 'verified',
     'MergePatientCommand.targetId': 'verified',
     'UpdateActivityCommand.id': 'verified',
+    'UpdateActivityCommand.payerId': 'verified',
     'UpdateActivityTypeCommand.id': 'verified',
     'UpdateCategoryCommand.id': 'verified',
     'UpdateOrganizationCommand.id': 'controller',

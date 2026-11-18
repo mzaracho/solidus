@@ -36,7 +36,7 @@ test('getActivityTypes no manda ?orgId= (la organización va en el header)', () 
 test('las escrituras no tragan el error (un 403/404 no debe verse como exito)', () => {
   const writes = [
     'updateWorkItem', 'deleteWorkItem', 'createPatient', 'updatePatient', 'mergePatient',
-    'createStaff', 'updateStaff', 'deleteStaff', 'assignStaffCategory', 'createPayer', 'createFeeRule',
+    'createStaff', 'updateStaff', 'deleteStaff', 'assignStaffCategory', 'createPayer', 'deletePayer', 'createFeeRule',
     'createCategory', 'updateCategory', 'deleteCategory',
     'createOrgPreset', 'updateOrgPreset', 'deleteOrgPreset',
   ]
@@ -100,4 +100,11 @@ test('las escrituras con body de formulario usan su builder y no mandan el objet
 
 test('getWorkItems arma la query con buildWorkItemsQuery', () => {
   assert.ok(functionBody('getWorkItems').includes('buildWorkItemsQuery('))
+})
+
+// Feature 017: el borrado de pagadores va por la ruta del backend y el DELETE no manda body.
+test('deletePayer llama a DELETE /pro/payers/:id', () => {
+  const body = functionBody('deletePayer')
+  assert.ok(body.includes('${API_BASE_URL}/pro/payers/${id}'))
+  assert.ok(body.includes("method: 'DELETE'"))
 })

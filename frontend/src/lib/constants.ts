@@ -88,6 +88,11 @@ export const API_ERROR_CODE = {
     NOT_FOUND: 'not-found',
     VALIDATION_FAILED: 'validation-failed',
     INTERNAL: 'unhandled-exception',
+    // Feature 017
+    ACTIVITY_ALREADY_COLLECTED: 'activity-already-collected',
+    PAYER_HAS_FEE_RULES: 'payer-has-fee-rules',
+    PAYER_HAS_ACTIVITIES: 'payer-has-activities',
+    PAYMENT_DATE_REQUIRED: 'payment-date-required',
 } as const
 
 // Mensajes genericos (en espanol) para los errores de la API cuando el backend no manda uno de negocio
@@ -101,6 +106,67 @@ export const API_ERROR_MESSAGES = {
     tooManyRequests: 'Hiciste demasiados intentos. Esperá unos minutos y probá de nuevo.',
     server: 'Ocurrió un problema de nuestro lado. Probá de nuevo en unos minutos.',
     generic: 'No pudimos completar la operación. Probá de nuevo.',
+    // Respaldo de los errores de negocio del 017 (mismo texto que el backend; el del backend tiene prioridad)
+    activityAlreadyCollected: 'Esta atención ya está cobrada: el monto y el pagador no se pueden modificar. No se guardó ningún cambio.',
+    payerHasFeeRules: 'No se puede eliminar el pagador porque tiene reglas de honorarios asociadas.',
+    payerHasActivities: 'No se puede eliminar el pagador porque tiene atenciones asociadas.',
+    paymentDateRequired: 'Para marcar la atención como pagada tenés que indicar la fecha de pago.',
+} as const
+
+// ─── Edición de monto y pagador (feature 017) ─────────────────────────────────
+export const ACTIVITY_EDIT_TEXTS = {
+    recalcTitle: 'Se recalcularán los honorarios',
+    recalcBody: 'Al cambiar el monto o el pagador, se recalculan los honorarios y la distribución con las reglas vigentes. Los ajustes manuales que hayas hecho en esta atención se reemplazan.',
+    collectedLock: 'Esta atención ya está cobrada: el monto y el pagador no se pueden modificar.',
+    save: 'Guardar',
+    saveRecalc: 'Guardar y recalcular',
+    saving: 'Guardando…',
+    noPayer: 'Sin pagador',
+    selectPayer: 'Seleccionar pagador…',
+    loadingPayers: 'Cargando pagadores…',
+    noPayersAvailable: 'No hay pagadores disponibles',
+    noPayersHelp: 'Creá un pagador en Configuración para poder asignarlo.',
+    updated: 'Atención actualizada.',
+    updatedRecalc: 'Atención actualizada. Se recalcularon los honorarios.',
+    saveError: 'No pudimos guardar los cambios. Probá de nuevo.',
+    invalidAmount: 'Ingresá un monto válido.',
+    negativeAmount: 'El monto no puede ser negativo.',
+    tooManyDecimals: 'El monto admite hasta 2 decimales.',
+    amountLabel: 'Monto bruto ($)',
+    payerLabel: 'Pagador',
+    pickAnotherPayer: 'Elegí otro pagador.',
+} as const
+
+// ─── Fecha de pago (feature 017, criterio 16) ─────────────────────────────────
+export const PAYMENT_DATE_TEXTS = {
+    label: 'Fecha de pago',
+    invalid: 'Ingresá una fecha de pago válida.',
+    missingInTable: 'Sin fecha de pago',
+    markPaidTitle: 'Marcar como pagada',
+    markPaidDescription: 'Indicá la fecha en que se pagó. Se usa la misma fecha para todas las atenciones seleccionadas.',
+    confirm: 'Confirmar',
+    cancel: 'Cancelar',
+    markedPaid: 'Marcado como pagado',
+    markPaidError: 'No pudimos marcar la atención como pagada. Probá de nuevo.',
+} as const
+
+// ─── Pagadores (feature 017) ──────────────────────────────────────────────────
+export const PAYER_TEXTS = {
+    deleteTitle: (name: string) => `Eliminar pagador ${name}`,
+    deleteAria: (name: string) => `Eliminar pagador ${name}`,
+    deleteDescription: '¿Estás seguro de que querés eliminar este pagador? Esta acción no se puede deshacer.',
+    deleteConfirm: 'Eliminar',
+    blockedTitle: (name: string) => `No se puede eliminar ${name}`,
+    blockedHasRules: 'Este pagador tiene reglas de honorarios asociadas y no se puede eliminar.',
+    understood: 'Entendido',
+    deleted: 'Pagador eliminado',
+    deleteError: 'No pudimos eliminar el pagador. Probá de nuevo.',
+} as const
+
+/** Etiquetas de los splits que arma PayerRulesManager (forma única del motor, #40). */
+export const PAYER_SPLIT_LABELS = {
+    professional: 'Profesional',
+    organization: 'Organización',
 } as const
 
 export const SESSION_MESSAGES = {

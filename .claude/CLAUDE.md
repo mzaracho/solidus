@@ -70,6 +70,18 @@ salvo que el usuario lo pida.
   `test/request-dto-invariants.spec.ts`); los campos que asigna el controlador (`id`, `organizationId`, `orgId`, `userId`)
   se declaran con `declare`; `@Allow(` está prohibido. Helpers en `infrastructure.bootstrap/config/core/validation/dto-validators.ts`
   (`IsMoney`, `IsOptionalNotNull`, etc.) y topes `MAX_PAGE_SIZE` / `MAX_PAGE_NUMBER` en `app.constants.ts`.
+- Dinero y motor de honorarios (017): toda aritmética con `src/domain/seed-work/money.ts` (`Prisma.Decimal`; salida a
+  `number` solo con `toJsonNumber`; reparto por mayor resto con `distributeByPercentages`). La guardia
+  `src/money-invariants.spec.ts` vigila 8 archivos (`MONEY_FILES`): no `Number(`, `Math.*`, `.toFixed(` ni operadores
+  sobre dinero. Splits con forma única `{ beneficiary, type, value, roleLabel? }`
+  (`src/domain/features/fee-engine/split-definition.ts`); al escribir la forma vieja da 400.
+- Atenciones cobradas (017): "cobrada" = `PAID` con `paymentDate` (`src/domain/features/activity/activity-collected.ts`;
+  la API la expone como `isCollected`). Pasar a `PAID` exige fecha de pago (400 `payment-date-required`). Monto y pagador
+  solo se editan si no está cobrada (409 `activity-already-collected`; recalcula participantes y splits). Borrar un
+  pagador: 409 `payer-has-fee-rules` / `payer-has-activities`. Staff con participaciones o splits: baja lógica, no 500.
+- Prohibidos los re-exports con alias (`export ... from '@src/...'`): rompen `nest build` (hook de alias de Nest CLI) y
+  los vigila `test/nest-build-compat.spec.ts`. `tsc --noEmit` y Jest NO detectan fallos de `nest build`: correr
+  `npx nest build` si se tocan exports.
 - Todo `@Controller` debe estar registrado en el `controllers` de un módulo Nest: lo vigila el test `(a2)` de
   `test/org-isolation.spec.ts` (011); un controlador huérfano responde 404 y no se debe dejar en el código.
 - Atenciones (007): ADMIN puede todo; MEMBER edita y cobra cualquier atención de su organización pero borra solo las
@@ -96,6 +108,9 @@ salvo que el usuario lo pida.
 - Modo org/pro (009): `src/lib/view-mode.ts` (`allowedViewModes`, `pickViewMode`, `canSeeRestrictedLinks`) decide
   solo qué ofrece la UI (selector "Ver como", enlaces restringidos a ADMIN); el front manda el modo como preferencia
   (`x-mode` / `?mode=`) y el backend decide.
+- Fecha de pago (017): `src/lib/payment-date.ts` (fecha local, sin `toISOString`; precarga hoy solo al cambiar a pagado),
+  `PaymentDateField` y `MarkPaidDialog` (`components/domain/payment/`). En edición solo viajan los campos cambiados
+  (`src/lib/activity-edit.ts`). Cobro múltiple por id de atención con `src/lib/bulk-payment.ts` y `getRowId` en `DataTable`.
 - Permisos de UI de atenciones: `canDeleteActivity` en `src/lib/activity-permissions.ts` e identidad con
   `readSessionIdentity()` en `src/lib/session.ts`; solo presentación (el backend es la autoridad).
 
@@ -155,12 +170,12 @@ Backend (`cd backend`):
 - `npx tsc --noEmit` — type-check
 - `npx eslint "{src,apps,libs,test}/**/*.ts"` — lint sin modificar archivos
 - `npm run lint` — ATENCIÓN: aplica `--fix` y reescribe archivos
-- `npm test` — Jest (45 suites, 815 tests)
+- `npm test` — Jest (52 suites, 936 tests)
 - `npm run build` — reescribe `dist/`
 
 Frontend (`cd frontend`):
 - `npm install` · `npm run dev` (http://localhost:3000; con `dev.ps1`, el puerto de `FRONTEND_PORT`)
-- `npx tsc --noEmit` · `npm run lint` · `npm test` (`node --test`, 87 tests)
+- `npx tsc --noEmit` · `npm run lint` · `npm test` (`node --test`, 129 tests)
 - `npm run build` — si falla la descarga de Google Fonts por TLS:
   `NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS=1 npm run build`
 - El build Docker (`apk`, `npm`, Prisma, Google Fonts) falla por TLS detrás de un antivirus/proxy que inspecciona

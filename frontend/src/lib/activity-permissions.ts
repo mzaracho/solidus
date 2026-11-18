@@ -25,3 +25,12 @@ export function canDeleteActivity(
   if (item.createdByUserId) return !!identity.userId && item.createdByUserId === identity.userId
   return !!item.professionalId && item.professionalId === identity.professionalId
 }
+
+/**
+ * "Cobrada" (017): la definicion la fija el backend (PAID con fecha de pago) y llega ya calculada en `isCollected`.
+ * El front no la repite: solo la lee. Si el dato falta, la atencion se trata como no cobrada y el backend (409)
+ * decide.
+ */
+export function isActivityCollected(item: { isCollected?: boolean | null } | null | undefined): boolean {
+  return item?.isCollected === true
+}

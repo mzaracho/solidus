@@ -2,14 +2,13 @@ import { BadRequestException } from '@nestjs/common';
 import { MAX_MONEY_AMOUNT } from '@src/domain/constants/app.constants';
 
 /**
- * Validación del JSON `FeeRule.splits` (feature 007, MEDIA-1).
+ * Validación del JSON `FeeRule.splits` (feature 007, MEDIA-1; forma única desde el 017, #40).
  *
- * Hay dos formas en uso, y las dos se aceptan por elemento:
- *  - Forma de la UI (PayerRulesManager): { role, percentage, beneficiaryType }.
- *    `percentage` es el porcentaje (0-100) del monto bruto que recibe ese beneficiario.
- *    `beneficiaryType` es PROFESSIONAL u ORGANIZATION (también se acepta ORG).
- *  - Forma del motor (FeeResolutionService.SplitDefinition): { beneficiary, type, value, roleLabel? }.
- *    `beneficiary` es ORG o PROFESSIONAL; `type` PERCENTAGE (value 0-100) o FIXED (value = monto).
+ * Al escribir solo se acepta la forma del motor (FeeResolutionService / SplitDefinition):
+ * { beneficiary, type, value, roleLabel? }. `beneficiary` es ORG o PROFESSIONAL; `type` PERCENTAGE
+ * (value 0-100 sobre el bruto) o FIXED (value = monto EN PESOS, hasta 2 decimales). La forma vieja de la UI
+ * { role, percentage, beneficiaryType } se rechaza al escribir; al LEER se sigue normalizando
+ * (`normalizeSplitDefinitions`).
  *
  * El beneficiario nunca lleva id: el motor asigna PROFESSIONAL al profesional de la atención y el resto
  * a la organización, así que no se acepta ninguna otra clave (beneficiaryId, professionalId, etc.).
@@ -21,12 +20,11 @@ const MAX_LABEL = 100;
 const MAX_FIXED = MAX_MONEY_AMOUNT;
 const SUM_TOLERANCE = 0.01;
 
-const UI_KEYS = new Set(['role', 'percentage', 'beneficiaryType']);
 const ENGINE_KEYS = new Set(['beneficiary', 'type', 'value', 'roleLabel']);
-const UI_BENEFICIARIES = new Set(['PROFESSIONAL', 'ORGANIZATION', 'ORG']);
 const ENGINE_BENEFICIARIES = new Set(['PROFESSIONAL', 'ORG']);
 
-const invalid = () => new BadRequestException({
+const invalid = () =>
+  new BadRequestException({
     code: 'bad-request',
     message: 'La distribución de honorarios no es válida.',
   });
@@ -36,6 +34,9 @@ const isFiniteNumber = (v: unknown): v is number =>
 
 const isOptionalLabel = (v: unknown) =>
   v === undefined || (typeof v === 'string' && v.length <= MAX_LABEL);
+
+/** Monto en pesos con hasta 2 decimales (por su representación decimal más corta). */
+const hasAtMostTwoDecimals = (v: number) => /^\d+(\.\d{1,2})?$/.test(String(v));
 
 const hasOnly = (obj: Record<string, unknown>, allowed: Set<string>) =>
   Object.keys(obj).every((k) => allowed.has(k));
@@ -55,40 +56,24 @@ export function validateFeeRuleSplits(splits: unknown): void {
       throw invalid();
     }
     const e = entry as Record<string, unknown>;
-    if ('percentage' in e) {
-      // forma de la UI
-      if (
-        !hasOnly(e, UI_KEYS) ||
-        !isFiniteNumber(e.percentage) ||
-        e.percentage < 0 ||
-        e.percentage > 100 ||
-        typeof e.beneficiaryType !== 'string' ||
-        !UI_BENEFICIARIES.has(e.beneficiaryType) ||
-        !isOptionalLabel(e.role)
-      ) {
+    if (
+      !hasOnly(e, ENGINE_KEYS) ||
+      typeof e.beneficiary !== 'string' ||
+      !ENGINE_BENEFICIARIES.has(e.beneficiary) ||
+      !isFiniteNumber(e.value) ||
+      e.value < 0 ||
+      !isOptionalLabel(e.roleLabel)
+    ) {
+      throw invalid();
+    }
+    if (e.type === 'PERCENTAGE') {
+      if (e.value > 100) throw invalid();
+      percentTotal += e.value;
+    } else if (e.type === 'FIXED') {
+      if (e.value > MAX_FIXED || !hasAtMostTwoDecimals(e.value))
         throw invalid();
-      }
-      percentTotal += e.percentage;
     } else {
-      // forma del motor
-      if (
-        !hasOnly(e, ENGINE_KEYS) ||
-        typeof e.beneficiary !== 'string' ||
-        !ENGINE_BENEFICIARIES.has(e.beneficiary) ||
-        !isFiniteNumber(e.value) ||
-        e.value < 0 ||
-        !isOptionalLabel(e.roleLabel)
-      ) {
-        throw invalid();
-      }
-      if (e.type === 'PERCENTAGE') {
-        if (e.value > 100) throw invalid();
-        percentTotal += e.value;
-      } else if (e.type === 'FIXED') {
-        if (e.value > MAX_FIXED) throw invalid();
-      } else {
-        throw invalid();
-      }
+      throw invalid();
     }
   }
   if (percentTotal > 100 + SUM_TOLERANCE) throw invalid();

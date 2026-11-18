@@ -10,7 +10,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog'
-import { ATTENDANCE, PAYMENT_STATUS, WORK_ITEM_TYPE } from '@/lib/constants'
+import { ATTENDANCE, PAYMENT_STATUS, WORK_ITEM_TYPE, PAYMENT_DATE_TEXTS } from '@/lib/constants'
 
 const SERVICE_TYPE_LABELS: Record<string, string> = {
     [WORK_ITEM_TYPE.SESSION]: 'Sesión',
@@ -94,9 +94,13 @@ export function ActivityDetailModal({ item, isOpen, onClose }: Props) {
                     {item.paymentMethod && (
                         <Row label="Método de Pago">{item.paymentMethod}</Row>
                     )}
-                    {paymentDate && (
+                    {paymentDate ? (
                         <Row label="Fecha de Pago">
                             {format(paymentDate, 'dd/MM/yyyy', { locale: es })}
+                        </Row>
+                    ) : item.status === PAYMENT_STATUS.PAID && (
+                        <Row label="Fecha de Pago">
+                            <span className="text-muted-foreground">{PAYMENT_DATE_TEXTS.missingInTable}</span>
                         </Row>
                     )}
                     <Row label="Honorarios">{formatCurrency(item.grossAmount ?? 0)}</Row>

@@ -93,3 +93,35 @@ test('data.ts no arma "Failed to ...", ni lee el cuerpo como texto, ni usa detai
   assert.equal(dataSource.includes('.text()'), false)
   assert.equal(dataSource.includes('details'), false)
 })
+
+test('017: un 4xx sin mensaje pero con un code conocido usa el texto de respaldo de ese code', () => {
+  assert.equal(
+    messageFromErrorBody(409, { code: 'activity-already-collected', errors: [] }),
+    API_ERROR_MESSAGES.activityAlreadyCollected,
+  )
+  assert.equal(messageFromErrorBody(409, { code: 'payer-has-fee-rules' }), API_ERROR_MESSAGES.payerHasFeeRules)
+  assert.equal(messageFromErrorBody(409, { code: 'payer-has-activities' }), API_ERROR_MESSAGES.payerHasActivities)
+  assert.equal(messageFromErrorBody(400, { code: 'payment-date-required' }), API_ERROR_MESSAGES.paymentDateRequired)
+  // el texto del backend tiene prioridad sobre el respaldo
+  assert.equal(
+    messageFromErrorBody(409, { code: 'payer-has-fee-rules', errors: [{ message: 'Texto del backend.' }] }),
+    'Texto del backend.',
+  )
+  // un code desconocido cae al genérico del status
+  assert.equal(messageFromErrorBody(409, { code: 'otro' }), API_ERROR_MESSAGES.conflict)
+})
+
+test('017: el respaldo coincide con el texto exacto del backend para los códigos del feature', () => {
+  assert.equal(
+    API_ERROR_MESSAGES.activityAlreadyCollected,
+    'Esta atención ya está cobrada: el monto y el pagador no se pueden modificar. No se guardó ningún cambio.',
+  )
+  assert.equal(
+    API_ERROR_MESSAGES.payerHasFeeRules,
+    'No se puede eliminar el pagador porque tiene reglas de honorarios asociadas.',
+  )
+  assert.equal(
+    API_ERROR_MESSAGES.payerHasActivities,
+    'No se puede eliminar el pagador porque tiene atenciones asociadas.',
+  )
+})

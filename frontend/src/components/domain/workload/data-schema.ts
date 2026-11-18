@@ -6,10 +6,15 @@ export type WorkItem = {
     professionalName: string
     professionalId: string | null
     serviceType: string
-    payerName: string
+    /** Id del pagador de la atencion (siempre presente en datos validos: payerId es NOT NULL en la base). */
+    payerId: string | null
+    /** null si el nombre falta o es 'Unknown': la presentacion muestra "Sin pagador" (nunca un guion como valor). */
+    payerName: string | null
     /** PaymentStatus del backend (ver PAYMENT_STATUS en lib/constants). */
     status: string
     paymentDate: string | null
+    /** "Cobrada" (PAID con fecha de pago): la calcula el backend (017); el front solo la lee. */
+    isCollected: boolean
     createdByUserId: string | null
     /** Monto total (grossAmount). */
     grossAmount: number | null
@@ -31,9 +36,11 @@ export type ApiActivity = {
     professionalId?: string | null
     professionalName?: string | null
     serviceType?: string | null
+    payerId?: string | null
     payerName?: string | null
     status?: string | null
     paymentDate?: string | null
+    isCollected?: boolean | null
     createdByUserId?: string | null
     grossAmount?: number | string | null
     netAmount?: number | string | null
@@ -49,9 +56,11 @@ export function mapActivityToWorkItem(i: ApiActivity): WorkItem {
         professionalName: i.professionalName || '—',
         professionalId: i.professionalId ?? null,
         serviceType: i.serviceType || '—',
-        payerName: i.payerName && i.payerName !== 'Unknown' ? i.payerName : '—',
+        payerId: i.payerId ?? null,
+        payerName: i.payerName && i.payerName !== 'Unknown' ? i.payerName : null,
         status: i.status || '',
         paymentDate: i.paymentDate ?? null,
+        isCollected: i.isCollected === true,
         createdByUserId: i.createdByUserId ?? null,
         grossAmount: asNumber(i.grossAmount),
         netAmount: asNumber(i.netAmount),

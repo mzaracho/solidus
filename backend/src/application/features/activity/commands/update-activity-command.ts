@@ -2,15 +2,18 @@ import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfa
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { WorkItem, AttendanceStatus, PaymentStatus } from '@prisma/client';
 import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
-import { foundOr404, forbiddenAction, inScope, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
-import { canModifyActivity } from '../activity-ownership';
+import { ActivityService } from '@src/infrastructure/features/activity/activity.service';
 
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
-import { IsOptionalDateString } from '@src/infrastructure.bootstrap/config/core/validation/dto-validators';
+import {
+  IsMoney,
+  IsNullableEntityId,
+  IsOptionalDateString,
+  IsOptionalNotNull,
+} from '@src/infrastructure.bootstrap/config/core/validation/dto-validators';
 
 export class UpdateActivityCommand implements IRequest<WorkItem> {
   /** Lo asigna el controlador desde el path; el cliente no lo manda (400). */
@@ -39,6 +42,20 @@ export class UpdateActivityCommand implements IRequest<WorkItem> {
   @IsOptional()
   @IsEnum(AttendanceStatus)
   attendance?: AttendanceStatus;
+
+  /** Ausente = sin cambio; null = 400. Solo editable mientras la atención no esté cobrada (409 si lo está). */
+  @ApiPropertyOptional()
+  @IsOptionalNotNull()
+  @IsMoney()
+  grossAmount?: number;
+
+  /**
+   * Ausente = sin cambio; null = pagador particular de la organización; UUID = ese pagador (verificado contra la
+   * organización de la atención); '' = 400. Solo editable mientras la atención no esté cobrada.
+   */
+  @ApiPropertyOptional({ nullable: true })
+  @IsNullableEntityId()
+  payerId?: string | null;
 }
 
 @RequestHandler(UpdateActivityCommand)
@@ -47,42 +64,25 @@ export class UpdateActivityCommandHandler implements IRequestHandler<
   UpdateActivityCommand,
   WorkItem
 > {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly activityService: ActivityService) { }
 
   async execute(
     command: UpdateActivityCommand,
     ctx: RequestContext,
   ): Promise<WorkItem> {
     const scope = requireOrgScope(ctx);
-    const id = requireId(command.id);
-
-    const existing = await foundOr404(
-      this.prisma.workItem.findFirst({
-        where: { id, ...inScope(scope) },
-        select: {
-          organizationId: true,
-          createdByUserId: true,
-          professional: { select: { userId: true } },
-        },
-      }),
+    return this.activityService.updateActivity(
+      {
+        id: command.id,
+        date: command.date,
+        paymentStatus: command.paymentStatus,
+        paymentMethod: command.paymentMethod,
+        paymentDate: command.paymentDate,
+        attendance: command.attendance,
+        grossAmount: command.grossAmount,
+        payerId: command.payerId,
+      },
+      scope,
     );
-    if (!canModifyActivity(existing, scope, 'edit')) throw forbiddenAction();
-
-    const data: any = {};
-
-    if (command.date) data.occurredAt = new Date(command.date);
-    if (command.paymentMethod) data.paymentMethod = command.paymentMethod;
-    if (command.paymentDate)
-      data.paymentDate = command.paymentDate
-        ? new Date(command.paymentDate)
-        : null;
-    if (command.attendance) data.attendance = command.attendance;
-
-    if (command.paymentStatus) data.paymentStatus = command.paymentStatus;
-
-    return this.prisma.workItem.update({
-      where: { id },
-      data,
-    });
   }
 }

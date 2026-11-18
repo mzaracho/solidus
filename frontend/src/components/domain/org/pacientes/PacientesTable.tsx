@@ -5,9 +5,8 @@ import { columns, PacienteSession } from './columns'
 import { DataTable } from '@/components/ui/data-table'
 import { Button } from '@/components/ui/button'
 import { WorkItemForm } from '@/components/domain/workload/form/WorkItemForm'
-import { PaymentRegistrationModal } from '@/components/domain/payment/PaymentRegistrationModal'
 import { SmartFilterBar } from '@/components/domain/shared/SmartFilterBar'
-import { Plus, CreditCard } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { getWorkItems, getFeeRules, createWorkItem } from '@/services/data'
 
 import { useParams } from 'next/navigation'
@@ -23,8 +22,6 @@ export function PacientesTable() {
 
     // UI State
     const [isFormOpen, setIsFormOpen] = useState(false)
-    const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
-    const [rowSelection, setRowSelection] = useState({})
 
     // Filters
     const [filters, setFilters] = useState({
@@ -117,19 +114,6 @@ export function PacientesTable() {
     const uniqueTypes = [...new Set(localData.map(d => d.type))]
     const uniqueMethods = [...new Set(localData.map(d => d.paymentMethod).filter(Boolean))] as string[]
 
-    const selectedCount = Object.keys(rowSelection).length
-
-    const getItemsToPay = () => {
-        return filteredData // Use filtered data because indices match visible rows
-            .filter((_, index) => rowSelection[index as keyof typeof rowSelection])
-            .map(item => ({
-                id: item.id,
-                patient: item.patientName,
-                gross: item.sessionValue,
-                hours: 1
-            }))
-    }
-
     if (loading) return <div className="p-8 text-center text-muted-foreground">Cargando datos...</div>
 
     return (
@@ -137,14 +121,8 @@ export function PacientesTable() {
             <div className="flex justify-between items-center">
                 <div className="flex items-center gap-4">
                     <h3 className="text-lg font-medium">Registro de Sesiones</h3>
-                    {selectedCount > 0 && (
-                        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-4">
-                            <span className="text-sm text-muted-foreground">{selectedCount} seleccionados</span>
-                            <Button size="sm" variant="default" onClick={() => setIsPaymentModalOpen(true)}>
-                                <CreditCard className="mr-2 h-4 w-4" /> Registrar Cobro
-                            </Button>
-                        </div>
-                    )}
+                    {/* Acción "Registrar Cobro" oculta (017): era un placeholder (console.log) y esta tabla no tiene los datos
+                        para cobrar (ver 04-implementacion.md, pendiente de BACKLOG). */}
                 </div>
                 <Button onClick={() => setIsFormOpen(true)}>
                     <Plus className="mr-2 h-4 w-4" /> Nueva Sesión
@@ -162,8 +140,6 @@ export function PacientesTable() {
             <DataTable
                 columns={columns}
                 data={filteredData}
-                rowSelection={rowSelection}
-                setRowSelection={setRowSelection}
             />
 
             <WorkItemForm
@@ -173,14 +149,6 @@ export function PacientesTable() {
                 orgSlug={orgSlug}
                 rulesOrg={rules}
                 rulesPro={{}}
-            />
-
-            <PaymentRegistrationModal
-                isOpen={isPaymentModalOpen}
-                onClose={() => setIsPaymentModalOpen(false)}
-                onConfirm={(items) => { console.log("Pay", items); setIsPaymentModalOpen(false); setRowSelection({}) }}
-                items={getItemsToPay()}
-                rulesOrg={rules}
             />
         </div>
     )

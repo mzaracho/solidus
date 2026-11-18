@@ -1,11 +1,26 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { BeneficiaryType, OrgType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../Prisma/prisma.service';
-
-export enum SplitType {
-  PERCENTAGE = 'PERCENTAGE',
-  FIXED = 'FIXED',
-}
+import {
+  normalizeSplitDefinitions,
+  SplitDefinition,
+  SplitType,
+} from '@src/domain/features/fee-engine/split-definition';
+import {
+  distributeByPercentages,
+  minMoney,
+  Money,
+  MoneyInput,
+  money,
+  nonNegative,
+  percentOf,
+  roundMoney,
+  sumMoney,
+} from '@src/domain/seed-work/money';
 
 export interface WorkContext {
   organizationId: string;
@@ -14,20 +29,13 @@ export interface WorkContext {
   professionalCategory: string | null; // e.g., "SENIOR"
   eventRole: string; // [NEW] e.g., "ADMISOR", "COADMISOR", "TITULAR"
   serviceType: string;
-  grossAmount: number;
-}
-
-export interface SplitDefinition {
-  beneficiary: BeneficiaryType;
-  type: SplitType;
-  value: number; // Percentage (0-100) or Fixed cents
-  roleLabel?: string;
+  grossAmount: MoneyInput;
 }
 
 export interface SplitResult {
   beneficiaryType: BeneficiaryType;
   beneficiaryId: string | null; // null for Org
-  amount: number;
+  amount: Money;
   roleLabel?: string;
 }
 
@@ -35,7 +43,7 @@ export interface SplitResult {
 export class FeeResolutionService {
   private readonly logger = new Logger(FeeResolutionService.name);
 
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   /**
    * `db` permite leer dentro de una transacción abierta (ve los registros recién creados).
@@ -46,6 +54,7 @@ export class FeeResolutionService {
     db: Prisma.TransactionClient = this.prisma,
   ): Promise<SplitResult[]> {
     const now = new Date();
+    const gross = roundMoney(context.grossAmount);
 
     // Fetch Organization Type to determine strategy
     const org = await db.organization.findUnique({
@@ -92,37 +101,47 @@ export class FeeResolutionService {
     if (rules.length === 0) {
       // [FALLBACK] Check for Payer Retention (Common in Solo Practice)
       if (context.payerId) {
-        const payer = await db.payer.findUnique({ where: { id: context.payerId } });
-        if (payer && payer.retentionPercentage && payer.retentionPercentage > 0) {
-          const retentionAmount = Number((context.grossAmount * (payer.retentionPercentage / 100)).toFixed(2));
-          const proAmount = context.grossAmount - retentionAmount;
+        const payer = await db.payer.findUnique({
+          where: { id: context.payerId },
+        });
+        if (
+          payer &&
+          payer.retentionPercentage &&
+          payer.retentionPercentage > 0
+        ) {
+          const retentionAmount = percentOf(gross, payer.retentionPercentage);
+          const proAmount = gross.sub(retentionAmount);
 
-          this.logger.log(`No rule found. Using Payer Retention: ${payer.retentionPercentage}% for Payer ${payer.name}`);
+          this.logger.log(
+            `No rule found. Using Payer Retention: ${payer.retentionPercentage}% for Payer ${payer.name}`,
+          );
 
           return [
             {
               beneficiaryType: BeneficiaryType.ORG, // Represents the Payer retention (Cost)
               beneficiaryId: null,
               amount: retentionAmount,
-              roleLabel: `Retención ${payer.name} (${payer.retentionPercentage}%)`
+              roleLabel: `Retención ${payer.name} (${payer.retentionPercentage}%)`,
             },
             {
               beneficiaryType: BeneficiaryType.PROFESSIONAL,
               beneficiaryId: context.professionalId,
               amount: proAmount,
-              roleLabel: 'Honorario Profesional'
-            }
+              roleLabel: 'Honorario Profesional',
+            },
           ];
         } else if (org.type === OrgType.SOLO_PRACTICE) {
           // If Solo Practice and no retention, 100% to Pro (Self-managed)
-          this.logger.log(`No rule found. Solo Practice Default: 100% to Professional.`);
+          this.logger.log(
+            `No rule found. Solo Practice Default: 100% to Professional.`,
+          );
           return [
             {
               beneficiaryType: BeneficiaryType.PROFESSIONAL,
               beneficiaryId: context.professionalId,
-              amount: context.grossAmount,
-              roleLabel: 'Honorario (Solo Practice)'
-            }
+              amount: gross,
+              roleLabel: 'Honorario (Solo Practice)',
+            },
           ];
         }
       }
@@ -137,9 +156,11 @@ export class FeeResolutionService {
         });
         const categoryPct = professional?.category?.percentage;
         if (categoryPct != null && categoryPct > 0) {
-          const proAmount = Number((context.grossAmount * (categoryPct / 100)).toFixed(2));
-          const orgAmount = Number((context.grossAmount - proAmount).toFixed(2));
-          this.logger.log(`No rule found. CLINIC fallback: using category "${professional?.category?.name}" (${categoryPct}%) for professional.`);
+          const proAmount = percentOf(gross, categoryPct);
+          const orgAmount = gross.sub(proAmount);
+          this.logger.log(
+            `No rule found. CLINIC fallback: using category "${professional?.category?.name}" (${categoryPct}%) for professional.`,
+          );
           const results: SplitResult[] = [
             {
               beneficiaryType: BeneficiaryType.PROFESSIONAL,
@@ -148,12 +169,12 @@ export class FeeResolutionService {
               roleLabel: `Honorario (${professional?.category?.name ?? 'Categoría'} - ${categoryPct}%)`,
             },
           ];
-          if (orgAmount > 0) {
+          if (orgAmount.greaterThan(0)) {
             results.push({
               beneficiaryType: BeneficiaryType.ORG,
               beneficiaryId: null,
               amount: orgAmount,
-              roleLabel: `Comisión Organización (${100 - categoryPct}%)`,
+              roleLabel: `Comisión Organización (${money(100).sub(categoryPct).toString()}%)`,
             });
           }
           return results;
@@ -167,7 +188,7 @@ export class FeeResolutionService {
         {
           beneficiaryType: BeneficiaryType.ORG,
           beneficiaryId: null,
-          amount: context.grossAmount,
+          amount: gross,
           roleLabel: 'Default (No Rule)',
         },
       ];
@@ -216,47 +237,61 @@ export class FeeResolutionService {
     });
 
     const bestRule = sortedRules[0];
-    // Cast Json to typed array
-    const splitsDefinition = bestRule.splits as unknown as SplitDefinition[];
+    // Forma única del motor; las reglas guardadas en la forma vieja de la UI se normalizan al leer.
+    const splitsDefinition = normalizeSplitDefinitions(bestRule.splits);
 
-    return this.computeAmounts(context, splitsDefinition);
+    return this.computeAmounts(gross, context.professionalId, splitsDefinition);
   }
 
+  /**
+   * Reparto al centavo (criterios 3 y 7). Los porcentajes se reparten juntos por el método del mayor resto
+   * (desempate: orden de la definición); después se recorren todas las definiciones en orden y cada monto se
+   * limita a lo que queda del bruto. Lo que sobra va a una fila ORG `Remainder`.
+   */
   private computeAmounts(
-    context: WorkContext,
+    gross: Money,
+    professionalId: string,
     definitions: SplitDefinition[],
   ): SplitResult[] {
+    const percentIndexes = definitions
+      .map((d, i) => (d.type === SplitType.FIXED ? -1 : i))
+      .filter((i) => i >= 0);
+    const shares = distributeByPercentages(
+      gross,
+      percentIndexes.map((i) => definitions[i].value),
+    );
+    const percentAmount = new Map<number, Money>(
+      percentIndexes.map((idx, k) => [idx, shares[k]]),
+    );
+
     const results: SplitResult[] = [];
-    let totalAllocated = 0;
+    let allocated: Money = money(0);
 
-    for (const split of definitions) {
-      let amount = 0;
-      if (split.type === SplitType.FIXED) {
-        amount = split.value;
-      } else {
-        // PERCENTAGE (value is 0-100)
-        amount = Number((context.grossAmount * (split.value / 100)).toFixed(2));
-      }
-
-      const beneficiaryId =
-        split.beneficiary === BeneficiaryType.PROFESSIONAL ? context.professionalId : null;
+    definitions.forEach((split, index) => {
+      const wanted =
+        split.type === SplitType.FIXED
+          ? roundMoney(split.value)
+          : (percentAmount.get(index) as Money);
+      const amount = nonNegative(minMoney(wanted, gross.sub(allocated)));
 
       results.push({
         beneficiaryType: split.beneficiary,
-        beneficiaryId,
-        amount: amount,
+        beneficiaryId:
+          split.beneficiary === BeneficiaryType.PROFESSIONAL
+            ? professionalId
+            : null,
+        amount,
         roleLabel: split.roleLabel,
       });
-
-      totalAllocated += amount;
-    }
+      allocated = sumMoney([allocated, amount]);
+    });
 
     // Remainder handling
-    if (totalAllocated < context.grossAmount) {
+    if (allocated.lessThan(gross)) {
       results.push({
         beneficiaryType: BeneficiaryType.ORG,
         beneficiaryId: null,
-        amount: context.grossAmount - totalAllocated,
+        amount: gross.sub(allocated),
         roleLabel: 'Remainder',
       });
     }

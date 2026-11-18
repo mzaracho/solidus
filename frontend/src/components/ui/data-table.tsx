@@ -25,6 +25,8 @@ interface DataTableProps<TData, TValue> {
     rowSelection?: Record<string, boolean>
     setRowSelection?: (rowSelection: Record<string, boolean>) => void
     hidePagination?: boolean
+    /** Id estable de cada fila (la seleccion se guarda por este id en vez de por indice). */
+    getRowId?: (row: TData) => string
 }
 
 export function DataTable<TData, TValue>({
@@ -34,10 +36,12 @@ export function DataTable<TData, TValue>({
     rowSelection,
     setRowSelection,
     hidePagination = false,
+    getRowId,
 }: DataTableProps<TData, TValue>) {
     const table = useReactTable({
         data,
         columns,
+        getRowId: getRowId ? (row) => getRowId(row) : undefined,
         getCoreRowModel: getCoreRowModel(),
         getPaginationRowModel: getPaginationRowModel(),
         onRowSelectionChange: setRowSelection as any, // Cast to any to avoid complex type matching issues with Tanstack

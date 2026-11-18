@@ -18,7 +18,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { deleteWorkItem, updateWorkItem } from '@/services/data'
 import { useParams } from 'next/navigation'
-import { ATTENDANCE, PAYER_PARTICULAR } from '@/lib/constants'
+import { ATTENDANCE, PAYER_PARTICULAR, PAYMENT_DATE_TEXTS } from '@/lib/constants'
+import { paymentDateCell } from '@/lib/payment-date'
 import { Eye } from 'lucide-react'
 
 export type Attention = {
@@ -33,6 +34,9 @@ export type Attention = {
     commission: number
     netAmount: number
     paymentDate?: string | Date
+    payerId?: string | null
+    payerName?: string | null
+    isCollected?: boolean
     createdByUserId?: string | null
     isExternal: boolean
     organizationName: string
@@ -136,8 +140,10 @@ export const getColumns = (
                 const gross = row.original.fees || 0
                 // User requested: "valor cobrado si se hizo, sino mostrar $0,00"
                 // Assuming if paid, the full gross amount was collected (since partials aren't tracked yet in this view)
+                const dateText = paymentDateCell(!!isPaid, row.original.paymentDate, PAYMENT_DATE_TEXTS.missingInTable)
                 return <div className="text-right font-medium text-emerald-700">
                     {isPaid ? formatCurrency(gross) : formatCurrency(0)}
+                    {dateText && <div className="text-xs font-normal text-muted-foreground">{dateText}</div>}
                 </div>
             },
         },
@@ -193,7 +199,7 @@ export const getColumns = (
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                                disabled={payment.paid || !canEdit}
+                                disabled={!canEdit}
                                 onClick={() => canEdit && onEdit(payment)}
                                 title={payment.isExternal ? 'No podés editar actividades de organizaciones externas' : !canEdit ? 'Solo podés editar actividades que cargaste vos' : undefined}
                             >

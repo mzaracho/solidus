@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { sumMoney, toJsonNumber } from '@src/domain/seed-work/money';
 import { PrismaService } from '../../Prisma/prisma.service';
 import { Prisma, PaymentStatus } from '@prisma/client';
 import { Patient } from '@src/domain/features/patients/Patient.entity';
@@ -199,6 +200,6 @@ export class PatientsService implements IPatientService {
         ...(professionalIds ? ownProfessionalsFilter(professionalIds) : {}),
       },
     });
-    return items.reduce((acc, item) => acc + Number(item.grossAmount), 0);
+    return toJsonNumber(sumMoney(items.map((item) => item.grossAmount)));
   }
 }

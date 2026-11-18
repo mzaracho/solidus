@@ -30,6 +30,8 @@ import {
   requireViewScope,
 } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { sumMoney, toJsonNumber } from '@src/domain/seed-work/money';
+import { isCollected } from '@src/domain/features/activity/activity-collected';
 
 export class FindAllActivitiesQuery implements IRequest<PaginatedActivityResponseDto> {
   /** La asigna el controlador desde @CurrentOrgId(); la query del cliente no la pisa. */
@@ -206,20 +208,27 @@ export class FindAllActivitiesQueryHandler implements IRequestHandler<
       paymentDate: item.paymentDate,
       attendance: item.attendance,
       createdByUserId: item.createdByUserId ?? null,
-      commission: item.splits
-        .filter((s) => s.beneficiaryType === BeneficiaryType.ORG)
-        .reduce((sum, s) => sum + Number((s as any).amount), 0),
-      netAmount: isPro
-        // PRO mode: only the current professional's own splits
-        ? item.splits
-          .filter((s) => s.beneficiaryId != null && proIds.includes(s.beneficiaryId!))
-          .reduce((sum, s) => sum + Number((s as any).amount), 0)
-        // ORG mode: sum all professional splits
-        : item.splits
-          .filter((s) => s.beneficiaryType === BeneficiaryType.PROFESSIONAL)
-          .reduce((sum, s) => sum + Number((s as any).amount), 0),
-      grossAmount: Number((item as any).grossAmount),
-      paidAmount: item.paymentStatus === PaymentStatus.PAID ? Number((item as any).grossAmount) : 0,
+      commission: toJsonNumber(
+        sumMoney(
+          item.splits
+            .filter((s) => s.beneficiaryType === BeneficiaryType.ORG)
+            .map((s) => s.amount),
+        ),
+      ),
+      netAmount: toJsonNumber(
+        sumMoney(
+          (isPro
+            // PRO mode: only the current professional's own splits
+            ? item.splits.filter((s) => s.beneficiaryId != null && proIds.includes(s.beneficiaryId!))
+            // ORG mode: sum all professional splits
+            : item.splits.filter((s) => s.beneficiaryType === BeneficiaryType.PROFESSIONAL)
+          ).map((s) => s.amount),
+        ),
+      ),
+      grossAmount: toJsonNumber(item.grossAmount),
+      paidAmount: item.paymentStatus === PaymentStatus.PAID ? toJsonNumber(item.grossAmount) : 0,
+      // Definición única de "cobrada" (PAID con fecha de pago): el front no la repite (017).
+      isCollected: isCollected(item),
       payments: 0,
       organizationName: (item.organization as any)?.name || 'Desconocida',
       isExternal: item.organizationId !== orgId,

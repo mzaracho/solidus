@@ -8,6 +8,31 @@ import {
   requireOrgId,
   ViewScope,
 } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
+import { Money, money, nonNegative, sumMoney, toJsonNumber } from '@src/domain/seed-work/money';
+
+type SplitLike = { beneficiaryId: string | null; beneficiaryType: BeneficiaryType; amount: Prisma.Decimal };
+type ItemLike = { grossAmount: Prisma.Decimal; splits: SplitLike[] };
+
+/** Lo que se lleva el profesional (mis splits). */
+const myShare = (item: ItemLike, proIds: string[]): Money =>
+  sumMoney(
+    item.splits
+      .filter((s) => s.beneficiaryId != null && proIds.includes(s.beneficiaryId))
+      .map((s) => s.amount),
+  );
+
+/** Neto de la organización: splits ORG; si no hay, el resto del bruto; si no hay splits, el bruto. */
+const orgNet = (item: ItemLike): Money => {
+  const orgSplits = item.splits.filter((s) => s.beneficiaryType === BeneficiaryType.ORG);
+  if (orgSplits.length > 0) return sumMoney(orgSplits.map((s) => s.amount));
+  if (item.splits.length > 0) {
+    // If splits exist but no explicit ORG split, ORG gets the remainder (Gross - what others took)
+    const othersTook = sumMoney(item.splits.map((s) => s.amount));
+    return nonNegative(money(item.grossAmount).sub(othersTook));
+  }
+  // No splits recorded: fallback to full gross
+  return money(item.grossAmount);
+};
 
 @Injectable()
 export class DashboardService {
@@ -70,89 +95,34 @@ export class DashboardService {
     });
 
     // KPI Calculation Logic
-    // 1. Accrued Gross (Total Invoiced/Worked)
-    const accruedGross = items.reduce((sum, item) => sum + Number(item.grossAmount), 0);
+    const netOf = (item: ItemLike): Money => (isPro ? myShare(item, proIds) : orgNet(item));
 
-    // 2. Accrued Net (Total Earnings - My Share)
-    let accruedNet = 0;
-    if (isPro) {
-      items.forEach(item => {
-        const mySplits = item.splits.filter(s => s.beneficiaryId != null && proIds.includes(s.beneficiaryId!));
-        const myShare = mySplits.reduce((acc, s) => acc + Number(s.amount), 0);
-        accruedNet += myShare;
-      });
-    } else {
-      // Organization Mode (Net = ORG-attributed splits)
-      items.forEach(item => {
-        const orgSplits = item.splits.filter(s => s.beneficiaryType === BeneficiaryType.ORG);
-        if (orgSplits.length > 0) {
-          accruedNet += orgSplits.reduce((acc, s) => acc + Number(s.amount), 0);
-        } else if (item.splits.length > 0) {
-          // If splits exist but no explicit ORG split, ORG gets the remainder (Gross - what others took)
-          const othersTook = item.splits.reduce((acc, s) => acc + Number(s.amount), 0);
-          accruedNet += Math.max(0, Number(item.grossAmount) - othersTook);
-        } else {
-          // No splits recorded: fallback to full gross
-          accruedNet += Number(item.grossAmount);
-        }
-      });
-    }
+    // 1. Accrued Gross (Total Invoiced/Worked)
+    const accruedGross = sumMoney(items.map((item) => item.grossAmount));
+
+    // 2. Accrued Net (Total Earnings - My Share; en modo organización, lo atribuido a la organización)
+    const accruedNet = sumMoney(items.map(netOf));
 
     // 3. Pending (Outstanding)
-    // Pending usually refers to what is NOT paid yet.
-    // If Pro, it should be My Pending Net? Or Total Pending Gross?
-    // "Pendiente de Cobro" usually implies money I am waiting for.
-    // If I work for an Org, I wait for my fees, NOT the total gross (Org collects gross, pays me net).
-    // So Pending should probably be NET Pending for Pro mode.
-    // However, existing logic was Gross. Let's stick to Gross for consistency unless refined.
-    // Updates: User asked for "Pendiente de cobro" (The amount pending collection).
-    // Let's implement Net Pending for Pro Mode, as that's what they care about collecting.
-    // AND Gross Pending for Org Mode.
-    let pending = 0;
-    const pendingItems = items.filter(i => i.paymentStatus !== PaymentStatus.PAID);
+    // Pro: mi neto pendiente. Org: el bruto que la organización espera del pagador.
+    const pendingItems = items.filter((i) => i.paymentStatus !== PaymentStatus.PAID);
+    const pending = isPro
+      ? sumMoney(pendingItems.map((item) => myShare(item, proIds)))
+      : sumMoney(pendingItems.map((i) => i.grossAmount));
 
-    if (isPro) {
-      pendingItems.forEach(item => {
-        const mySplits = item.splits.filter(s => s.beneficiaryId != null && proIds.includes(s.beneficiaryId!));
-        pending += mySplits.reduce((acc, s) => acc + Number(s.amount), 0);
-      });
-    } else {
-      pending += pendingItems.reduce((sum, i) => sum + Number(i.grossAmount), 0); // Org waits for Gross from Payer
-    }
-
-    // 4. Cash Gross (Collected Gross)
-    // Items where paymentStatus IS 'PAID'
-    const paidItems = items.filter(i => i.paymentStatus === PaymentStatus.PAID);
-    const cashGross = paidItems.reduce((sum, item) => sum + Number(item.grossAmount), 0);
+    // 4. Cash Gross (Collected Gross): paymentStatus PAID
+    const paidItems = items.filter((i) => i.paymentStatus === PaymentStatus.PAID);
+    const cashGross = sumMoney(paidItems.map((item) => item.grossAmount));
 
     // 5. Cash Net (Collected Net)
-    let cashNet = 0;
-    if (isPro) {
-      paidItems.forEach(item => {
-        const mySplits = item.splits.filter(s => s.beneficiaryId != null && proIds.includes(s.beneficiaryId!));
-        cashNet += mySplits.reduce((acc, s) => acc + Number(s.amount), 0);
-      });
-    } else {
-      // Org Cash Net (Retention collected)
-      paidItems.forEach(item => {
-        const orgSplits = item.splits.filter(s => s.beneficiaryType === BeneficiaryType.ORG);
-        if (orgSplits.length > 0) {
-          cashNet += orgSplits.reduce((acc, s) => acc + Number(s.amount), 0);
-        } else if (item.splits.length > 0) {
-          const othersTook = item.splits.reduce((acc, s) => acc + Number(s.amount), 0);
-          cashNet += Math.max(0, Number(item.grossAmount) - othersTook);
-        } else {
-          cashNet += Number(item.grossAmount);
-        }
-      });
-    }
+    const cashNet = sumMoney(paidItems.map(netOf));
 
     return {
-      accruedGross,
-      accruedNet,
-      pending,
-      cashGross,
-      cashNet
+      accruedGross: toJsonNumber(accruedGross),
+      accruedNet: toJsonNumber(accruedNet),
+      pending: toJsonNumber(pending),
+      cashGross: toJsonNumber(cashGross),
+      cashNet: toJsonNumber(cashNet),
     };
   }
 
@@ -209,7 +179,7 @@ export class DashboardService {
     });
 
     // Grouping
-    const groups: Record<string, { gross: number, net: number, date: string }> = {};
+    const groups: Record<string, { gross: Money; net: Money; date: string }> = {};
 
     for (const item of items) {
       const dateObj = basis === 'CASH' && item.paymentDate ? item.paymentDate : item.occurredAt;
@@ -219,35 +189,20 @@ export class DashboardService {
       // Assuming groupBy='day' is primary for now.
 
       if (!groups[dateKey]) {
-        groups[dateKey] = { date: dateKey, gross: 0, net: 0 };
+        groups[dateKey] = { date: dateKey, gross: money(0), net: money(0) };
       }
 
-      // Calculate Amount
-      const gross = Number(item.grossAmount);
-      let net = 0;
+      // Pro: my splits. Organization mode: Net = ORG-attributed splits (retention / remainder)
+      const net = isPro ? myShare(item, proIds) : orgNet(item);
 
-      if (isPro) {
-        const mySplits = item.splits.filter(s => s.beneficiaryId != null && proIds.includes(s.beneficiaryId!));
-        net = mySplits.reduce((acc, s) => acc + Number(s.amount), 0);
-      } else {
-        // Organization mode: Net = ORG-attributed splits (retention / remainder)
-        const orgSplits = item.splits.filter(s => s.beneficiaryType === BeneficiaryType.ORG);
-        if (orgSplits.length > 0) {
-          net = orgSplits.reduce((acc, s) => acc + Number(s.amount), 0);
-        } else if (item.splits.length > 0) {
-          const othersTook = item.splits.reduce((acc, s) => acc + Number(s.amount), 0);
-          net = Math.max(0, Number(item.grossAmount) - othersTook);
-        } else {
-          net = Number(item.grossAmount);
-        }
-      }
-
-      groups[dateKey].gross += gross;
-      groups[dateKey].net += net;
+      groups[dateKey].gross = groups[dateKey].gross.add(item.grossAmount);
+      groups[dateKey].net = groups[dateKey].net.add(net);
     }
 
     // Convert to array and sort
-    const result = Object.values(groups).sort((a, b) => a.date.localeCompare(b.date));
+    const result = Object.values(groups)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((g) => ({ date: g.date, gross: toJsonNumber(g.gross), net: toJsonNumber(g.net) }));
     return result;
   }
 
@@ -310,7 +265,7 @@ export class DashboardService {
 
     return grouped.map(g => ({
       name: g.payerId ? (payerMap.get(g.payerId) || 'Desconocido') : 'Particular',
-      value: Number(g._sum.grossAmount || 0)
+      value: toJsonNumber(g._sum.grossAmount)
     }));
   }
 }

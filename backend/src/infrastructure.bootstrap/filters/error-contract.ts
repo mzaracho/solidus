@@ -14,6 +14,14 @@ export const API_ERROR_CODE = {
   CONFLICT: 'conflict',
   UNHANDLED: 'unhandled-exception',
   REQUEST_ERROR: 'request-error',
+  /** 017: monto o pagador de una atención ya cobrada (PAID con fecha de pago). */
+  ACTIVITY_ALREADY_COLLECTED: 'activity-already-collected',
+  /** 017: borrar un pagador con reglas de honorarios. */
+  PAYER_HAS_FEE_RULES: 'payer-has-fee-rules',
+  /** 017: borrar un pagador con atenciones. */
+  PAYER_HAS_ACTIVITIES: 'payer-has-activities',
+  /** 017: dejar una atención en PAID sin fecha de pago. */
+  PAYMENT_DATE_REQUIRED: 'payment-date-required',
 } as const;
 
 /** Código y mensaje genérico (en español) por status. Los 5xx usan la entrada 500. */

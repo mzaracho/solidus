@@ -4,6 +4,7 @@ import { MAX_MONEY_AMOUNT } from '@src/domain/constants/app.constants';
 import {
   IsEntityId,
   IsMoney,
+  IsNullableEntityId,
   IsOptionalDateString,
   IsOptionalEntityId,
   IsPercentage,
@@ -12,6 +13,7 @@ import {
 class Sample {
   @IsEntityId() id?: string;
   @IsOptionalEntityId() optionalId?: string | null;
+  @IsNullableEntityId() nullableId?: string | null;
   @IsOptionalDateString() day?: string | null;
   @IsMoney() amount?: number;
   @IsPercentage() pct?: number;
@@ -44,6 +46,15 @@ describe('dto-validators', () => {
     }
     for (const bad of ['x', 5, {}, ' ']) {
       expect(errorsFor({ optionalId: bad })).toEqual(['optionalId']);
+    }
+  });
+
+  it('IsNullableEntityId acepta undefined, null y UUID; rechaza "" y lo que no es UUID', () => {
+    for (const ok of [undefined, null, UUID]) {
+      expect(errorsFor({ nullableId: ok })).toEqual([]);
+    }
+    for (const bad of ['', '—', 'x', 5, {}, ' ']) {
+      expect(errorsFor({ nullableId: bad })).toEqual(['nullableId']);
     }
   });
 

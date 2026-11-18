@@ -4,9 +4,9 @@ import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
 import { ConflictException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
-import { Professional } from '@prisma/client';
+import { Prisma, Professional } from '@prisma/client';
 import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
-import { foundOr404, inOrg, inScope, optionalId, requireId } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
+import { foundOr404, inOrg, inScope, optionalId, requireId, resourceNotFound } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
@@ -214,11 +214,18 @@ export class DeleteStaffCommandHandler implements IRequestHandler<
         where: { id, ...inScope(scope) },
         include: {
           workItems: { select: { id: true }, take: 1 },
+          participants: { select: { id: true }, take: 1 },
+          splits: { select: { id: true }, take: 1 },
         },
       }),
     );
 
-    const hasWorkItems = professional.workItems.length > 0;
+    // 017 (#76): atenciones propias, participaciones o beneficiario de splits: todo es historial que se conserva.
+    const hasLinks =
+      professional.workItems.length +
+        professional.participants.length +
+        professional.splits.length >
+      0;
 
     // Rule 3: Has User -> Soft Delete Professional + Unlink Org (+ Soft Delete User only if no other links)
     if (professional.userId) {
@@ -256,16 +263,38 @@ export class DeleteStaffCommandHandler implements IRequestHandler<
       });
     }
 
-    // Rule 2: No User but has WorkItems -> Soft Delete Professional
-    if (hasWorkItems) {
+    // Rule 2: No User but has WorkItems, participations or split beneficiary -> Soft Delete Professional
+    if (hasLinks) {
       return this.prisma.professional.update({
         where: { id },
         data: { deletedAt: new Date() }
       });
     }
 
-    // Rule 1: No User and No WorkItems -> Hard Delete
-    return this.prisma.professional.delete({ where: { id } });
+    // Rule 1: No User and no links -> Hard Delete. Si entre la verificación y el borrado se confirma una atención
+    // o una participación nueva, la FK RESTRICT da P2003: el resultado es el mismo que si el vínculo hubiera
+    // existido antes (baja lógica), nunca un 500. Si otro pedido ya lo borró (P2025 en la baja), 404.
+    try {
+      return await this.prisma.professional.delete({ where: { id } });
+    } catch (error) {
+      if (
+        !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+        error.code !== 'P2003'
+      ) {
+        throw error;
+      }
+      try {
+        return await this.prisma.professional.update({
+          where: { id },
+          data: { deletedAt: new Date() }
+        });
+      } catch (inner) {
+        if (inner instanceof Prisma.PrismaClientKnownRequestError && inner.code === 'P2025') {
+          throw resourceNotFound();
+        }
+        throw inner;
+      }
+    }
   }
 }
 

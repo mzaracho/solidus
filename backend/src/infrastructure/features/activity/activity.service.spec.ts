@@ -441,3 +441,142 @@ describe('ActivityService.createActivity', () => {
     noWrites(s);
   });
 });
+
+describe('ActivityService.createActivity: fecha de pago y dinero exacto (017)', () => {
+  it('alta como PAID sin fecha de pago: 400 payment-date-required y sin escrituras (criterio 16)', async () => {
+    for (const paymentDate of [undefined, '']) {
+      const s = setup();
+      const e = await errorOf(() =>
+        s.service.createActivity(
+          dto({ paymentStatus: 'PAID', paymentDate }),
+          'org',
+          s.scopeOf('ADMIN'),
+        ),
+      );
+      expect(e).toBeInstanceOf(BadRequestException);
+      expect((e as BadRequestException).getResponse()).toMatchObject({
+        code: 'payment-date-required',
+      });
+      noWrites(s);
+    }
+  });
+
+  it('alta como PAID con fecha de pago, o como UNPAID/PARTIAL sin fecha: crea', async () => {
+    for (const over of [
+      { paymentStatus: 'PAID', paymentDate: '2026-03-01' },
+      { paymentStatus: 'UNPAID' },
+      { paymentStatus: 'PARTIAL' },
+      {},
+    ]) {
+      const s = setup();
+      await s.service.createActivity(dto(over), 'org', s.scopeOf('ADMIN'));
+      expect(s.writes.workItemCreate).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  const SOLO = { id: orgA, type: 'SOLO_PRACTICE', settings: null };
+  const soloSetup = (settings: Record<string, unknown> | null) => {
+    const s = setup({
+      organization: {
+        findUnique: jest.fn().mockResolvedValue({ ...SOLO, settings }),
+      },
+    });
+    s.tx.payer.findUnique.mockResolvedValue({ id: 'p', name: 'Particular' });
+    return s;
+  };
+
+  it('reparto particular en SOLO_PRACTICE (modo pro): 100 % y 70 % redondeados al centavo', async () => {
+    const full = soloSetup(null);
+    await full.service.createActivity(
+      dto({ amount: 150.55 }),
+      'pro',
+      full.scopeOf('ADMIN'),
+    );
+    const rows100 = full.writes.splitsCreateMany.mock.calls[0][0].data;
+    expect(rows100).toHaveLength(1);
+    expect(String(rows100[0].amount)).toBe('150.55');
+    expect(rows100[0].roleLabel).toBe('Honorario (Particular/Privado)');
+
+    const seventy = soloSetup({ proModePrivatePatientPct: 70 });
+    await seventy.service.createActivity(
+      dto({ amount: 150.55 }),
+      'pro',
+      seventy.scopeOf('ADMIN'),
+    );
+    // 70 % de 150.55 = 105.385 -> 105.39 (antes quedaba sin redondear)
+    expect(
+      String(seventy.writes.splitsCreateMany.mock.calls[0][0].data[0].amount),
+    ).toBe('105.39');
+    // no pasó por el motor
+    expect(seventy.feeEngine.calculateSplits).not.toHaveBeenCalled();
+  });
+
+  it('honorarios de participantes: FIXED y CATEGORY, exactos y como Decimal', async () => {
+    const roles = [
+      {
+        roleLabel: 'Titular',
+        isRequired: true,
+        feeStrategy: 'FIXED',
+        fixedPercentage: 33.33,
+      },
+      { roleLabel: 'Coadmisor', isRequired: false, feeStrategy: 'CATEGORY' },
+      { roleLabel: 'Sin estrategia', isRequired: false },
+    ];
+    const s = setup({
+      activityType: {
+        findFirst: jest.fn().mockImplementation(async (a: any) => ({
+          id: a.where.id,
+          baseValue: 100.1,
+          cardValue: null,
+          roles,
+        })),
+      },
+    });
+    s.tx.professional.findUnique.mockResolvedValue({
+      id: 'x',
+      category: { percentage: 20 },
+    });
+    await s.service.createActivity(
+      dto({
+        activityTypeId: randomUUID(),
+        participants: [
+          { professionalId: randomUUID(), roleLabel: 'Titular' },
+          { professionalId: randomUUID(), roleLabel: 'Coadmisor' },
+          { professionalId: randomUUID(), roleLabel: 'Sin estrategia' },
+        ],
+      }),
+      'org',
+      s.scopeOf('ADMIN'),
+    );
+    const rows = s.writes.participantsCreateMany.mock.calls[0][0].data;
+    // 33.33 % de 100.10 = 33.36333 -> 33.36; 20 % = 20.02; sin estrategia = 0
+    expect(rows.map((r: any) => String(r.feeAmount))).toEqual([
+      '33.36',
+      '20.02',
+      '0',
+    ]);
+    expect(rows.map((r: any) => r.isRequired)).toEqual([true, false, false]);
+  });
+
+  it('el bruto es base + recargo, exacto (0.1 + 0.2 = 0.3)', async () => {
+    const s = setup();
+    await s.service.createActivity(
+      dto({ amountBase: 0.1, amountCard: 0.2 }),
+      'pro',
+      s.scopeOf('ADMIN'),
+    );
+    const data = s.writes.workItemCreate.mock.calls[0][0].data;
+    expect(String(data.grossAmount)).toBe('0.3');
+  });
+
+  it('la respuesta del alta devuelve los montos como number', async () => {
+    const s = setup();
+    const res: any = await s.service.createActivity(
+      dto({ amountBase: 100.5 }),
+      'pro',
+      s.scopeOf('ADMIN'),
+    );
+    expect(res.grossAmount).toBe(100.5);
+    expect(typeof res.amountBase).toBe('number');
+  });
+});

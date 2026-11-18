@@ -17,22 +17,22 @@ Lo mantiene el PO. Los números con `#` son de `docs/auditoria/BACKLOG.md`.
 | 8 | 013-errores-sin-details | #13, #42, #53, B-1 y B-2 del 006, I-4 del 010 | **Hecho** (`2155df6`) |
 | 9 | 014-validation-whitelist | #12, #43 | **Hecho** (`9e7f321`) |
 | 10 | 015-transacciones | #16, #70 | **Hecho** (`dc0b31c`) |
-| 11 | 016-schema-y-migraciones | Schema y migraciones no coinciden (hallazgo del 015), `User.cuit` | **Hecho** (2026-11-18; baseline aplicado en la base del usuario) |
-| 12 | 017-dinero-y-motor-honorarios | #17, #40, #45, #75, #76 | Pendiente |
+| 11 | 016-schema-y-migraciones | Schema y migraciones no coinciden (hallazgo del 015), `User.cuit` | **Hecho** (`07b43e0`; baseline aplicado en la base del usuario) |
+| 12 | 017-dinero-y-motor-honorarios | #17, #40, #45, #75, #76 | **Hecho** |
 | 13 | 018-cookie-httponly | #10, #55 | Pendiente |
 | 14 | 019-test-suite-fuera-de-prod | #15 | Pendiente |
-| 15 | 020-docker-hardening | #19, #56, #77 | Pendiente |
-| 16 | 021-audit-fix | #36, #25 (`npm audit fix` sin cambios incompatibles), #61 | Pendiente |
+| 15 | 020-docker-hardening | #19, #56, #77, #104 | Pendiente |
+| 16 | 021-audit-fix | #36, #25 (`npm audit fix` sin cambios incompatibles), #61, #103 | Pendiente |
 | 17 | 022-upgrade-nest | #35, #25 (plan Nest/Prisma) | Pendiente |
 | 18 | 023-secretos-historial | #6 (requiere decisión del usuario sobre reescribir el historial) | Pendiente |
-| 19 | 024-dev-ps1-node-env | Normalizar `NODE_ENV` (H-1 del tester del 005), #78, #79, #81 a #86 (menores de `dev.ps1` del 016) | Pendiente |
-| 20 | 025-lint-verde | #23, #54, #64, #65, #71 | Pendiente |
+| 19 | 024-dev-ps1-node-env | Normalizar `NODE_ENV` (H-1 del tester del 005), #78, #79, #81 a #86 (menores de `dev.ps1` del 016), #105 | Pendiente |
+| 20 | 025-lint-verde | #23, #54, #64, #65, #71, #99 | Pendiente |
 | 21 | 026-ci | #24, #87 (`-CheckMigrations` en el CI) | Pendiente |
 | 22 | 027-tests-backend | #20, #21 | Pendiente |
 | 23 | 028-tests-frontend | #22 | Pendiente |
-| 24 | 029-permisos-finos | #47, #48, #49, #50, #51, #52, #59, #60, #62, #63, #66 | Pendiente |
+| 24 | 029-permisos-finos | #47, #48, #49, #50, #51, #52, #59, #60, #62, #63, #66, #95, #96 | Pendiente |
 | 25 | 030-rate-limit-endurecido | #57, #58 | Pendiente |
-| 26 | 031 y siguientes | P3: #26 a #33, #46, #67, #68, #69, #72, #73, #74, #80 | Pendiente |
+| 26 | 031 y siguientes | P3: #26 a #33, #46, #67, #68, #69, #72, #73, #74, #80, #88 a #94, #97, #98, #100 a #102 | Pendiente |
 
 ## Decisiones del usuario para features futuros
 - **017 (2026-11-18): borrar un pagador que tiene fee rules** responde **409** con un mensaje que lo explica, mientras

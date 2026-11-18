@@ -108,6 +108,9 @@ export function AtencionesTable({ canLoadActivities = false, currentUserId }: Pr
                 commission: i.commission,
                 netAmount: i.netAmount,
                 paymentDate: i.paymentDate,
+                payerId: i.payerId ?? null,
+                payerName: i.payerName && i.payerName !== 'Unknown' ? i.payerName : null,
+                isCollected: i.isCollected === true,
                 createdByUserId: i.createdByUserId ?? null,
                 isExternal: i.isExternal ?? false,
                 organizationName: i.organizationName ?? '',
@@ -331,6 +334,7 @@ export function AtencionesTable({ canLoadActivities = false, currentUserId }: Pr
                 onClose={() => { setIsFormOpen(false); setEditingItem(null) }}
                 onSubmit={handleSave}
                 initialData={editingItem}
+                onConflict={() => { setRefreshKey(k => k + 1); router.refresh() }}
                 orgSlug={orgSlug}
                 rulesOrg={{ 
                     values: orgConfig?.presets || [],

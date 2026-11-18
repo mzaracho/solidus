@@ -3,7 +3,8 @@ import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
-import { Prisma, WorkItem, PaymentStatus } from '@prisma/client';
+import { Prisma, WorkItem } from '@prisma/client';
+import { isCollected, NOT_COLLECTED_WHERE } from '@src/domain/features/activity/activity-collected';
 import { requireOrgScope, RequestContext } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
 import { foundOr404, forbiddenAction, inScope, requireId, resourceNotFound } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 import { canModifyActivity } from '../activity-ownership';
@@ -49,7 +50,7 @@ export class DeleteActivityCommandHandler implements IRequestHandler<
     if (!canModifyActivity(existing, scope, 'delete')) throw forbiddenAction();
 
     // Financial safeguard: prevent deletion of paid activities with a payment date
-    if (existing.paymentStatus === PaymentStatus.PAID && existing.paymentDate) {
+    if (isCollected(existing)) {
       throw paidActivityForbidden();
     }
 
@@ -57,10 +58,7 @@ export class DeleteActivityCommandHandler implements IRequestHandler<
     // no encuentra la fila (P2025) y se responde igual que arriba (403), o 404 si ya no existe.
     try {
       return await this.prisma.workItem.delete({
-        where: {
-          id,
-          NOT: { paymentStatus: PaymentStatus.PAID, paymentDate: { not: null } },
-        },
+        where: { id, ...NOT_COLLECTED_WHERE },
       });
     } catch (error) {
       if (

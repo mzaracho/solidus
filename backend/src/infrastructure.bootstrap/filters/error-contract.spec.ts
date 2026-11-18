@@ -9,7 +9,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { describeForLog, GENERIC_ERRORS, mapException } from './error-contract';
+import {
+  API_ERROR_CODE,
+  describeForLog,
+  GENERIC_ERRORS,
+  mapException,
+} from './error-contract';
 import { resourceNotFound } from '../config/core/authentication/org-resource';
 
 const keysOf = (e: unknown) => Object.keys(mapException(e).body).sort();
@@ -164,6 +169,28 @@ describe('mapException: contrato único { code, errors }', () => {
         code: 'conflict',
         errors: [{ message: 'Ya existe.' }],
       });
+    });
+
+    it('los códigos del 017 pasan tal cual con su mensaje en español', () => {
+      const cases: [number, string][] = [
+        [409, API_ERROR_CODE.ACTIVITY_ALREADY_COLLECTED],
+        [409, API_ERROR_CODE.PAYER_HAS_FEE_RULES],
+        [409, API_ERROR_CODE.PAYER_HAS_ACTIVITIES],
+        [400, API_ERROR_CODE.PAYMENT_DATE_REQUIRED],
+      ];
+      for (const [status, code] of cases) {
+        expect(code).toMatch(/^[a-z][a-z-]{0,40}$/);
+        const ex =
+          status === 409
+            ? new ConflictException({ code, message: 'Mensaje en español.' })
+            : new BadRequestException({ code, message: 'Mensaje en español.' });
+        const m = mapException(ex);
+        expect(m.status).toBe(status);
+        expect(m.body).toEqual({
+          code,
+          errors: [{ message: 'Mensaje en español.' }],
+        });
+      }
     });
 
     it('409 sin código: genérico', () => {

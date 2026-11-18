@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { sumMoney, toJsonNumber } from '@src/domain/seed-work/money';
 import { IRequest } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request';
 import { IRequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/interfaces/i-request-handler';
 import { RequestHandler } from '@src/infrastructure.bootstrap/config/core/cqrs/request-handler-decorator';
@@ -62,13 +63,13 @@ export class GetPatientSummaryQueryHandler
       orderBy: { occurredAt: 'desc' },
     });
 
-    const totalDebt = items.reduce((acc, item) => acc + Number(item.grossAmount), 0);
+    const totalDebt = toJsonNumber(sumMoney(items.map((item) => item.grossAmount)));
 
     const pendingItems: PatientSummaryItem[] = items.map((item) => ({
       id: item.id,
       date: item.occurredAt.toISOString(),
       serviceType: item.serviceType,
-      grossAmount: Number(item.grossAmount),
+      grossAmount: toJsonNumber(item.grossAmount),
       paymentStatus: item.paymentStatus,
       payerName: item.payer?.name ?? '-',
       professionalName: item.professional?.displayName ?? '-',

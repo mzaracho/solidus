@@ -448,6 +448,12 @@ const ID_ROUTE_CASES: Record<string, IdRouteCase> = {
         body: { attendance: 'PRESENT' },
         foreign: [I.wiB],
       },
+      // 017: el pagador referenciado tiene que ser de la organización de la atención
+      {
+        path: p(`/activity/${I.wiMember}`),
+        body: { payerId: I.payerB },
+        foreign: [I.payerB],
+      },
     ],
     legit: {
       path: p(`/activity/${I.wiMember}`),
@@ -1282,9 +1288,10 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
       professionalCategory: 'all',
       splits: [
         {
-          role: 'PROFESSIONAL',
-          percentage: 70,
-          beneficiaryType: 'PROFESSIONAL',
+          beneficiary: 'PROFESSIONAL',
+          type: 'PERCENTAGE',
+          value: 70,
+          roleLabel: 'Profesional',
         },
       ],
       ...over,
@@ -1329,6 +1336,66 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
       expect(
         fake.rows('feeRule').find((r) => r.name === 'R')?.organizationId,
       ).toBe(orgA);
+    });
+
+    it('017: DELETE pro/payers/:id con reglas de honorarios: 409 payer-has-fee-rules, sin borrar el pagador ni la regla', async () => {
+      const created = await call(U.pro, 'post', p('/fee-rules'), {
+        body: rule({ payer: { connect: { id: I.payerA } } }),
+      });
+      expect(created.status).toBe(201);
+      const before = fake.writeCount();
+      const res = await call(U.pro, 'delete', p(`/pro/payers/${I.payerA}`));
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('payer-has-fee-rules');
+      expect(res.body.errors).toEqual([
+        { message: 'No se puede eliminar el pagador porque tiene reglas de honorarios asociadas.' },
+      ]);
+      expect(fake.writeCount()).toBe(before);
+      expect(fake.rows('payer').some((r) => r.id === I.payerA)).toBe(true);
+      expect(fake.rows('feeRule').some((r) => r.payerId === I.payerA)).toBe(true);
+    });
+
+    it('017: DELETE pro/payers/:id con atenciones: 409 payer-has-activities (no 500) y no se borra nada', async () => {
+      const res = await call(U.admin, 'delete', p(`/pro/payers/${I.payerSysA}`));
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('payer-has-activities');
+      expect(fake.writeCount()).toBe(0);
+      expect(fake.rows('payer').some((r) => r.id === I.payerSysA)).toBe(true);
+    });
+
+    it('017: PUT activity/:id con payerId de otra organización: 404 sin escrituras; de la propia: 200 con recálculo', async () => {
+      const bad = await call(U.admin, 'put', p(`/activity/${I.wiMember}`), {
+        body: { payerId: I.payerB, grossAmount: 50 },
+      });
+      expect(bad.status).toBe(404);
+      expect(bad.body.code).toBe('not-found');
+      expect(fake.writeCount()).toBe(0);
+
+      const ok = await call(U.admin, 'put', p(`/activity/${I.wiMember}`), {
+        body: { payerId: I.payerA, grossAmount: 50 },
+      });
+      expect(ok.status).toBe(200);
+      const saved = fake.rows('workItem').find((r) => r.id === I.wiMember);
+      expect(saved?.payerId).toBe(I.payerA);
+      expect(Number(saved?.grossAmount)).toBe(50);
+      const splits = fake.rows('workItemSplit').filter((r) => r.workItemId === I.wiMember);
+      expect(splits.reduce((a, r) => a + Math.round(Number(r.amount) * 100), 0)).toBe(5000);
+      expect(fake.writes.every((w) => w.inTx || w.model === 'workItem')).toBe(true);
+    });
+
+    it('017: PUT activity/:id con payerId null usa el pagador particular y con "" es 400', async () => {
+      const ok = await call(U.admin, 'put', p(`/activity/${I.wiMember}`), {
+        body: { payerId: null },
+      });
+      expect(ok.status).toBe(200);
+      expect(fake.rows('workItem').find((r) => r.id === I.wiMember)?.payerId).toBe(I.payerSysA);
+      fake.reset();
+      const empty = await call(U.admin, 'put', p(`/activity/${I.wiMember}`), {
+        body: { payerId: '' },
+      });
+      expect(empty.status).toBe(400);
+      expect(empty.body.code).toBe('validation-failed');
+      expect(fake.writeCount()).toBe(0);
     });
 
     it('POST pro/payers: un MEMBER sin Professional recibe 403; con Professional crea un pagador propio', async () => {
@@ -1516,21 +1583,15 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
     it('splits abusivos: 400 genérico y sin escrituras', async () => {
       const cases: any[] = [
         [
-          {
-            role: 'PROFESSIONAL',
-            percentage: 100,
-            beneficiaryType: 'PROFESSIONAL',
-          },
-          {
-            role: 'ORGANIZATION',
-            percentage: 100,
-            beneficiaryType: 'ORGANIZATION',
-          },
+          { beneficiary: 'PROFESSIONAL', type: 'PERCENTAGE', value: 100 },
+          { beneficiary: 'ORG', type: 'PERCENTAGE', value: 100 },
         ],
+        [{ beneficiary: 'PROFESSIONAL', type: 'PERCENTAGE', value: -10 }],
+        // la forma vieja de la UI ya no se acepta al escribir (017)
         [
           {
             role: 'PROFESSIONAL',
-            percentage: -10,
+            percentage: 70,
             beneficiaryType: 'PROFESSIONAL',
           },
         ],
@@ -1548,19 +1609,11 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
       }
     });
 
-    it('splits que genera la UI: 201', async () => {
+    it('splits que genera la UI (forma única del motor): 201', async () => {
       const res = await call(U.pro, 'post', p('/fee-rules'), {
         body: ruleWith([
-          {
-            role: 'PROFESSIONAL',
-            percentage: 70,
-            beneficiaryType: 'PROFESSIONAL',
-          },
-          {
-            role: 'ORGANIZATION',
-            percentage: 30,
-            beneficiaryType: 'ORGANIZATION',
-          },
+          { beneficiary: 'PROFESSIONAL', type: 'PERCENTAGE', value: 70, roleLabel: 'Profesional' },
+          { beneficiary: 'ORG', type: 'PERCENTAGE', value: 30, roleLabel: 'Organización' },
         ]),
       });
       expect(res.status).toBe(201);
@@ -2030,9 +2083,10 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
       payer: { connect: { id: I.payerA } },
       splits: [
         {
-          role: 'PROFESSIONAL',
-          percentage: 70,
-          beneficiaryType: 'PROFESSIONAL',
+          beneficiary: 'PROFESSIONAL',
+          type: 'PERCENTAGE',
+          value: 70,
+          roleLabel: 'Profesional',
         },
       ],
     });
@@ -2086,8 +2140,14 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
         user: U.admin,
         ok: 200,
         legit: () => ({ attendance: 'PRESENT' }),
-        extra: [...withId, ['grossAmount', (b) => (b.grossAmount = 5)]],
+        extra: [...withId, ['clave desconocida', (b) => (b.foo = 5)]],
         wrong: [
+          ['grossAmount string', (b) => (b.grossAmount = '5')],
+          ['grossAmount negativo', (b) => (b.grossAmount = -1)],
+          ['grossAmount null', (b) => (b.grossAmount = null)],
+          ['payerId vacío (valor falso del front)', (b) => (b.payerId = '')],
+          ['payerId no UUID', (b) => (b.payerId = '—')],
+          ['payerId número', (b) => (b.payerId = 5)],
           ['attendance fuera del enum', (b) => (b.attendance = 'FOO')],
           [
             'paymentDate con otro formato',
@@ -2763,6 +2823,13 @@ describe('Aislamiento entre organizaciones (AppModule real, base en memoria)', (
     });
 
     it.each(fixture.cases.map((c) => [c.name, c]))('%s', async (_name, c) => {
+      if (c.setup === 'collected') {
+        // la atención del caso ya está cobrada (PAID con fecha de pago) antes del pedido
+        await fake.client.workItem.update({
+          where: { id: I.wiMember },
+          data: { paymentStatus: 'PAID', paymentDate: new Date('2026-02-01T00:00:00Z') },
+        });
+      }
       const res = await call(
         U[c.user as keyof typeof U],
         c.method,

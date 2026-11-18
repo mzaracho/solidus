@@ -33,7 +33,10 @@ test('mapea los campos de GET /activity a la fila', () => {
 test('datos faltantes: "—" y null, sin romper', () => {
   const r = mapActivityToWorkItem({ id: 7, date: '2026-03-05', payerName: 'Unknown', netAmount: null })
   assert.equal(r.id, '7')
-  assert.equal(r.payerName, '—')
+  // 017: el faltante ya no se convierte en '—' (ese texto se reenviaba como valor, M2 del 008)
+  assert.equal(r.payerName, null)
+  assert.equal(r.payerId, null)
+  assert.equal(r.isCollected, false)
   assert.equal(r.patientName, '—')
   assert.equal(r.grossAmount, null)
   assert.equal(r.netAmount, null)
@@ -64,4 +67,18 @@ test('status vacío o faltante da cadena vacía; PARTIAL y UNPAID pasan tal cual
   assert.equal(mapActivityToWorkItem({ id: 1, date: '2026-03-05' }).status, '')
   assert.equal(mapActivityToWorkItem({ ...api, status: 'PARTIAL' }).status, 'PARTIAL')
   assert.equal(mapActivityToWorkItem({ ...api, status: 'UNPAID' }).status, 'UNPAID')
+})
+
+test('017: payerName vacío o Unknown da null y nunca el guion; payerId e isCollected pasan tal cual', () => {
+  for (const payerName of [undefined, null, '', 'Unknown']) {
+    const r = mapActivityToWorkItem({ ...api, payerName })
+    assert.equal(r.payerName, null)
+    assert.notEqual(r.payerName, '—')
+  }
+  const r = mapActivityToWorkItem({ ...api, payerId: 'pay-1', isCollected: true })
+  assert.equal(r.payerId, 'pay-1')
+  assert.equal(r.isCollected, true)
+  assert.equal(mapActivityToWorkItem({ ...api, isCollected: false }).isCollected, false)
+  // un valor que no es exactamente true no cuenta como cobrada
+  assert.equal(mapActivityToWorkItem({ ...api, isCollected: 'true' as unknown as boolean }).isCollected, false)
 })

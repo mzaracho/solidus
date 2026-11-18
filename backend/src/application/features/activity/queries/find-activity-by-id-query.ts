@@ -5,6 +5,8 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/Prisma/prisma.service';
 import { BeneficiaryType } from '@prisma/client';
 import { requireOrgScope, RequestContext, roleIn } from '@src/infrastructure.bootstrap/config/core/cqrs/request-context';
+import { toJsonNumber } from '@src/domain/seed-work/money';
+import { isCollected } from '@src/domain/features/activity/activity-collected';
 import { foundOr404, inScope, requireId, resourceNotFound } from '@src/infrastructure.bootstrap/config/core/authentication/org-resource';
 
 export class FindActivityByIdQuery implements IRequest<any> {
@@ -86,14 +88,17 @@ export class FindActivityByIdQueryHandler implements IRequestHandler<
             paymentDate: activity.paymentDate,
             attendance: activity.attendance,
 
-            grossAmount: Number(activity.grossAmount),
+            // Definición única de "cobrada" (PAID con fecha de pago), calculada por el backend (017).
+            isCollected: isCollected(activity),
+
+            grossAmount: toJsonNumber(activity.grossAmount),
             quantity: 1,
 
             // Breakdown for detail view
-            admissionValue: Number(activity.grossAmount),
+            admissionValue: toJsonNumber(activity.grossAmount),
             distributions: activity.splits.map(s => ({
                 beneficiary: s.beneficiaryType,
-                amount: Number(s.amount),
+                amount: toJsonNumber(s.amount),
                 percentage: 0
             }))
         };
